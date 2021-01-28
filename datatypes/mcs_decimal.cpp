@@ -19,6 +19,7 @@
 
 #include "utils/common/branchpred.h"
 #include "mcs_decimal.h"
+#include "numericliteral.h"
 
 namespace datatypes
 {
@@ -167,6 +168,33 @@ namespace datatypes
                                    (__float128)rValue / scaleMultiplierR - 0.5));
 
             opOverflowCheck(lValue, rValue, result.s128Value);;
+        }
+    }
+
+    Decimal::Decimal(const char *str, size_t length, DataCondition & convError,
+                     int8_t s, uint8_t p)
+       :TSInt128(),
+        value(0),
+        scale(s),
+        precision(p)
+    {
+        literal::Converter<literal::SignedNumericLiteral> conv(str, length, convError);
+        if (!(convError & datatypes::DataCondition::X_INVALID_CHARACTER_VALUE_FOR_CAST))
+        {
+            // Remove redundant leading integral and trailing fractional digits
+            conv.normalize();
+            if (isTSInt128ByPrecision())
+            {
+                s128Value = conv.toPackedSDecimal<int128_t>((literal::scale_t) scale, convError);
+                int128_t max_number_decimal = mcs_pow_10_128[precision - 19]  - 1;
+                convError.adjustSIntXRange(s128Value, max_number_decimal);
+            }
+            else
+            {
+                value = conv.toPackedSDecimal<int64_t>((literal::scale_t) scale, convError);
+                int64_t max_number_decimal = (int64_t) mcs_pow_10[precision] - 1;
+                convError.adjustSIntXRange(value, max_number_decimal);
+            }
         }
     }
 
