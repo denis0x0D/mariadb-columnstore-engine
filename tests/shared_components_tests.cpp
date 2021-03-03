@@ -103,12 +103,12 @@ CPPUNIT_TEST(setUp);
 //    CPPUNIT_TEST( testVB );
 
 // Disk manager related testing
-//    CPPUNIT_TEST( testDM );
-//    CPPUNIT_TEST( tearDown );
+    CPPUNIT_TEST(testDM);
+    //    CPPUNIT_TEST( tearDown );
 
-// Cache related testing
-//    CPPUNIT_TEST( testCacheBasic );
-//    CPPUNIT_TEST( testCacheReadWrite );
+    // Cache related testing
+    //    CPPUNIT_TEST( testCacheBasic );
+    //    CPPUNIT_TEST( testCacheReadWrite );
 
     CPPUNIT_TEST( testCleanup );   // NEVER COMMENT OUT THIS LINE
     CPPUNIT_TEST_SUITE_END();
@@ -1400,21 +1400,24 @@ public:
 
         CPPUNIT_ASSERT( memcmp( block.data, originBlock.data, BYTE_PER_BLOCK ) == 0 );
     }
+*/
 
     void testDM()
     {
         FileOp   fileOp;
-        char     fileName[FILE_NAME_SIZE];
+        char     fileName[100];
         int      rc;
+        int oid = 1;
+        char dbDirName[20][20];
+        int partition = 1;
+        int segment = 1;
+        rc = convertor::oid2FileNamea(oid, fileName, dbDirName, partition,
+                                      segment);
 
-        rc = fileOp.oid2FileName( 100, fileName, true );
-        CPPUNIT_ASSERT( rc == NO_ERROR );
-
-        rc = fileOp.oid2FileName( 3071, fileName, true );
-        CPPUNIT_ASSERT( rc == NO_ERROR );
-
-
+        cout << "FILE TEST " << endl;
+        cout << fileName << endl;
     }
+/*
 
     void testCacheBasic()
     {
