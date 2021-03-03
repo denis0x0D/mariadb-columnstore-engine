@@ -362,6 +362,13 @@ int Convertor::fileName2Oid(const std::string& fullFileName, uint32_t& oid,
         ++index;
     }
 
+    cout << "print tokens " << endl;
+    for (auto& t : tokens)
+    { 
+      cout << t << ", ";
+    }
+    cout << endl;
+
     idbassert(tokens.size() >= 6);
 
     // Initialize dmFilePathArgs_t by the memory allocated on the stack.

@@ -1407,15 +1407,23 @@ public:
         FileOp   fileOp;
         char     fileName[100];
         int      rc;
-        int oid = 1;
+        int oid = 16;
         char dbDirName[20][20];
-        int partition = 1;
-        int segment = 1;
-        rc = convertor::oid2FileNamea(oid, fileName, dbDirName, partition,
-                                      segment);
+        int partition = 32;
+        int segment = 64;
+        rc = Convertor::oid2FileName(oid, fileName, dbDirName, partition,
+                                     segment);
 
         cout << "FILE TEST " << endl;
         cout << fileName << endl;
+        cout << "Default oid partition segment" << oid << " " << partition
+             << " " << segment << endl;
+
+        std::string filename = fileName;
+        uint32_t _oid, _part, _segment;
+        rc = Convertor::fileName2Oid(filename, _oid, _part, _segment);
+        cout << "Calculated oid par seg " << _oid << " " << _part << " "
+             << _segment << endl;
     }
 /*
 
