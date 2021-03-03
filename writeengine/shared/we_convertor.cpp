@@ -105,7 +105,7 @@ int _fromDir(const char* buffer, uint32_t& val)
 {
     int rc = -1;
 
-    if (buffer ) /*&& (fnmatch(buffer, CS_DIR_FORMAT, 0) == 0)) */
+    if (buffer && (fnmatch(CS_DIR_FORMAT, buffer, 0) == 0))
     {
         char num[3];
         strncpy(num, buffer, 3);
@@ -121,7 +121,7 @@ int _fromFile(const char* buffer, uint32_t& val)
 {
     int rc = -1;
 
-    if (buffer) /* && (fnmatch(buffer, CS_FILE_FORMAT, 0) == 0)) */
+    if (buffer && (fnmatch(buffer, CS_FILE_FORMAT, 0) == 0))
     {
         char num[3];
         // strlen("FILE") == 4
