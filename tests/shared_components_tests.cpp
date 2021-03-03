@@ -89,14 +89,14 @@ CPPUNIT_TEST(setUp);
 //    CPPUNIT_TEST( testCopyDbFile );
 
 // Extent & dict related testing
-    CPPUNIT_TEST( testExtensionWOPrealloc );
-    CPPUNIT_TEST( testDictExtensionWOPrealloc );
+//    CPPUNIT_TEST( testExtensionWOPrealloc );
+ //   CPPUNIT_TEST( testDictExtensionWOPrealloc );
 //    CPPUNIT_TEST( testExtentCrWOPreallocBin );
     // Semaphore related testing
 //    CPPUNIT_TEST( testSem );
 
 // Log related testing
-    CPPUNIT_TEST( testLog );
+  //  CPPUNIT_TEST( testLog );
 
 // Version Buffer related testing
 //    CPPUNIT_TEST( testHWM );
@@ -1424,6 +1424,7 @@ public:
         rc = Convertor::fileName2Oid(filename, _oid, _part, _segment);
         cout << "Calculated oid par seg " << _oid << " " << _part << " "
              << _segment << endl;
+        cout << "Return code " << rc << endl;
     }
 /*
 

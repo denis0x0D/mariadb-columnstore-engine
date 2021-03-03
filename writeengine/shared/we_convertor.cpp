@@ -105,7 +105,7 @@ int _fromDir(const char* buffer, uint32_t& val)
 {
     int rc = -1;
 
-    if (buffer && (fnmatch(buffer, CS_DIR_FORMAT, 0) == 0))
+    if (buffer ) /*&& (fnmatch(buffer, CS_DIR_FORMAT, 0) == 0)) */
     {
         char num[3];
         strncpy(num, buffer, 3);
@@ -121,7 +121,7 @@ int _fromFile(const char* buffer, uint32_t& val)
 {
     int rc = -1;
 
-    if (buffer && (fnmatch(buffer, CS_FILE_FORMAT, 0) == 0))
+    if (buffer) /* && (fnmatch(buffer, CS_FILE_FORMAT, 0) == 0)) */
     {
         char num[3];
         // strlen("FILE") == 4
@@ -335,11 +335,13 @@ int Convertor::fileName2Oid(const std::string& fullFileName, uint32_t& oid,
     dmFilePathArgs_t args;
 
     // Verify the given `fullFileName`.
+    /*
     if (!size
         || !(fnmatch(fullFileName.c_str(), CS_FULL_FILENAME_FORMAT, 0) == 0))
     {
         return -1;
     }
+    */
 
     // Split the given `fullFileName` into tokens by separator.
     std::vector<std::string> tokens;
@@ -358,17 +360,10 @@ int Convertor::fileName2Oid(const std::string& fullFileName, uint32_t& oid,
         {
             // Make sure that token the len is less than MAX_DB_DIR_NAME_SIZE.
             idbassert(token.size() < MAX_DB_DIR_NAME_SIZE);
-            tokens.push_back(std::move(token));
+            tokens.push_back(token);
         }
         ++index;
     }
-
-    cerr << "print tokens \n";
-    for (auto& t : tokens)
-    {
-        cerr << t << ", ";
-    }
-    cerr << '\n';
 
     idbassert(tokens.size() >= 6);
 
@@ -401,14 +396,20 @@ int Convertor::fileName2Oid(const std::string& fullFileName, uint32_t& oid,
     args.Erc = 0;
     args.FNrc = 0;
 
-    // Populate dmFilePathArgs_t struct starting from the file name.
-    uint32_t currentDirNum = size - 1;
-    strcpy(args.pFName, tokens[currentDirNum--].c_str());
-    strcpy(args.pDirE, tokens[currentDirNum--].c_str());
-    strcpy(args.pDirD, tokens[currentDirNum--].c_str());
-    strcpy(args.pDirC, tokens[currentDirNum--].c_str());
-    strcpy(args.pDirB, tokens[currentDirNum--].c_str());
-    strcpy(args.pDirA, tokens[currentDirNum--].c_str());
+    const uint32_t tokenSize = tokens.size();
+    cout << tokens[tokenSize - 1].c_str() << endl;
+    cout << tokens[tokenSize - 2].c_str() << endl;
+    cout << tokens[tokenSize - 3].c_str() << endl;
+    cout << tokens[tokenSize - 4].c_str() << endl;
+    cout << tokens[tokenSize - 5].c_str() << endl;
+    cout << tokens[tokenSize - 6].c_str() << endl;
+
+    strcpy(args.pFName, tokens[tokenSize - 1].c_str());
+    strcpy(args.pDirE, tokens[tokenSize - 2].c_str());
+    strcpy(args.pDirD, tokens[tokenSize - 3].c_str());
+    strcpy(args.pDirC, tokens[tokenSize - 4].c_str());
+    strcpy(args.pDirB, tokens[tokenSize - 5].c_str());
+    strcpy(args.pDirA, tokens[tokenSize - 6].c_str());
 
     RETURN_ON_WE_ERROR(dmFPath2Oid(&args, oid, partition, segment),
                        ERR_DM_CONVERT_OID);
@@ -1056,6 +1057,7 @@ int Convertor::dmOid2FPath(uint32_t oid, uint32_t partition, uint32_t segment,
 int Convertor::dmFPath2Oid(dmFilePathArgs_t* pArgs, uint32_t& oid,
                            uint32_t& partition, uint32_t& segment)
 {
+    cout << "Run dmFPath2Oid" << endl;
     uint32_t val = 0;
 
     // OID.
@@ -1064,24 +1066,28 @@ int Convertor::dmFPath2Oid(dmFilePathArgs_t* pArgs, uint32_t& oid,
     {
         return -1;
     }
+    cout << "A" << val << endl;
     oid = val << 24;
 
     if ((pArgs->Brc = _fromDir(pArgs->pDirB, val)) == -1)
     {
         return -1;
     }
+    cout << "B " << val << endl;
     oid |= val << 16;
 
     if ((pArgs->Crc = _fromDir(pArgs->pDirC, val)) == -1)
     {
         return -1;
     }
+    cout << "C " << val << endl;
     oid |= val << 8;
 
     if ((pArgs->Drc = _fromDir(pArgs->pDirD, val)) == -1)
     {
         return -1;
     }
+    cout << "D " << val << endl;
     oid |= val;
 
     // Partition.
@@ -1089,12 +1095,14 @@ int Convertor::dmFPath2Oid(dmFilePathArgs_t* pArgs, uint32_t& oid,
     {
         return -1;
     }
+    cout << "partition " << partition << endl;
 
     // Segment.
     if ((pArgs->FNrc = _fromFile(pArgs->pFName, segment)) == -1)
     {
         return -1;
     }
+    cout << "segment " << segment << endl;
 
     return 0;
 }
