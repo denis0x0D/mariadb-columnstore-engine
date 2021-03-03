@@ -124,7 +124,8 @@ int _fromFile(const char* buffer, uint32_t& val)
     if (buffer && (fnmatch(buffer, CS_FILE_FORMAT, 0) == 0))
     {
         char num[3];
-        strncpy(num, buffer, 3);
+        // strlen("FILE") == 4
+        strncpy(num, buffer + 4, 3);
         val = atoi(num);
         rc = 0;
     }
@@ -362,12 +363,12 @@ int Convertor::fileName2Oid(const std::string& fullFileName, uint32_t& oid,
         ++index;
     }
 
-    cout << "print tokens " << endl;
+    cerr << "print tokens \n";
     for (auto& t : tokens)
-    { 
-      cout << t << ", ";
+    {
+        cerr << t << ", ";
     }
-    cout << endl;
+    cerr << '\n';
 
     idbassert(tokens.size() >= 6);
 
