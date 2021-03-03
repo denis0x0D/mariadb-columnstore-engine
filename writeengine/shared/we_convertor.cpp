@@ -22,8 +22,10 @@
 /** @file */
 
 #include <unistd.h>
+#include <fnmatch.h>
 #include <limits>
 #include <cstring>
+#include <vector>
 #ifdef _MSC_VER
 #include <cstdio>
 #endif
@@ -36,6 +38,11 @@ using namespace execplan;
 namespace
 {
 const char DATE_TIME_FORMAT[] = "%04d-%02d-%02d %02d:%02d:%02d";
+const char CS_DIR_FORMAT[] = "[0-9][0-9][0-9].dir";
+const char CS_FILE_FORMAT[] = "FILE[0-9][0-9][0-9].cdf";
+const char CS_FULL_FILENAME_FORMAT[]
+    = "/[0-9][0-9][0-9].dir/[0-9][0-9][0-9].dir/[[0-9][0-9][0-9].dir/"
+      "[0-9][0-9][0-9].dir/[0-9][0-9][0-9].dir/FILE[0-9][0-9][0-9].cdf";
 
 /*******************************************************************************
  * DESCRIPTION:
@@ -92,6 +99,39 @@ int _doFile(char* pBuffer, int blen, unsigned char val)
 
     return rc;
 }
+
+// TODO: Decription
+int _fromDir(const char* buffer, uint32_t& val)
+{
+    int rc = -1;
+
+    if (buffer && (fnmatch(buffer, CS_DIR_FORMAT, 0) == 0))
+    {
+        char num[3];
+        strncpy(num, buffer, 3);
+        val = atoi(num);
+        rc = 0;
+    }
+
+    return rc;
+}
+
+// TODO: Description
+int _fromFile(const char* buffer, uint32_t& val)
+{
+    int rc = -1;
+
+    if (buffer && (fnmatch(buffer, CS_FILE_FORMAT, 0) == 0))
+    {
+        char num[3];
+        strncpy(num, buffer, 3);
+        val = atoi(num);
+        rc = 0;
+    }
+
+    return rc;
+}
+
 }
 
 namespace WriteEngine
@@ -285,7 +325,89 @@ int Convertor::oid2FileName(FID fid,
 
     return NO_ERROR;
 }
-
+
+int Convertor::fileName2Oid(const std::string& fullFileName, uint32_t& oid,
+                            uint32_t& partition, uint32_t& segment)
+{
+    const char dirSep = '/';
+    const uint32_t size = fullFileName.size();
+    dmFilePathArgs_t args;
+
+    // Verify the given `fullFileName`.
+    if (!size
+        || !(fnmatch(fullFileName.c_str(), CS_FULL_FILENAME_FORMAT, 0) == 0))
+    {
+        return -1;
+    }
+
+    // Split the given `fullFileName` into tokens by separator.
+    std::vector<std::string> tokens;
+    tokens.reserve(8);
+
+    uint32_t index = 0;
+    while (index < size)
+    {
+        std::string token;
+        while (index < size && fullFileName[index] != dirSep)
+        {
+            token.push_back(fullFileName[index]);
+            ++index;
+        }
+        if (token.size())
+        {
+            // Make sure that token the len is less than MAX_DB_DIR_NAME_SIZE.
+            idbassert(token.size() < MAX_DB_DIR_NAME_SIZE);
+            tokens.push_back(std::move(token));
+        }
+        ++index;
+    }
+
+    idbassert(tokens.size() >= 6);
+
+    // Initialize dmFilePathArgs_t by the memory allocated on the stack.
+    char aBuff[MAX_DB_DIR_NAME_SIZE];
+    char bBuff[MAX_DB_DIR_NAME_SIZE];
+    char cBuff[MAX_DB_DIR_NAME_SIZE];
+    char dBuff[MAX_DB_DIR_NAME_SIZE];
+    char eBuff[MAX_DB_DIR_NAME_SIZE];
+    char fnBuff[MAX_DB_DIR_NAME_SIZE];
+
+    args.pDirA = aBuff;
+    args.pDirB = bBuff;
+    args.pDirC = cBuff;
+    args.pDirD = dBuff;
+    args.pDirE = eBuff;
+    args.pFName = fnBuff;
+
+    args.ALen = sizeof(aBuff);
+    args.BLen = sizeof(bBuff);
+    args.CLen = sizeof(cBuff);
+    args.DLen = sizeof(dBuff);
+    args.ELen = sizeof(eBuff);
+    args.FNLen = sizeof(fnBuff);
+
+    args.Arc = 0;
+    args.Brc = 0;
+    args.Crc = 0;
+    args.Drc = 0;
+    args.Erc = 0;
+    args.FNrc = 0;
+
+    // Populate dmFilePathArgs_t struct starting from the file name.
+    uint32_t currentDirNum = size - 1;
+    strcpy(args.pFName, tokens[currentDirNum--].c_str());
+    strcpy(args.pDirE, tokens[currentDirNum--].c_str());
+    strcpy(args.pDirD, tokens[currentDirNum--].c_str());
+    strcpy(args.pDirC, tokens[currentDirNum--].c_str());
+    strcpy(args.pDirB, tokens[currentDirNum--].c_str());
+    strcpy(args.pDirA, tokens[currentDirNum--].c_str());
+
+    RETURN_ON_WE_ERROR(dmFPath2Oid(&args, oid, partition, segment),
+                       ERR_DM_CONVERT_OID);
+
+    return NO_ERROR;
+}
+
 /*******************************************************************************
  * DESCRIPTION:
  *    Map specified errno to the associated error message string.
@@ -921,6 +1043,52 @@ int Convertor::dmOid2FPath(uint32_t oid, uint32_t partition, uint32_t segment,
         return -1;
     else
         return 0;
+}
+
+int Convertor::dmFPath2Oid(dmFilePathArgs_t* pArgs, uint32_t& oid,
+                           uint32_t& partition, uint32_t& segment)
+{
+    uint32_t val = 0;
+
+    // OID.
+    oid = 0;
+    if ((pArgs->Arc = _fromDir(pArgs->pDirA, val)) == -1)
+    {
+        return -1;
+    }
+    oid = val << 24;
+
+    if ((pArgs->Brc = _fromDir(pArgs->pDirB, val)) == -1)
+    {
+        return -1;
+    }
+    oid |= val << 16;
+
+    if ((pArgs->Crc = _fromDir(pArgs->pDirC, val)) == -1)
+    {
+        return -1;
+    }
+    oid |= val << 8;
+
+    if ((pArgs->Drc = _fromDir(pArgs->pDirD, val)) == -1)
+    {
+        return -1;
+    }
+    oid |= val;
+
+    // Partition.
+    if ((pArgs->Erc = _fromDir(pArgs->pDirE, partition)) == -1)
+    {
+        return -1;
+    }
+
+    // Segment.
+    if ((pArgs->FNrc = _fromFile(pArgs->pFName, segment)) == -1)
+    {
+        return -1;
+    }
+
+    return 0;
 }
 
 } //end of namespace
