@@ -40,9 +40,9 @@ namespace
 const char DATE_TIME_FORMAT[] = "%04d-%02d-%02d %02d:%02d:%02d";
 const char CS_DIR_FORMAT[] = "[0-9][0-9][0-9].dir";
 const char CS_FILE_FORMAT[] = "FILE[0-9][0-9][0-9].cdf";
-const char CS_FULL_FILENAME_FORMAT[]
-    = "/[0-9][0-9][0-9].dir/[0-9][0-9][0-9].dir/[[0-9][0-9][0-9].dir/"
-      "[0-9][0-9][0-9].dir/[0-9][0-9][0-9].dir/FILE[0-9][0-9][0-9].cdf";
+const char CS_FULL_FILENAME_FORMAT[] =
+    "*/[0-9][0-9][0-9].dir/[0-9][0-9][0-9].dir/[[0-9][0-9][0-9].dir/"
+    "[0-9][0-9][0-9].dir/[0-9][0-9][0-9].dir/FILE[0-9][0-9][0-9].cdf";
 
 /*******************************************************************************
  * DESCRIPTION:
@@ -121,7 +121,7 @@ int _fromFile(const char* buffer, uint32_t& val)
 {
     int rc = -1;
 
-    if (buffer && (fnmatch(buffer, CS_FILE_FORMAT, 0) == 0))
+    if (buffer && (fnmatch(CS_FILE_FORMAT, buffer, 0) == 0))
     {
         char num[3];
         // strlen("FILE") == 4
@@ -336,8 +336,8 @@ int Convertor::fileName2Oid(const std::string& fullFileName, uint32_t& oid,
 
     // Verify the given `fullFileName`.
     /*
-    if (!size
-        || !(fnmatch(fullFileName.c_str(), CS_FULL_FILENAME_FORMAT, 0) == 0))
+    if (!size ||
+        !(fnmatch(CS_FULL_FILENAME_FORMAT, fullFileName.c_str(), 0) == 0))
     {
         return -1;
     }
