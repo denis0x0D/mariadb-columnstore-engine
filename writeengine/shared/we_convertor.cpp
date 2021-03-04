@@ -38,11 +38,14 @@ using namespace execplan;
 namespace
 {
 const char DATE_TIME_FORMAT[] = "%04d-%02d-%02d %02d:%02d:%02d";
-const char CS_DIR_FORMAT[] = "[0-9][0-9][0-9].dir";
-const char CS_FILE_FORMAT[] = "FILE[0-9][0-9][0-9].cdf";
+// ColumnStore file `full file name` format.
 const char CS_FULL_FILENAME_FORMAT[] =
     "*/[0-9][0-9][0-9].dir/[0-9][0-9][0-9].dir/[[0-9][0-9][0-9].dir/"
     "[0-9][0-9][0-9].dir/[0-9][0-9][0-9].dir/FILE[0-9][0-9][0-9].cdf";
+// ColumnStore file `directory name` format.
+const char CS_DIR_FORMAT[] = "[0-9][0-9][0-9].dir";
+// ColumnStore file `file name` format.
+const char CS_FILE_FORMAT[] = "FILE[0-9][0-9][0-9].cdf";
 
 /*******************************************************************************
  * DESCRIPTION:
@@ -100,14 +103,25 @@ int _doFile(char* pBuffer, int blen, unsigned char val)
     return rc;
 }
 
-// TODO: Decription
+/*******************************************************************************
+ * DESCRIPTION:
+ *    Takes a buffer in ColumnStore `directory` format and converts it to an
+ *    integer.
+ * PARAMETERS:
+ *    buffer(input)  - a pointer to the input buffer.
+      val   (output) - converted integer.
+ * RETURN:
+ *   0 is returned on success, -1 is returned on error.
+ ******************************************************************************/
 int _fromDir(const char* buffer, uint32_t& val)
 {
     int rc = -1;
 
+    // Check that buffer is in the correct `directory` format.
     if (buffer && (fnmatch(CS_DIR_FORMAT, buffer, 0) == 0))
     {
         char num[3];
+        // Copy just 3 bytes from the start.
         strncpy(num, buffer, 3);
         val = atoi(num);
         rc = 0;
@@ -116,15 +130,25 @@ int _fromDir(const char* buffer, uint32_t& val)
     return rc;
 }
 
-// TODO: Description
+/*******************************************************************************
+ * DESCRIPTION:
+ *    Takes a buffer in ColumnStore `file` format and converts it to an
+ *    integer.
+ * PARAMETERS:
+ *    buffer(input)  - a pointer to the input buffer.
+      val   (output) - converted integer.
+ * RETURN:
+ *   0 is returned on success, -1 is returned on error.
+ ******************************************************************************/
 int _fromFile(const char* buffer, uint32_t& val)
 {
     int rc = -1;
 
+    // Check that buffer is in the correct `file` format.
     if (buffer && (fnmatch(CS_FILE_FORMAT, buffer, 0) == 0))
     {
         char num[3];
-        // strlen("FILE") == 4
+        // Copy 3 bytes with offset 4.
         strncpy(num, buffer + 4, 3);
         val = atoi(num);
         rc = 0;
@@ -1057,7 +1081,6 @@ int Convertor::dmOid2FPath(uint32_t oid, uint32_t partition, uint32_t segment,
 int Convertor::dmFPath2Oid(dmFilePathArgs_t* pArgs, uint32_t& oid,
                            uint32_t& partition, uint32_t& segment)
 {
-    cout << "Run dmFPath2Oid" << endl;
     uint32_t val = 0;
 
     // OID.
@@ -1066,28 +1089,24 @@ int Convertor::dmFPath2Oid(dmFilePathArgs_t* pArgs, uint32_t& oid,
     {
         return -1;
     }
-    cout << "A" << val << endl;
     oid = val << 24;
 
     if ((pArgs->Brc = _fromDir(pArgs->pDirB, val)) == -1)
     {
         return -1;
     }
-    cout << "B " << val << endl;
     oid |= val << 16;
 
     if ((pArgs->Crc = _fromDir(pArgs->pDirC, val)) == -1)
     {
         return -1;
     }
-    cout << "C " << val << endl;
     oid |= val << 8;
 
     if ((pArgs->Drc = _fromDir(pArgs->pDirD, val)) == -1)
     {
         return -1;
     }
-    cout << "D " << val << endl;
     oid |= val;
 
     // Partition.
@@ -1095,14 +1114,12 @@ int Convertor::dmFPath2Oid(dmFilePathArgs_t* pArgs, uint32_t& oid,
     {
         return -1;
     }
-    cout << "partition " << partition << endl;
 
     // Segment.
     if ((pArgs->FNrc = _fromFile(pArgs->pFName, segment)) == -1)
     {
         return -1;
     }
-    cout << "segment " << segment << endl;
 
     return 0;
 }
