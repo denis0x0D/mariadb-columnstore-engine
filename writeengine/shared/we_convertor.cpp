@@ -406,7 +406,10 @@ int Convertor::fileName2Oid(const std::string& fullFileName, uint32_t& oid,
     }
 
     // Make sure we parsed 6 instances.
-    idbassert(dirNames.size() == 6);
+    if (dirNames.size() != 6)
+    {
+        return -1;
+    }
 
     // Initialize `dmFilePathArgs_t` struct.
     dmFilePathArgs_t args;
