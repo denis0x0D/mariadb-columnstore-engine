@@ -354,44 +354,63 @@ int Convertor::oid2FileName(FID fid,
 int Convertor::fileName2Oid(const std::string& fullFileName, uint32_t& oid,
                             uint32_t& partition, uint32_t& segment)
 {
+    // ColumnStore file separator by directory.
     const char dirSep = '/';
-    const uint32_t size = fullFileName.size();
-    dmFilePathArgs_t args;
+    // The number of the directories in the ColumnStore file name.
+    const uint32_t dirNamesMaxSize = 6;
+    const uint32_t fullFileNameLen = fullFileName.size();
 
     // Verify the given `fullFileName`.
     /*
-    if (!size ||
+    if (!fullFileNameLen ||
         !(fnmatch(CS_FULL_FILENAME_FORMAT, fullFileName.c_str(), 0) == 0))
     {
         return -1;
     }
     */
 
-    // Split the given `fullFileName` into tokens by separator.
-    std::vector<std::string> tokens;
-    tokens.reserve(8);
+    std::vector<std::string> dirNames;
+    // We need exact 6 instances.
+    dirNames.reserve(6);
 
-    uint32_t index = 0;
-    while (index < size)
+    uint32_t end = fullFileNameLen;
+    // Signed integer for `index` since it could be less than zero.
+    int32_t index = fullFileNameLen - 1;
+
+    // Iterate over `fullFileName` starting from the end and split it by
+    // directory separator. Since we starting from the end we need just 6
+    // instances to match ColumnStore file format specification.
+    while (index >= 0 && dirNames.size() < dirNamesMaxSize)
     {
-        std::string token;
-        while (index < size && fullFileName[index] != dirSep)
+        while (index >= 0 && fullFileName[index] != dirSep)
         {
-            token.push_back(fullFileName[index]);
-            ++index;
+            --index;
         }
-        if (token.size())
+
+        // Begin is a `dirSep` index + 1.
+        uint32_t begin = index + 1;
+        uint32_t dirNameLen = end - begin;
+        if (dirNameLen > 0 && dirNameLen < MAX_DB_DIR_NAME_SIZE)
         {
-            // Make sure that token the len is less than MAX_DB_DIR_NAME_SIZE.
-            idbassert(token.size() < MAX_DB_DIR_NAME_SIZE);
-            tokens.push_back(token);
+            dirNames.push_back(fullFileName.substr(begin, dirNameLen));
         }
-        ++index;
+        else
+        {
+            // Something wrong with file name, just return an error.
+            return -1;
+        }
+        // Set `end` to the last directory separator index.
+        end = index;
+        // Skip current directory separator.
+        --index;
     }
 
-    idbassert(tokens.size() >= 6);
+    // Make sure we parsed 6 instances.
+    idbassert(dirNames.size() == 6);
 
-    // Initialize dmFilePathArgs_t by the memory allocated on the stack.
+    // Initialize `dmFilePathArgs_t` struct.
+    dmFilePathArgs_t args;
+
     char aBuff[MAX_DB_DIR_NAME_SIZE];
     char bBuff[MAX_DB_DIR_NAME_SIZE];
     char cBuff[MAX_DB_DIR_NAME_SIZE];
@@ -420,21 +439,16 @@ int Convertor::fileName2Oid(const std::string& fullFileName, uint32_t& oid,
     args.Erc = 0;
     args.FNrc = 0;
 
-    const uint32_t tokenSize = tokens.size();
-    cout << tokens[tokenSize - 1].c_str() << endl;
-    cout << tokens[tokenSize - 2].c_str() << endl;
-    cout << tokens[tokenSize - 3].c_str() << endl;
-    cout << tokens[tokenSize - 4].c_str() << endl;
-    cout << tokens[tokenSize - 5].c_str() << endl;
-    cout << tokens[tokenSize - 6].c_str() << endl;
+    // Populate `dmFilePathArgs_t` struct with the given names.
+    strcpy(args.pFName, dirNames[0].c_str());
+    strcpy(args.pDirE, dirNames[1].c_str());
+    strcpy(args.pDirD, dirNames[2].c_str());
+    strcpy(args.pDirC, dirNames[3].c_str());
+    strcpy(args.pDirB, dirNames[4].c_str());
+    strcpy(args.pDirA, dirNames[5].c_str());
 
-    strcpy(args.pFName, tokens[tokenSize - 1].c_str());
-    strcpy(args.pDirE, tokens[tokenSize - 2].c_str());
-    strcpy(args.pDirD, tokens[tokenSize - 3].c_str());
-    strcpy(args.pDirC, tokens[tokenSize - 4].c_str());
-    strcpy(args.pDirB, tokens[tokenSize - 5].c_str());
-    strcpy(args.pDirA, tokens[tokenSize - 6].c_str());
-
+    // FIXME: Currenly used ERR_DM_CONVERT_OID, should we introdice new error
+    // code?
     RETURN_ON_WE_ERROR(dmFPath2Oid(&args, oid, partition, segment),
                        ERR_DM_CONVERT_OID);
 
