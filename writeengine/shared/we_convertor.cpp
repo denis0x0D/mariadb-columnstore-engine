@@ -40,7 +40,7 @@ namespace
 const char DATE_TIME_FORMAT[] = "%04d-%02d-%02d %02d:%02d:%02d";
 // ColumnStore file `full file name` format.
 const char CS_FULL_FILENAME_FORMAT[] =
-    "*/[0-9][0-9][0-9].dir/[0-9][0-9][0-9].dir/[[0-9][0-9][0-9].dir/"
+    "*[0-9][0-9][0-9].dir/[0-9][0-9][0-9].dir/[[0-9][0-9][0-9].dir/"
     "[0-9][0-9][0-9].dir/[0-9][0-9][0-9].dir/FILE[0-9][0-9][0-9].cdf";
 // ColumnStore file `directory name` format.
 const char CS_DIR_FORMAT[] = "[0-9][0-9][0-9].dir";
@@ -357,17 +357,17 @@ int Convertor::fileName2Oid(const std::string& fullFileName, uint32_t& oid,
     // ColumnStore file separator by directory.
     const char dirSep = '/';
     // The number of the directories in the ColumnStore file name.
+    // Note: without `DBRoot` directory.
     const uint32_t dirNamesMaxSize = 6;
     const uint32_t fullFileNameLen = fullFileName.size();
 
     // Verify the given `fullFileName`.
-    /*
     if (!fullFileNameLen ||
-        !(fnmatch(CS_FULL_FILENAME_FORMAT, fullFileName.c_str(), 0) == 0))
+        // If not match return code is not equal to zero.
+        fnmatch(CS_FULL_FILENAME_FORMAT, fullFileName.c_str(), 0))
     {
         return -1;
     }
-    */
 
     std::vector<std::string> dirNames;
     // We need exact 6 instances.
