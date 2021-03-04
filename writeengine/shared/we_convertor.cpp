@@ -351,10 +351,21 @@ int Convertor::oid2FileName(FID fid,
     return NO_ERROR;
 }
 
+/*******************************************************************************
+ * DESCRIPTION:
+ *    Convert the given filename to and oid, segment and partition.
+ * PARAMETERS:
+ *    fullFileName INPUT  -- filename.
+ *    oid          OUTPUT -- oid number from the given filename.
+ *    partition    OUTPUT -- partition number from the given filename.
+ *    segment      OUTPUT -- segment number from the given fielname.
+ * RETURN:
+ *    NO_ERROR if success, other if fail.
+ ******************************************************************************/
 int Convertor::fileName2Oid(const std::string& fullFileName, uint32_t& oid,
                             uint32_t& partition, uint32_t& segment)
 {
-    // ColumnStore file separator by directory.
+    // ColumnStore file directory separator.
     const char dirSep = '/';
     // The number of the directories in the ColumnStore file name.
     // Note: without `DBRoot` directory.
@@ -396,7 +407,7 @@ int Convertor::fileName2Oid(const std::string& fullFileName, uint32_t& oid,
         }
         else
         {
-            // Something wrong with file name, just return an error.
+            // Something wrong with filename, just return an error.
             return -1;
         }
         // Set `end` to the last directory separator index.
@@ -1094,6 +1105,21 @@ int Convertor::dmOid2FPath(uint32_t oid, uint32_t partition, uint32_t segment,
     else
         return 0;
 }
+
+/*******************************************************************************
+ * DESCRIPTION:
+ * Converts an populated `dmFilePathArgs_t` struct to and OID, partition,
+ * and segment.
+ *
+ * PARAMETERS:
+ *    pArgs     INPUT --  a pointer to `dmFilePathArgs_t` struct.
+ *    oid       OUTPUT -- oid for the given file name.
+ *    partition OUTPUT -- partition for the given file name.
+ *    segment   OUTPUT -- segment for the given filename.
+ *
+ * RETURN:
+ *    return 0 if everything went OK.  -1 if an error occured.
+ ******************************************************************************/
 
 int Convertor::dmFPath2Oid(dmFilePathArgs_t* pArgs, uint32_t& oid,
                            uint32_t& partition, uint32_t& segment)
