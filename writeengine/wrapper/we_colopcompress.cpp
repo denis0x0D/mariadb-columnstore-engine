@@ -189,9 +189,9 @@ int ColumnOpCompress1::flushFile(int rc, std::map<FID, FID>& columnOids)
     return m_chunkManager->flushChunks(rc, columnOids);
 }
 
-
 int ColumnOpCompress1::expandAbbrevColumnExtent(
-    IDBDataFile* pFile, uint16_t dbRoot, uint64_t emptyVal, int width)
+    IDBDataFile* pFile, uint16_t dbRoot, uint64_t emptyVal, int width,
+    execplan::CalpontSystemCatalog::ColDataType colDataType)
 {
     // update the uncompressed initial chunk to full chunk
     int rc = m_chunkManager->expandAbbrevColumnExtent(pFile, emptyVal, width);
@@ -204,7 +204,8 @@ int ColumnOpCompress1::expandAbbrevColumnExtent(
     }
 
     // let the base to physically expand extent.
-    return FileOp::expandAbbrevColumnExtent(pFile, dbRoot, emptyVal, width);
+    return FileOp::expandAbbrevColumnExtent(pFile, dbRoot, emptyVal, width,
+                                            colDataType);
 }
 
 

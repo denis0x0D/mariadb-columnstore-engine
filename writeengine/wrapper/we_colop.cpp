@@ -282,8 +282,12 @@ int ColumnOp::allocRowId(const TxnID& txnid, bool useStartingExtent,
                         {
                             uint64_t emptyVal = getEmptyRowValue(newColStructList[i].colDataType, newColStructList[i].colWidth);
                             string errorInfo;
-                            rc = fileOp.fillCompColumnExtentEmptyChunks(newColStructList[i].dataOid, newColStructList[i].colWidth,
-                                    emptyVal, dbRoot, partition, segment, newHwm, segFile, errorInfo);
+                            rc = fileOp.fillCompColumnExtentEmptyChunks(
+                                newColStructList[i].dataOid,
+                                newColStructList[i].colWidth, emptyVal, dbRoot,
+                                partition, segment,
+                                newColStructList[i].colDataType, newHwm,
+                                segFile, errorInfo);
 
                             if (rc != NO_ERROR)
                                 return rc;
@@ -307,7 +311,11 @@ int ColumnOp::allocRowId(const TxnID& txnid, bool useStartingExtent,
                                 }
 
                                 uint64_t emptyVal = getEmptyRowValue(newColStructList[i].colDataType, newColStructList[i].colWidth);
-                                rc = fileOp.expandAbbrevColumnExtent( pFile, dbRoot, emptyVal, newColStructList[i].colWidth);
+                                rc = fileOp.expandAbbrevColumnExtent(
+                                    pFile, dbRoot, emptyVal,
+                                    newColStructList[i].colWidth,
+                                    newColStructList[i].colDataType);
+
                                 //set hwm for this extent.
                                 fileOp.closeFile(pFile);
 
@@ -1282,6 +1290,7 @@ int ColumnOp::extendColumn(
     int rc = extendFile(column.dataFile.fid,
                         emptyVal,
                         column.colWidth,
+                        column.colDataType,
                         hwm,
                         startLbid,
                         allocSize,
@@ -1353,7 +1362,8 @@ int ColumnOp::expandAbbrevExtent(const Column& column)
     int rc = expandAbbrevColumnExtent(column.dataFile.pFile,
                                       column.dataFile.fDbRoot,
                                       emptyVal,
-                                      column.colWidth);
+                                      column.colWidth,
+                                      column.colDataType);
 
     return rc;
 }
