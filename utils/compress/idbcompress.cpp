@@ -416,6 +416,25 @@ uint64_t IDBCompressInterface::getHdrSize(const void* hdrBuf) const
 }
 
 //------------------------------------------------------------------------------
+// Get column type
+//-----------------------------------------------------------------------------
+execplan::CalpontSystemCatalog::ColDataType
+IDBCompressInterface::getColDataType(const void* hdrBuf) const
+{
+    return (
+        reinterpret_cast<const CompressedDBFileHeader*>(hdrBuf)->fColDataType);
+}
+
+//------------------------------------------------------------------------------
+// Get column width
+//------------------------------------------------------------------------------
+uint64_t IDBCompressInterface::getColumnWidth(const void* hdrBuf) const
+{
+    return (
+        reinterpret_cast<const CompressedDBFileHeader*>(hdrBuf)->fColumnWidth);
+}
+
+//------------------------------------------------------------------------------
 // Calculates the chunk and block offset within the chunk for the specified
 // block number.
 //------------------------------------------------------------------------------

@@ -223,6 +223,17 @@ public:
     EXPORT uint64_t getHdrSize(const void* hdrBuf) const;
 
     /**
+     * getColumnType
+     */
+    EXPORT execplan::CalpontSystemCatalog::ColDataType
+    getColDataType(const void* hdrBuf) const;
+
+    /**
+     * getColumnWidth
+     */
+    EXPORT uint64_t getColumnWidth(const void* hdrBuf) const;
+
+    /**
      * Mutator methods for the user padding bytes
      */
     /**
@@ -327,6 +338,12 @@ inline uint64_t IDBCompressInterface::getHdrSize(const void*) const
 {
     return 0;
 }
+inline execplan::CalpontSystemCatalog::ColDataType
+IDBCompressInterface::getColDataType(const void* hdrBuf) const
+{
+    return execplan::CalpontSystemCatalog::ColDataType::UNDEFINED;
+}
+inline uint64_t getColumnWidth(const void* hdrBuf) const { return 0; }
 inline uint64_t IDBCompressInterface::maxCompressedSize(uint64_t uncompSize)
 {
     return uncompSize;
