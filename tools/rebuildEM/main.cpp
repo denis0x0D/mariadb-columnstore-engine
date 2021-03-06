@@ -4,287 +4,189 @@
 *****************************************************************************/
 #include <iostream>
 #include <unistd.h>
-//#define _XOPEN_SOURCE 500
 #include <ftw.h>
-#include <fnmatch.h>
 #include <cassert>
-#include <boost/tokenizer.hpp>
-#include <stack>
-#include <stdexcept>
-using namespace std;
-using namespace boost;
-
-#include "configcpp.h"
-using namespace config;
-
-#include "extentmap.h"
-using namespace BRM;
 
 #include "calpontsystemcatalog.h"
-#include "dm.h"
+#include "configcpp.h"
+#include "extentmap.h"
+#include "we_convertor.h"
+#include "idbcompress.h"
+#include "we_fileop.h"
+
+#include "IDBDataFile.h"
+#include "BufferedFile.h"
+#include "IDBPolicy.h"
+#include "IDBFileSystem.h"
+
+using namespace idbdatafile;
 
 namespace
 {
+struct RebuildEMManager;
+using RM = RebuildEMManager;
 
-unsigned vflg = 0;
-bool dflg = false;
-string DBRoot;
-string pattern;
-unsigned extentSize;
-ExtentMap em;
+// This struct represents a manager class, which manages global data.
+// Actually it is a much safe to use singleton to manage global data,
+// instead of defining it directly. "When destructors are trivial, their
+// execution is not subject to ordering at all (they are effectively not
+// "run"); otherwise we are exposed to the risk of accessing objects after the
+// end of their lifetime."
+struct RebuildEMManager
+{
+    RebuildEMManager(const RebuildEMManager&) = delete;
+    RebuildEMManager(RebuildEMManager&&) = delete;
+    RebuildEMManager& operator=(const RebuildEMManager&) = delete;
+    RebuildEMManager& operator=(RebuildEMManager&&) = delete;
+    ~RebuildEMManager() = delete;
+
+    static RebuildEMManager* instance()
+    {
+        static RebuildEMManager* instance = new RebuildEMManager();
+        return instance;
+    }
+
+    void setDBRoot(const std::string& dbRoot) { dbRootName_ = dbRoot; }
+    void setDBroot(uint32_t dbRootNumber) { dbRootNumber_ = dbRootNumber; }
+    void setVerbose(bool verbose) { verbose_ = verbose; }
+    void setDisplay(bool display) { display_ = display; }
+    void setDBRootNumber(uint32_t number) { dbRootNumber_ = number; }
+
+    const std::string& getDBRoot() const { return dbRootName_; }
+    uint32_t getDBRootNumber() const { return dbRootNumber_; }
+    bool doVerbose() const { return verbose_; }
+    bool doDisplay() const { return display_; }
+    BRM::ExtentMap& getEM() { return extentMap_; }
+
+  private:
+    RebuildEMManager() = default;
+
+    BRM::ExtentMap extentMap_;
+    bool verbose_{false};
+    bool display_{false};
+    std::string dbRootName_;
+    uint32_t dbRootNumber_;
+};
 
 void usage(const string& pname)
 {
-    cout << "usage: " << pname << " [-vdh]" << endl <<
-         "   rebuilds the extent map from the contents of the database file system." << endl <<
-         "   -v display verbose progress information. More v's, more debug" << endl <<
-         "   -d display what would be done--don't do it" << endl <<
-         "   -h display this help text" << endl;
-}
-
-OID_t pname2OID(const string& fpath)
-{
-    dmFilePathArgs_t args;
-    char aBuff[10];
-    char bBuff[10];
-    char cBuff[10];
-    char fnBuff[16];
-    int rc;
-    OID_t oid;
-
-    args.pDirA = aBuff;
-    args.pDirB = bBuff;
-    args.pDirC = cBuff;
-    args.pFName = fnBuff;
-    args.ALen = sizeof(aBuff);
-    args.BLen = sizeof(bBuff);
-    args.CLen = sizeof(cBuff);
-    args.FNLen = sizeof(fnBuff);
-    args.Arc = 0;
-    args.Brc = 0;
-    args.Crc = 0;
-    args.FNrc = 0;
-
-    typedef tokenizer<char_separator<char> > tokenizer;
-    char_separator<char> sep("/");
-    tokenizer tokens(fpath, sep);
-    tokenizer::iterator tok_iter = tokens.begin();
-    tokenizer::iterator end = tokens.end();
-    typedef stack<string> pcomps_t;
-    pcomps_t pcomps;
-
-    while (tok_iter != end)
-    {
-        pcomps.push(*tok_iter);
-        ++tok_iter;
-    }
-
-    idbassert(pcomps.size() >= 4);
-
-    string pcomp;
-    pcomp = pcomps.top();
-    pcomps.pop();
-    idbassert(pcomp.size() < 16);
-    strcpy(args.pFName, pcomp.c_str());
-    pcomp = pcomps.top();
-    pcomps.pop();
-    idbassert(pcomp.size() < 10);
-    strcpy(args.pDirC, pcomp.c_str());
-    pcomp = pcomps.top();
-    pcomps.pop();
-    idbassert(pcomp.size() < 10);
-    strcpy(args.pDirB, pcomp.c_str());
-    pcomp = pcomps.top();
-    pcomps.pop();
-    idbassert(pcomp.size() < 10);
-    strcpy(args.pDirA, pcomp.c_str());
-
-    rc = dmFPath2Oid(&args, (UINT32*)&oid);
-
-    if (rc != 0)
-    {
-        oid = 0;
-    }
-
-    return oid;
-}
-
-bool isCalpontDBFile(const string& fpath)
-{
-    return (fnmatch(pattern.c_str(), fpath.c_str(), 0) == 0);
+    std::cout << "usage: " << pname << " [-vdh]" << std::endl;
+    std::cout
+        << "rebuilds the extent map from the contents of the database file "
+           "system."
+        << std::endl;
+    std::cout
+        << "   -v display verbose progress information. More v's, more debug"
+        << std::endl;
+    std::cout << "   -d display what would be done--don't do it" << std::endl;
+    std::cout << "   -h display this help text" << std::endl;
 }
 
 int walkDB(const char* fp, const struct stat* sb, int typeflag, struct FTW* ftwbuf)
 {
-    string fpath(fp);
-    unsigned numExtents;
-    unsigned numBlocks;
-
     if (typeflag != FTW_F)
     {
         return FTW_CONTINUE;
     }
+    std::string fullFileName = fp;
 
-    if (!isCalpontDBFile(fpath))
+    uint32_t oid;
+    uint32_t partition;
+    uint32_t segment;
+    // Initialize oid, partition and segment from the given `fullFileName`.
+    auto rc = WriteEngine::Convertor::fileName2Oid(fullFileName, oid,
+                                                   partition, segment);
+    if (rc != 0)
     {
-        if (vflg > 2)
-        {
-            cout << "Skipping non-Calpont DB file " << fpath << endl;
-        }
-
         return FTW_CONTINUE;
     }
 
-    if (vflg)
+    if (RM::instance()->doVerbose())
     {
-        cout << "Processing file " << fpath << endl;
-        numBlocks = (sb->st_size + (BLOCK_SIZE - 1)) / BLOCK_SIZE;
-        numExtents = (numBlocks + (extentSize - 1)) / extentSize;
-
-        if (vflg > 1)
-        {
-            cout << "File is " << numExtents << " extent" << (numExtents > 1 ? "s" : "") <<
-                 ", " << numBlocks << " block" << (numBlocks > 1 ? "s" : "") <<
-                 ", " << sb->st_size << " bytes, ";
-        }
+        std::cout << "Processing file: " << fullFileName << "  [OID: " << oid
+                  << ", partition: " << partition << ", segment: " << segment
+                  << "] " << std::endl;
     }
 
-    OID_t oid;
-    oid = pname2OID(fpath);
-
-    if (vflg > 1)
+    // Open the given file.
+    auto* dbFile = IDBDataFile::open(
+        IDBPolicy::getType(fullFileName, IDBPolicy::WRITEENG),
+        fullFileName.c_str(), "rb", 1);
+    if (!dbFile)
     {
-        cout << "OID is " << oid << ", ";
-    }
-
-    if (oid <= 10)
-    {
-        if (vflg)
+        if (RM::instance()->doVerbose())
         {
-            cout << endl << "OID " << oid << " is probably a VBBF and is being skipped" << endl;
+            std::cout << "Cannot open file " << fullFileName << std::endl;
         }
-
         return FTW_CONTINUE;
     }
 
-    HWM_t hwm;
-#ifdef DELETE_FIRST
-
-    try
+    rc = dbFile->seek(0, 0);
+    if (rc != 0)
     {
-        hwm = em.getHWM(oid);
-    }
-    catch (exception& ex)
-    {
-        if (vflg)
-        {
-            cout << endl << "There was no HWM for OID " << oid <<
-                 ", it is probably a VBBF and is being skipped: " << ex.what() << endl;
-        }
-
-        return FTW_CONTINUE;
-    }
-    catch (...)
-    {
-        if (vflg)
-        {
-            cout << endl << "There was no HWM for OID " << oid <<
-                 ", it is probably a VBBF and is being skipped" << endl;
-        }
-
         return FTW_CONTINUE;
     }
 
-#else
-    hwm = numBlocks - 1;
-#endif
-
-    if (vflg > 1)
+    // Read and verify header.
+    WriteEngine::FileOp fileOp;
+    char fileHeader[compress::IDBCompressInterface::HDR_BUF_LEN * 2];
+    rc = fileOp.readHeaders(dbFile, fileHeader);
+    if (rc != 0)
     {
-        cout << "HWM is " << hwm << endl;
-    }
-
-#ifdef DELETE_FIRST
-
-    if (vflg > 1)
-    {
-        cout << "Deleting OID " << oid << " from Extent Map" << endl;
-    }
-
-    if (!dflg)
-    {
-        em.deleteOID(oid);
-        em.confirmChanges();
-    }
-
-#endif
-
-    vector<LBID_t> lbids;
-    int allocdsize = 0;
-
-    if (vflg > 1)
-    {
-        cout << "Creating extent for " << numBlocks << " blocks for OID " << oid << endl;
-    }
-
-    if (!dflg)
-    {
-        em.createExtent(numBlocks, oid, lbids, allocdsize);
-        em.confirmChanges();
-    }
-
-    if (vflg > 1)
-    {
-        cout << "Created " << allocdsize << " LBIDs for OID " << oid << endl;
-
-        if (vflg > 2)
+        if (RM::instance()->doVerbose())
         {
-            vector<LBID_t>::iterator iter = lbids.begin();
-            vector<LBID_t>::iterator end = lbids.end();
-            cout << "First LBIDs from each extent are ";
-
-            while (iter != end)
-            {
-                cout << *iter << ", ";
-                ++iter;
-            }
-
-            cout << endl;
+            std::cout << "Cannot read file header from the file " << fullFileName << std::endl;
         }
+        return FTW_CONTINUE;
     }
 
-    if (vflg > 1)
+    // Read the `colDataType` and `colWidth` from the given header.
+    compress::IDBCompressInterface compressor;
+    auto colDataType = compressor.getColDataType(fileHeader);
+    auto colWidth = compressor.getColumnWidth(fileHeader);
+    uint32_t startBlockOffset;
+
+    BRM::LBID_t lbid;
+    int32_t allocdSize = 0;
+
+    if (!RM::instance()->doDisplay())
     {
-        cout << "Setting OID " << oid << " HWM to " << hwm << endl;
+        // Create a column extent for the given oid, partition, segment, dbroot
+        // and column width.
+        RM::instance()->getEM().createColumnExtentExactFile(
+            oid, colWidth, RM::instance()->getDBRootNumber(), partition,
+            segment, colDataType, lbid, allocdSize, startBlockOffset);
+
+        RM::instance()->getEM().confirmChanges();
     }
 
-    if (!dflg)
+    if (RM::instance()->doVerbose())
     {
-        em.setHWM(oid, hwm);
-        em.confirmChanges();
+        std::cout << "Created, allocated size " << allocdSize
+                  << " starting LBID " << lbid << " for OID " << oid
+                  << std::endl;
     }
 
     return FTW_CONTINUE;
 }
+} // namespace
 
-}
 
 int main(int argc, char** argv)
 {
-    int c;
-    string pname(argv[0]);
-
-    opterr = 0;
+    int32_t c;
+    std::string pname(argv[0]);
 
     while ((c = getopt(argc, argv, "vdh")) != EOF)
+    {
         switch (c)
         {
             case 'v':
-                vflg++;
+                RM::instance()->setVerbose(true);
                 break;
 
             case 'd':
-                dflg = true;
+                RM::instance()->setDisplay(true);
                 break;
 
             case 'h':
@@ -294,36 +196,46 @@ int main(int argc, char** argv)
                 return (c == 'h' ? 0 : 1);
                 break;
         }
-
-    const Config* cf = Config::makeConfig();
-    DBRoot = cf->getConfig("SystemConfig", "DBRoot");
-    pattern = DBRoot + "/[0-9][0-9][0-9].dir/[0-9][0-9][0-9].dir/[0-9][0-9][0-9].dir/FILE[0-9][0-9][0-9].cdf";
-
-    if (vflg)
-    {
-        cout << "Using DBRoot " << DBRoot << endl;
     }
 
-    if (access(DBRoot.c_str(), X_OK) != 0)
-    {
-        cerr << "Could not scan DBRoot " << DBRoot << '!' << endl;
-        return 1;
-    }
+    // Make config from default path.
+    // FIXME: Should we allow user to specify a path to config?
+    auto* config = config::Config::makeConfig();
+    std::string dbRootCount = config->getConfig("SystemConfig", "DBRootCount");
 
-    ExtentMap em;
-    extentSize = em.getExtentSize();
+    // Read the number of DBRoots.
+    uint32_t count = config->uFromText(dbRootCount);
+    idbdatafile::IDBPolicy::init(true, false, "", 0);
 
-    if (vflg)
+    // Iterate over DBRoots starting from the first one.
+    for (uint32_t dbRootNumber = 1; dbRootNumber <= count; ++dbRootNumber)
     {
-        cout << "System extent size is " << extentSize << " blocks" << endl;
-    }
+        std::string dbRootName = "DBRoot" + std::to_string(dbRootNumber);
+        RM::instance()->setDBRoot(
+            config->getConfig("SystemConfig", dbRootName));
+        RM::instance()->setDBRootNumber(dbRootNumber);
 
-    if (nftw(DBRoot.c_str(), walkDB, 64, FTW_PHYS | FTW_ACTIONRETVAL) != 0)
-    {
-        cerr << "Error processing files in DBRoot " << DBRoot << '!' << endl;
-        return 1;
+        if (RM::instance()->doVerbose())
+        {
+            std::cout << "Using DBRoot " << RM::instance()->getDBRoot()
+                      << std::endl;
+        }
+
+        if (access(RM::instance()->getDBRoot().c_str(), X_OK) != 0)
+        {
+            std::cerr << "Could not scan DBRoot "
+                      << RM::instance()->getDBRoot() << '!' << std::endl;
+            return 1;
+        }
+
+        if (nftw(RM::instance()->getDBRoot().c_str(), walkDB, 64,
+                 FTW_PHYS | FTW_ACTIONRETVAL) != 0)
+        {
+            std::cerr << "Error processing files in DBRoot "
+                      << RM::instance()->getDBRoot() << '!' << std::endl;
+            return 1;
+        }
     }
 
     return 0;
 }
-
