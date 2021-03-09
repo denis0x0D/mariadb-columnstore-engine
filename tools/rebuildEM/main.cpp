@@ -77,28 +77,25 @@ int main(int argc, char** argv)
          ++dbRootNumber)
     {
         std::string dbRootName = "DBRoot" + std::to_string(dbRootNumber);
-        RM::instance()->setDBRoot(
-            config->getConfig("SystemConfig", dbRootName));
-        RM::instance()->setDBRootNumber(dbRootNumber);
+        auto dbRootPath = config->getConfig("SystemConfig", dbRootName);
+        RM::instance()->setDBRoot(dbRootNumber);
 
         if (RM::instance()->doVerbose())
         {
-            std::cout << "Using DBRoot " << RM::instance()->getDBRoot()
-                      << std::endl;
+            std::cout << "Using DBRoot " << dbRootPath << std::endl;
         }
 
-        if (access(RM::instance()->getDBRoot().c_str(), X_OK) != 0)
+        if (access(dbRootPath.c_str(), X_OK) != 0)
         {
-            std::cerr << "Could not scan DBRoot "
-                      << RM::instance()->getDBRoot() << '!' << std::endl;
+            std::cerr << "Could not scan DBRoot " << dbRootPath << std::endl;
             return 1;
         }
 
-        if (nftw(RM::instance()->getDBRoot().c_str(), walkDB, 64,
+        if (nftw(dbRootPath.c_str(), walkDB, 64,
                  FTW_PHYS | FTW_ACTIONRETVAL) != 0)
         {
-            std::cerr << "Error processing files in DBRoot "
-                      << RM::instance()->getDBRoot() << '!' << std::endl;
+            std::cerr << "Error processing files in DBRoot " << dbRootPath
+                      << std::endl;
             return 1;
         }
     }

@@ -160,7 +160,19 @@ TEST_F(RebuildEMTest, File2OidCalculationTest)
 
 TEST_F(RebuildEMTest, rebuildExtentMap)
 {
-    // TODO: Create FIle
-    std::string fullFileName = "";
-    auto rc = rebuildEM(fullFileName);
+    auto* config = config::Config::makeConfig();
+    idbdatafile::IDBPolicy::init(true, false, "", 0);
+    int32_t allocSize;
+    DbFileOp dbFileOp;
+    /*
+    dbFileOp.createFile(0x01010f, allocSize, 1, 0,
+                        execplan::CalpontSystemCatalog::ColDataType::INT,
+                        emptyVal, 32);
+
+    // Iterate over DBRoots starting from the first one.
+    // std::string dbRootName = "DBRoot" + std::to_string(dbRootNumber);
+    RM::instance()->setDBRoot(config->getConfig("SystemConfig",
+    dbRootName)); RM::instance()->setDBRootNumber(dbRootNumber);a
+    */
+    auto rc = rebuildEM("");
 }

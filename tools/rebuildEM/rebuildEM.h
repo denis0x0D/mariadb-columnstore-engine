@@ -34,14 +34,11 @@ struct RebuildEMManager
         return instance;
     }
 
-    void setDBRoot(const std::string& dbRoot) { dbRootName_ = dbRoot; }
-    void setDBroot(uint32_t dbRootNumber) { dbRootNumber_ = dbRootNumber; }
     void setVerbose(bool verbose) { verbose_ = verbose; }
     void setDisplay(bool display) { display_ = display; }
-    void setDBRootNumber(uint32_t number) { dbRootNumber_ = number; }
+    void setDBRoot(uint32_t number) { dbRoot_ = number; }
 
-    const std::string& getDBRoot() const { return dbRootName_; }
-    uint32_t getDBRootNumber() const { return dbRootNumber_; }
+    uint32_t getDBRoot() const { return dbRoot_; }
     bool doVerbose() const { return verbose_; }
     bool doDisplay() const { return display_; }
     BRM::ExtentMap& getEM() { return extentMap_; }
@@ -52,8 +49,7 @@ struct RebuildEMManager
     BRM::ExtentMap extentMap_;
     bool verbose_{false};
     bool display_{false};
-    std::string dbRootName_;
-    uint32_t dbRootNumber_;
+    uint32_t dbRoot_;
 };
 
 int32_t rebuildEM(const std::string& fullFileName);

@@ -73,8 +73,8 @@ int32_t rebuildEM(const std::string& fullFileName)
         // Create a column extent for the given oid, partition, segment, dbroot
         // and column width.
         RM::instance()->getEM().createColumnExtentExactFile(
-            oid, colWidth, RM::instance()->getDBRootNumber(), partition,
-            segment, colDataType, lbid, allocdSize, startBlockOffset);
+            oid, colWidth, RM::instance()->getDBRoot(), partition, segment,
+            colDataType, lbid, allocdSize, startBlockOffset);
 
         RM::instance()->getEM().confirmChanges();
     }
