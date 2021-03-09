@@ -20,6 +20,7 @@
 #include <vector>
 
 #include "we_convertor.h"
+#include "rebuildEM.h"
 
 class RebuildEMTest : public ::testing::Test
 {
@@ -155,4 +156,11 @@ TEST_F(RebuildEMTest, File2OidCalculationTest)
         EXPECT_EQ(expectedFileId.partition, calculatedFileId.partition);
         EXPECT_EQ(expectedFileId.segment, calculatedFileId.segment);
     }
+}
+
+TEST_F(RebuildEMTest, rebuildExtentMap)
+{
+    // TODO: Create FIle
+    std::string fullFileName = "";
+    auto rc = rebuildEM(fullFileName);
 }
