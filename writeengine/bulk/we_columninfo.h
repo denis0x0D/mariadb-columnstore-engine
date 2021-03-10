@@ -257,6 +257,10 @@ public:
      */
     void getSegFileInfo( DBRootExtentInfo& fileInfo );
 
+    /** @brief Get saved LBID.
+     */
+    BRM::LBID_t getSavedLBID() const;
+
     /** @brief Initialize autoincrement value from the current "next" value
      *  taken from the system catalog.
      */

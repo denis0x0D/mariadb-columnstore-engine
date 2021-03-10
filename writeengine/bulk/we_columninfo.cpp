@@ -1397,6 +1397,9 @@ int ColumnInfo::getHWMInfoForBRM( BRMReporter& brmReporter )
     return entriesAdded;
 }
 
+// Returns a saved LBID.
+BRM::LBID_t ColumnInfo::getSavedLBID() const { return fSavedLbid; }
+
 //------------------------------------------------------------------------------
 // Setup initial extent we will begin loading at start of import.
 // DBRoot, partition, segment, etc for the starting extent are specified.
