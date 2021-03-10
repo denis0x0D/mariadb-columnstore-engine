@@ -176,18 +176,17 @@ TEST_F(RebuildEMTest, rebuildExtentMap)
         blockOp.getCorrectRowWidth(execplan::CalpontSystemCatalog::BIGINT, 8);
     int32_t nBlocks = INITIAL_EXTENT_ROWS_TO_DISK / BYTE_PER_BLOCK * width;
 
-    int32_t allocSize;
     uint32_t dbRoot = 1;
+    uint32_t oid = getOid(255, 255, 255, 255);
     uint32_t partition = 0;
     uint32_t segment = 0;
-    uint32_t oid = 0xffffffff;
+    int32_t allocSize;
 
     auto rc = fileOp.createFile(oid, allocSize, dbRoot, partition,
                                 execplan::CalpontSystemCatalog::BIGINT,
                                 emptyVal, width);
     ASSERT_EQ(rc, 0);
     // Delete Extent by OID.
-    ASSERT_EQ(rc, 0);
     try
     {
         RM::instance()->getEM().deleteOID(oid);
@@ -201,9 +200,9 @@ TEST_F(RebuildEMTest, rebuildExtentMap)
         std::cerr << e.what() << std::endl;
         ASSERT_EQ(1, 0);
     }
-
     RM::instance()->getEM().confirmChanges();
 
+    // Get the filename.
     char fileName[64];
     char dbDirName[20][20];
     rc = WriteEngine::Convertor::oid2FileName(oid, fileName, dbDirName,
@@ -222,5 +221,6 @@ TEST_F(RebuildEMTest, rebuildExtentMap)
     // Rebuild extent map.
     rc = rebuildEM(fullFileName);
     ASSERT_EQ(rc, 0);
-    fileOp.deleteFile(oid);
+    rc = fileOp.deleteFile(fullFileName.c_str());
+    EXPECT_EQ(rc, 0);
 }
