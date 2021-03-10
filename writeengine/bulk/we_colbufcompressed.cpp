@@ -587,6 +587,8 @@ int ColumnBufferCompressed::saveCompressionHeaders( )
                          fColInfo->column.compressionType);
     fCompressor->setBlockCount(hdrBuf,
                                (fColInfo->getFileSize() / BYTE_PER_BLOCK) );
+    // Have to use latest lbid, in case bulk decides to create a new extent.
+    fCompressor->setLBID(hdrBuf, fColInfo->getLastUpdatedLBID());
 
     std::vector<uint64_t> ptrs;
 

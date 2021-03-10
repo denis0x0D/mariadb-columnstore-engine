@@ -291,6 +291,25 @@ IDBDataFile* ChunkManager::getFilePtr(const FID& fid,
 }
 
 //------------------------------------------------------------------------------
+// Get/Return IDBDataFile* for specified OID, root, partition, and segment.
+// Function is to be used to open column segment file.
+// If the IDBDataFile* is not found, then a segment file will be opened using
+// the mode (mode) and I/O buffer size (size) that is given.  Name of the
+// resulting file is returned in filename.
+//------------------------------------------------------------------------------
+IDBDataFile* ChunkManager::getColumnFilePtr(
+    FID& fid, uint16_t root, uint32_t partition, uint16_t segment,
+    execplan::CalpontSystemCatalog::ColDataType colDataType, uint32_t colWidth,
+    std::string& filename, const char* mode, int32_t size,
+    bool useTmpSuffix) const
+{
+    CompFileData* fileData =
+        getFileData(fid, root, partition, segment, filename, mode, size,
+                    colDataType, colWidth, useTmpSuffix, false);
+    return (fileData ? fileData->fFilePtr : NULL);
+}
+
+//------------------------------------------------------------------------------
 // Get/Return CompFileData* for specified column OID, root, partition, and
 // segment.  If the IDBDataFile* is not found, then a segment file will be opened
 // using the mode (mode) and I/O buffer size (size) that is given.  Name of
@@ -411,7 +430,8 @@ IDBDataFile* ChunkManager::createDctnryFile(const FID& fid,
         uint16_t segment,
         const char* filename,
         const char* mode,
-        int size)
+        int size,
+        BRM::LBID_t lbid)
 {
     FileID fileID(fid, root, partition, segment);
     CompFileData* fileData = new CompFileData(fileID, fid, CalpontSystemCatalog::VARCHAR, width);
@@ -440,8 +460,10 @@ IDBDataFile* ChunkManager::createDctnryFile(const FID& fid,
         fileData->fFileHeader.fLongPtrSectData.reset(fileData->fFileHeader.fPtrSection);
     }
 
-    fCompressor.initHdr(fileData->fFileHeader.fControlData, fileData->fFileHeader.fPtrSection,
+    fCompressor.initHdr(fileData->fFileHeader.fControlData,
+                        fileData->fFileHeader.fPtrSection,
                         fFileOp->compressionType(), hdrSize);
+    fCompressor.setLBID(fileData->fFileHeader.fControlData, lbid);
 
     if (writeHeader(fileData, __LINE__) != NO_ERROR)
     {

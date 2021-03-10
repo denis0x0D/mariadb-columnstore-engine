@@ -163,7 +163,8 @@ int FileOp::createDir( const char* dirName, mode_t mode ) const
 int FileOp::createFile( const char* fileName, int numOfBlock,
                         const uint8_t* emptyVal, int width,
                         execplan::CalpontSystemCatalog::ColDataType colDataType,
-                        uint16_t dbRoot )
+                        uint16_t dbRoot,
+                        BRM::LBID_t startLbid )
 {
     IDBDataFile* pFile =
         IDBDataFile::open(
@@ -185,6 +186,7 @@ int FileOp::createFile( const char* fileName, int numOfBlock,
                                              numOfBlock,
                                              emptyVal,
                                              width,
+                                             startLbid,
                                              colDataType );
         }
         else
@@ -284,7 +286,8 @@ int FileOp::createFile(FID fid,
 
 //timer.stop( "allocateColExtent" );
 
-    return createFile( fileName, totalSize, emptyVal, width, colDataType, dbRoot );
+    return createFile(fileName, totalSize, emptyVal, width, colDataType,
+                      dbRoot, startLbid);
 }
 
 /***********************************************************
@@ -815,6 +818,7 @@ int FileOp::extendFile(
         {
             IDBCompressInterface compressor;
             compressor.initHdr(hdrs, width, colDataType, m_compressionType);
+            compressor.setLBID(hdrs, startLbid);
         }
     }
 
@@ -973,6 +977,7 @@ int FileOp::addExtentExactFile(
         {
             IDBCompressInterface compressor;
             compressor.initHdr(hdrs, width, colDataType, m_compressionType);
+            compressor.setLBID(hdrs, startLbid);
         }
     }
 
@@ -1229,6 +1234,7 @@ int FileOp::initAbbrevCompColumnExtent(
     int      nBlocks,
     const uint8_t* emptyVal,
     int      width,
+    BRM::LBID_t startLBID,
     execplan::CalpontSystemCatalog::ColDataType colDataType)
 {
     // Reserve disk space for optimized abbreviated extent
@@ -1257,6 +1263,7 @@ int FileOp::initAbbrevCompColumnExtent(
                                       INITIAL_EXTENT_ROWS_TO_DISK,
                                       emptyVal,
                                       width,
+                                      startLBID,
                                       colDataType,
                                       hdrs );
 
@@ -1292,6 +1299,7 @@ int FileOp::writeInitialCompColumnChunk(
     int      nRows,
     const uint8_t* emptyVal,
     int      width,
+    BRM::LBID_t   startLBID,
     execplan::CalpontSystemCatalog::ColDataType colDataType,
     char*    hdrs)
 {
@@ -1336,6 +1344,7 @@ int FileOp::writeInitialCompColumnChunk(
 
     compressor.initHdr(hdrs, width, colDataType, m_compressionType);
     compressor.setBlockCount(hdrs, nBlocksAllocated);
+    compressor.setLBID(hdrs, startLBID);
 
     // Store compression pointers in the header
     std::vector<uint64_t> ptrs;
