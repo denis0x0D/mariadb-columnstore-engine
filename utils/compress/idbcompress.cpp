@@ -38,8 +38,14 @@ namespace
 const uint64_t MAGIC_NUMBER = 0xfdc119a384d0778eULL;
 const uint64_t VERSION_NUM1 = 1;
 const uint64_t VERSION_NUM2 = 2;
+const uint64_t VERSION_NUM3 = 3;
 const int      COMPRESSED_CHUNK_INCREMENT_SIZE = 8192;
 const int      PTR_SECTION_OFFSET = compress::IDBCompressInterface::HDR_BUF_LEN;
+// Dictionary store extent width == 0. See more details in function
+// `createDictStoreExtent`.
+const uint64_t DICTIONARY_COL_WIDTH = 0;
+const execplan::CalpontSystemCatalog::ColDataType DICTIONARY_COL_TYPE =
+    execplan::CalpontSystemCatalog::VARCHAR;
 
 // version 1.1 of the chunk data has a short header
 // QuickLZ compressed data never has the high bit set on the first byte
@@ -71,6 +77,8 @@ struct CompressedDBFileHeader
     uint64_t fBlockCount;
     uint64_t fColumnWidth;
     execplan::CalpontSystemCatalog::ColDataType fColDataType;
+    uint64_t fLBID0;
+    uint64_t fLBID1;
 };
 
 // Make the header to be 4K, regardless number of fields being defined/used in header.
@@ -80,18 +88,6 @@ union CompressedDBFileHeaderBlock
     char fDummy[compress::IDBCompressInterface::HDR_BUF_LEN];
 };
 
-void initCompressedDBFileHeader(void* hdrBuf, int compressionType, int hdrSize)
-{
-    CompressedDBFileHeaderBlock* hdr = reinterpret_cast<CompressedDBFileHeaderBlock*>(hdrBuf);
-    hdr->fHeader.fMagicNumber     = MAGIC_NUMBER;
-    hdr->fHeader.fVersionNum      = VERSION_NUM2;
-    hdr->fHeader.fCompressionType = compressionType;
-    hdr->fHeader.fBlockCount      = 0;
-    hdr->fHeader.fHeaderSize      = hdrSize;
-    hdr->fHeader.fColumnWidth     = 0;
-    hdr->fHeader.fColDataType     = execplan::CalpontSystemCatalog::ColDataType::UNDEFINED;
-}
-
 void initCompressedDBFileHeader(
     void* hdrBuf, uint32_t columnWidth,
     execplan::CalpontSystemCatalog::ColDataType colDataType,
@@ -99,12 +95,14 @@ void initCompressedDBFileHeader(
 {
     CompressedDBFileHeaderBlock* hdr = reinterpret_cast<CompressedDBFileHeaderBlock*>(hdrBuf);
     hdr->fHeader.fMagicNumber     = MAGIC_NUMBER;
-    hdr->fHeader.fVersionNum      = VERSION_NUM2;
+    hdr->fHeader.fVersionNum      = VERSION_NUM3;
     hdr->fHeader.fCompressionType = compressionType;
     hdr->fHeader.fBlockCount      = 0;
     hdr->fHeader.fHeaderSize      = hdrSize;
     hdr->fHeader.fColumnWidth     = columnWidth;
     hdr->fHeader.fColDataType     = colDataType;
+    hdr->fHeader.fLBID0           = 0;
+    hdr->fHeader.fLBID1           = 0;
 }
 
 } // namespace
@@ -352,22 +350,15 @@ void IDBCompressInterface::storePtrs(const std::vector<uint64_t>& ptrs, void* pt
 }
 
 //------------------------------------------------------------------------------
-// Initialize the header blocks to be written at the start of a column file.
-//------------------------------------------------------------------------------
-void IDBCompressInterface::initHdr(void* hdrBuf, int compressionType) const
-{
-    memset(hdrBuf, 0, HDR_BUF_LEN * 2);
-    initCompressedDBFileHeader(hdrBuf, compressionType, HDR_BUF_LEN * 2);
-}
-
-//------------------------------------------------------------------------------
 // Initialize the header blocks to be written at the start of a dictionary file.
 //------------------------------------------------------------------------------
-void IDBCompressInterface::initHdr(void* hdrBuf, void* ptrBuf, int compressionType, int hdrSize) const
+void IDBCompressInterface::initHdr(void* hdrBuf, void* ptrBuf,
+                                   int compressionType, int hdrSize) const
 {
     memset(hdrBuf, 0, HDR_BUF_LEN);
     memset(ptrBuf, 0, hdrSize - HDR_BUF_LEN);
-    initCompressedDBFileHeader(hdrBuf, compressionType, hdrSize);
+    initCompressedDBFileHeader(hdrBuf, DICTIONARY_COL_WIDTH,
+                               DICTIONARY_COL_TYPE, compressionType, hdrSize);
 }
 
 //------------------------------------------------------------------------------
@@ -381,6 +372,15 @@ void IDBCompressInterface::initHdr(
     memset(hdrBuf, 0, HDR_BUF_LEN * 2);
     initCompressedDBFileHeader(hdrBuf, columnWidth, columnType,
                                compressionType, HDR_BUF_LEN * 2);
+}
+
+//------------------------------------------------------------------------------
+// Get the header's version number
+//------------------------------------------------------------------------------
+uint64_t IDBCompressInterface::getVersionNumber(const void* hdrBuf) const
+{
+    return (
+        reinterpret_cast<const CompressedDBFileHeader*>(hdrBuf)->fVersionNum);
 }
 
 //------------------------------------------------------------------------------
@@ -413,6 +413,59 @@ void IDBCompressInterface::setHdrSize(void* hdrBuf, uint64_t size) const
 uint64_t IDBCompressInterface::getHdrSize(const void* hdrBuf) const
 {
     return (reinterpret_cast<const CompressedDBFileHeader*>(hdrBuf)->fHeaderSize);
+}
+
+//------------------------------------------------------------------------------
+// Get column type
+//-----------------------------------------------------------------------------
+execplan::CalpontSystemCatalog::ColDataType
+IDBCompressInterface::getColDataType(const void* hdrBuf) const
+{
+    return (
+        reinterpret_cast<const CompressedDBFileHeader*>(hdrBuf)->fColDataType);
+}
+
+//------------------------------------------------------------------------------
+// Get column width
+//------------------------------------------------------------------------------
+uint64_t IDBCompressInterface::getColumnWidth(const void* hdrBuf) const
+{
+    return (
+        reinterpret_cast<const CompressedDBFileHeader*>(hdrBuf)->fColumnWidth);
+}
+
+//------------------------------------------------------------------------------
+// Get start LBID
+//------------------------------------------------------------------------------
+uint64_t IDBCompressInterface::getLBID0(const void* hdrBuf) const
+{
+    return (reinterpret_cast<const CompressedDBFileHeader*>(hdrBuf)->fLBID0);
+}
+
+//------------------------------------------------------------------------------
+// Set start LBID
+//------------------------------------------------------------------------------
+void IDBCompressInterface::setLBID0(void* hdrBuf, uint64_t lbid) const
+{
+    if (lbid)
+        reinterpret_cast<CompressedDBFileHeader*>(hdrBuf)->fLBID0 = lbid;
+}
+
+//------------------------------------------------------------------------------
+// Get start LBID
+//------------------------------------------------------------------------------
+uint64_t IDBCompressInterface::getLBID1(const void* hdrBuf) const
+{
+    return (reinterpret_cast<const CompressedDBFileHeader*>(hdrBuf)->fLBID1);
+}
+
+//------------------------------------------------------------------------------
+// Set start LBID
+//------------------------------------------------------------------------------
+void IDBCompressInterface::setLBID1(void* hdrBuf, uint64_t lbid) const
+{
+    if (lbid)
+        reinterpret_cast<CompressedDBFileHeader*>(hdrBuf)->fLBID1 = lbid;
 }
 
 //------------------------------------------------------------------------------
