@@ -20,7 +20,11 @@
 #include <vector>
 
 #include "we_convertor.h"
+#include "we_fileop.h"
 #include "rebuildEM.h"
+
+using namespace idbdatafile;
+using namespace WriteEngine;
 
 class RebuildEMTest : public ::testing::Test
 {
@@ -160,19 +164,44 @@ TEST_F(RebuildEMTest, File2OidCalculationTest)
 
 TEST_F(RebuildEMTest, rebuildExtentMap)
 {
-    auto* config = config::Config::makeConfig();
-    idbdatafile::IDBPolicy::init(true, false, "", 0);
-    int32_t allocSize;
-    DbFileOp dbFileOp;
-    /*
-    dbFileOp.createFile(0x01010f, allocSize, 1, 0,
-                        execplan::CalpontSystemCatalog::ColDataType::INT,
-                        emptyVal, 32);
+    WriteEngine::FileOp fileOp;
+    WriteEngine::BlockOp blockOp;
+    IDBPolicy::init(true, false, "", 0);
+    std::string dirName = "/data1/000.dir/001.dir/002.dir/003.dir/004.dir";
+    std::string filename = "FILE001.cdf";
+    auto testDir = "/tmp" + dirName;
+    fileOp.createDir(testDir.c_str());
 
-    // Iterate over DBRoots starting from the first one.
-    // std::string dbRootName = "DBRoot" + std::to_string(dbRootNumber);
-    RM::instance()->setDBRoot(config->getConfig("SystemConfig",
-    dbRootName)); RM::instance()->setDBRootNumber(dbRootNumber);a
-    */
-    auto rc = rebuildEM("");
+    //IDBFileSystem& fs = IDBPolicy::getFs("/tmp");
+    //fs.remove(dirName.c_str());
+
+    auto* config = config::Config::makeConfig();
+    int32_t allocSize;
+    const uint8_t* emptyVal =
+        blockOp.getEmptyRowValue(execplan::CalpontSystemCatalog::BIGINT, 8);
+    int32_t width =
+        blockOp.getCorrectRowWidth(execplan::CalpontSystemCatalog::BIGINT, 8);
+    int32_t nBlocks = INITIAL_EXTENT_ROWS_TO_DISK / BYTE_PER_BLOCK * width;
+    auto fullFileName = testDir + "/" + filename;
+
+    char fileName[128];
+    strcpy(fileName, fullFileName.c_str());
+    auto rc = fileOp.createFile(fileName, nBlocks, emptyVal, width,
+                                execplan::CalpontSystemCatalog::BIGINT, 1);
+
+    ASSERT_EQ(rc, 0);
+
+    uint32_t oid;
+    uint32_t partition;
+    uint32_t segment;
+    rc = WriteEngine::Convertor::fileName2Oid(fileName, oid, partition,
+                                              segment);
+
+    // Delete Extent by OID.
+    ASSERT_EQ(rc, 0);
+    RM::instance()->getEM().deleteOID(oid);
+
+    // Rebuild Extent.
+    rc = rebuildEM(fullFileName);
+    ASSERT_EQ(rc, 0);
 }
