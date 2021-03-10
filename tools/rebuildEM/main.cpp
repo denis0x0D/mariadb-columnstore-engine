@@ -3,9 +3,16 @@
 *
 *****************************************************************************/
 #include <iostream>
+#include <string>
+#include <ftw.h>
+
+#include "configcpp.h"
 #include "rebuildEM.h"
+#include "IDBPolicy.h"
+#include "IDBFileSystem.h"
 
 using namespace idbdatafile;
+using namespace RebuildExtentMap;
 using RM = RebuildEMManager;
 
 int32_t walkDB(const char* fp, const struct stat* sb, int typeflag,
@@ -70,7 +77,7 @@ int main(int argc, char** argv)
 
     // Read the number of DBRoots.
     uint32_t dbRootCount = config->uFromText(count);
-    idbdatafile::IDBPolicy::init(true, false, "", 0);
+    IDBPolicy::init(true, false, "", 0);
 
     // Iterate over DBRoots starting from the first one.
     for (uint32_t dbRootNumber = 1; dbRootNumber <= dbRootCount;

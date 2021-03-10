@@ -25,6 +25,7 @@
 
 using namespace idbdatafile;
 using namespace WriteEngine;
+using namespace RebuildExtentMap;
 using RM = RebuildEMManager;
 
 class RebuildEMTest : public ::testing::Test
@@ -172,7 +173,7 @@ TEST_F(RebuildEMTest, File2OidCalculationTest)
 // `deleteOID(OID)` -> throws an exception.
 // So currently this test should be run by user with a `write access` to
 // systemcat.
-#ifdef REBUILD_EM_UT_USER_CAN_WRITE_TO_SYSCAT
+// #ifdef REBUILD_EM_UT_USER_CAN_WRITE_TO_SYSCAT
 TEST_F(RebuildEMTest, rebuildExtentMap)
 {
     WriteEngine::FileOp fileOp;
@@ -244,7 +245,7 @@ TEST_F(RebuildEMTest, rebuildExtentMap)
     std::string fullFileName = filePath + "/" + fileName;
 
     // Rebuild extent map.
-    rc = rebuildEM(fullFileName);
+    rc = RebuildExtentMap::rebuildEM(fullFileName);
     ASSERT_EQ(rc, 0);
 #ifdef DEBUG_REBUILD_EM_UT
     RM::instance()->getEM().dumpTo(std::cout);
@@ -253,4 +254,4 @@ TEST_F(RebuildEMTest, rebuildExtentMap)
     rc = fileOp.deleteFile(fullFileName.c_str());
     EXPECT_EQ(rc, 0);
 }
-#endif
+//#endif

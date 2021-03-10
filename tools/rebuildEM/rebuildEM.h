@@ -1,22 +1,13 @@
 #ifndef REBUILD_EM_H
 #define REBUILD_EM_H
 
-#include <iostream>
-#include "calpontsystemcatalog.h"
-#include "configcpp.h"
+#include <string>
 #include "extentmap.h"
-#include "we_convertor.h"
-#include "idbcompress.h"
-#include "we_fileop.h"
-#include <ftw.h>
-#include "IDBDataFile.h"
-#include "BufferedFile.h"
-#include "IDBPolicy.h"
-#include "IDBFileSystem.h"
 
+namespace RebuildExtentMap {
 // This struct represents a manager class, which manages global data.
 // Actually it is a much safe to use singleton to manage global data,
-// instead of defining it directly. "When destructors are trivial, their
+// instead of defining it directly e.g. "When destructors are trivial, their
 // execution is not subject to ordering at all (they are effectively not
 // "run"); otherwise we are exposed to the risk of accessing objects after the
 // end of their lifetime."
@@ -53,4 +44,6 @@ struct RebuildEMManager
 };
 
 int32_t rebuildEM(const std::string& fullFileName);
+
+} // namespace RebuildExtentMap
 #endif

@@ -1,8 +1,17 @@
+#include <iostream>
+
 #include "rebuildEM.h"
+#include "calpontsystemcatalog.h"
+#include "idbcompress.h"
+#include "we_convertor.h"
+#include "we_fileop.h"
+#include "IDBPolicy.h"
+#include "IDBFileSystem.h"
 
 using namespace idbdatafile;
 
-struct RebuildEMManager;
+namespace RebuildExtentMap
+{
 using RM = RebuildEMManager;
 
 int32_t rebuildEM(const std::string& fullFileName)
@@ -103,3 +112,4 @@ int32_t rebuildEM(const std::string& fullFileName)
     fileOp.closeFile(dbFile);
     return 0;
 }
+} // namespace RebuildExtentMap
