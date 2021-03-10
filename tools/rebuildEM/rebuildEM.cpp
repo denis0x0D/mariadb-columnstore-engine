@@ -7,6 +7,7 @@ using RM = RebuildEMManager;
 
 int32_t rebuildEM(const std::string& fullFileName)
 {
+    WriteEngine::FileOp fileOp;
     uint32_t oid;
     uint32_t partition;
     uint32_t segment;
@@ -31,30 +32,33 @@ int32_t rebuildEM(const std::string& fullFileName)
         fullFileName.c_str(), "rb", 1);
     if (!dbFile)
     {
-        if (RM::instance()->doVerbose())
-        {
-            std::cout << "Cannot open file " << fullFileName << std::endl;
-        }
+        std::cerr << "Cannot open file " << fullFileName << std::endl;
         return -1;
     }
 
     rc = dbFile->seek(0, 0);
     if (rc != 0)
     {
+        fileOp.closeFile(dbFile);
         return rc;
     }
 
     // Read and verify header.
-    WriteEngine::FileOp fileOp;
     char fileHeader[compress::IDBCompressInterface::HDR_BUF_LEN * 2];
     rc = fileOp.readHeaders(dbFile, fileHeader);
     if (rc != 0)
     {
+        fileOp.closeFile(dbFile);
+        // FIXME: If the file was created without a compression, it does not
+        // have a header block, so header verification fails in this case,
+        // currently we skip it, because we cannot deduce needed data to create
+        // a column extent from the blob file.
         if (RM::instance()->doVerbose())
         {
-            // FIXME: Some preinstalled files have invalid MAGIC number? How is
-            // it possible?
-            std::cout << "Cannot read file header from the file " << fullFileName << std::endl;
+            std::cout << "Cannot read file header from the file "
+                      << fullFileName
+                      << " , probably file was created without compression. "
+                      << std::endl;
         }
         return rc;
     }
@@ -67,15 +71,25 @@ int32_t rebuildEM(const std::string& fullFileName)
 
     BRM::LBID_t lbid;
     int32_t allocdSize = 0;
-
     if (!RM::instance()->doDisplay())
     {
-        // Create a column extent for the given oid, partition, segment, dbroot
-        // and column width.
-        RM::instance()->getEM().createColumnExtentExactFile(
-            oid, colWidth, RM::instance()->getDBRoot(), partition, segment,
-            colDataType, lbid, allocdSize, startBlockOffset);
-
+        try
+        {
+            // Create a column extent for the given oid, partition, segment,
+            // dbroot and column width.
+            RM::instance()->getEM().createColumnExtentExactFile(
+                oid, colWidth, RM::instance()->getDBRoot(), partition, segment,
+                colDataType, lbid, allocdSize, startBlockOffset);
+        }
+        // Could throw an logic_error exception.
+        catch (std::exception& e)
+        {
+            RM::instance()->getEM().undoChanges();
+            std::cerr << "Cannot create column extent " << e.what()
+                      << std::endl;
+            return -1;
+        }
+        // Release write lock.
         RM::instance()->getEM().confirmChanges();
     }
 
@@ -86,5 +100,6 @@ int32_t rebuildEM(const std::string& fullFileName)
                   << std::endl;
     }
 
+    fileOp.closeFile(dbFile);
     return 0;
 }

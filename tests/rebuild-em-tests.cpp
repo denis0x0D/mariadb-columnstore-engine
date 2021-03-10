@@ -25,6 +25,7 @@
 
 using namespace idbdatafile;
 using namespace WriteEngine;
+using RM = RebuildEMManager;
 
 class RebuildEMTest : public ::testing::Test
 {
@@ -167,41 +168,59 @@ TEST_F(RebuildEMTest, rebuildExtentMap)
     WriteEngine::FileOp fileOp;
     WriteEngine::BlockOp blockOp;
     IDBPolicy::init(true, false, "", 0);
-    std::string dirName = "/data1/000.dir/001.dir/002.dir/003.dir/004.dir";
-    std::string filename = "FILE001.cdf";
-    auto testDir = "/tmp" + dirName;
-    fileOp.createDir(testDir.c_str());
+    fileOp.compressionType(1);
 
-    //IDBFileSystem& fs = IDBPolicy::getFs("/tmp");
-    //fs.remove(dirName.c_str());
-
-    auto* config = config::Config::makeConfig();
-    int32_t allocSize;
     const uint8_t* emptyVal =
         blockOp.getEmptyRowValue(execplan::CalpontSystemCatalog::BIGINT, 8);
     int32_t width =
         blockOp.getCorrectRowWidth(execplan::CalpontSystemCatalog::BIGINT, 8);
     int32_t nBlocks = INITIAL_EXTENT_ROWS_TO_DISK / BYTE_PER_BLOCK * width;
-    auto fullFileName = testDir + "/" + filename;
 
-    char fileName[128];
-    strcpy(fileName, fullFileName.c_str());
-    auto rc = fileOp.createFile(fileName, nBlocks, emptyVal, width,
-                                execplan::CalpontSystemCatalog::BIGINT, 1);
+    int32_t allocSize;
+    uint32_t dbRoot = 1;
+    uint32_t partition = 0;
+    uint32_t segment = 0;
+    uint32_t oid = 0xffffffff;
 
+    auto rc = fileOp.createFile(oid, allocSize, dbRoot, partition,
+                                execplan::CalpontSystemCatalog::BIGINT,
+                                emptyVal, width);
     ASSERT_EQ(rc, 0);
-
-    uint32_t oid;
-    uint32_t partition;
-    uint32_t segment;
-    rc = WriteEngine::Convertor::fileName2Oid(fileName, oid, partition,
-                                              segment);
-
     // Delete Extent by OID.
     ASSERT_EQ(rc, 0);
-    RM::instance()->getEM().deleteOID(oid);
+    try
+    {
+        RM::instance()->getEM().deleteOID(oid);
+    }
+    catch (std::exception& e)
+    {
+        // This is really nightmare to debug, if we fogret to release `WRITE`
+        // lock.
+        RM::instance()->getEM().undoChanges();
+        fileOp.deleteFile(oid);
+        std::cerr << e.what() << std::endl;
+        ASSERT_EQ(1, 0);
+    }
 
-    // Rebuild Extent.
+    RM::instance()->getEM().confirmChanges();
+
+    char fileName[64];
+    char dbDirName[20][20];
+    rc = WriteEngine::Convertor::oid2FileName(oid, fileName, dbDirName,
+                                              partition, segment);
+    ASSERT_EQ(rc, 0);
+
+    // Initialize.
+    auto* config = config::Config::makeConfig();
+    std::string filePath =
+        config->getConfig("SystemConfig", "DBRoot" + std::to_string(dbRoot));
+
+    RM::instance()->setDBRoot(dbRoot);
+    RM::instance()->setVerbose(true);
+    std::string fullFileName = filePath + "/" + fileName;
+
+    // Rebuild extent map.
     rc = rebuildEM(fullFileName);
     ASSERT_EQ(rc, 0);
+    fileOp.deleteFile(oid);
 }
