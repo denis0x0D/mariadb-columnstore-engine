@@ -587,6 +587,7 @@ int ColumnBufferCompressed::saveCompressionHeaders( )
                          fColInfo->column.compressionType);
     fCompressor->setBlockCount(hdrBuf,
                                (fColInfo->getFileSize() / BYTE_PER_BLOCK) );
+    fCompressor->setLBID(hdrBuf, fColInfo->getSavedLBID());
 
     std::vector<uint64_t> ptrs;
 

@@ -411,7 +411,8 @@ IDBDataFile* ChunkManager::createDctnryFile(const FID& fid,
         uint16_t segment,
         const char* filename,
         const char* mode,
-        int size)
+        int size,
+        BRM::LBID_t lbid)
 {
     FileID fileID(fid, root, partition, segment);
     CompFileData* fileData = new CompFileData(fileID, fid, CalpontSystemCatalog::VARCHAR, width);
@@ -440,8 +441,10 @@ IDBDataFile* ChunkManager::createDctnryFile(const FID& fid,
         fileData->fFileHeader.fLongPtrSectData.reset(fileData->fFileHeader.fPtrSection);
     }
 
-    fCompressor.initHdr(fileData->fFileHeader.fControlData, fileData->fFileHeader.fPtrSection,
+    fCompressor.initHdr(fileData->fFileHeader.fControlData,
+                        fileData->fFileHeader.fPtrSection,
                         fFileOp->compressionType(), hdrSize);
+    fCompressor.setLBID(fileData->fFileHeader.fControlData, lbid);
 
     if (writeHeader(fileData, __LINE__) != NO_ERROR)
     {
