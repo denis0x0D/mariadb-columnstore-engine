@@ -1271,7 +1271,8 @@ void ExtentMap::reserveLBIDRange(LBID_t start, uint8_t size)
 */
 
 
-void ExtentMap::loadVersion4or5(IDBDataFile* in, bool upgradeV4ToV5)
+template <class T>
+void ExtentMap::loadVersion4or5(T* in, bool upgradeV4ToV5)
 {
     int emNumElements = 0, flNumElements = 0;
 
@@ -1428,19 +1429,6 @@ void ExtentMap::load(const string& filename, bool fixFL)
     }
 
 #endif
-
-    grabEMEntryTable(WRITE);
-
-    try
-    {
-        grabFreeList(WRITE);
-    }
-    catch (...)
-    {
-        releaseEMEntryTable(WRITE);
-        throw;
-    }
-
     const char* filename_p = filename.c_str();
     scoped_ptr<IDBDataFile>  in(IDBDataFile::open(
                                     IDBPolicy::getType(filename_p, IDBPolicy::WRITEENG),
@@ -1454,6 +1442,49 @@ void ExtentMap::load(const string& filename, bool fixFL)
         throw ios_base::failure("ExtentMap::load(): open failed. Check the error log.");
     }
 
+    load(in.get());
+}
+
+// This is a quick workaround, to be able to initialize initial system tables
+// from binary blob.
+// This should be updated, probably we need inherit from `IDBDataFile`.
+struct EMBinaryReader
+{
+    EMBinaryReader(const char* data) : src(data) {}
+
+    ssize_t read(char* dst, size_t size)
+    {
+        memcpy(dst, src, size);
+        src += size;
+        return size;
+    }
+
+    const char* src;
+};
+
+void ExtentMap::loadFromBinaryBlob(const char* blob)
+{
+    EMBinaryReader emBinReader(blob);
+    load(&emBinReader);
+}
+
+template <typename T> void ExtentMap::load(T* in)
+{
+    if (!in)
+      return;
+
+    grabEMEntryTable(WRITE);
+
+    try
+    {
+        grabFreeList(WRITE);
+    }
+    catch (...)
+    {
+        releaseEMEntryTable(WRITE);
+        throw;
+    }
+
     try
     {
         int emVersion = 0;
@@ -1462,7 +1493,7 @@ void ExtentMap::load(const string& filename, bool fixFL)
         if (bytes == (int) sizeof(int) &&
             (emVersion == EM_MAGIC_V4 || emVersion == EM_MAGIC_V5))
         {
-            loadVersion4or5(in.get(), emVersion == EM_MAGIC_V4);
+            loadVersion4or5(in, emVersion == EM_MAGIC_V4);
         }
         else
         {
