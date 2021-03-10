@@ -1133,8 +1133,8 @@ void ExtentMap::reserveLBIDRange(LBID_t start, uint8_t size)
 	    ...   (* numFL)
 */
 
-
-void ExtentMap::loadVersion4(IDBDataFile* in)
+template <class T>
+void ExtentMap::loadVersion4(T* in)
 {
     int emNumElements = 0, flNumElements = 0;
 
@@ -1273,17 +1273,9 @@ void ExtentMap::load(const string& filename, bool fixFL)
 
     try
     {
-        int emVersion = 0;
-        int bytes = in->read((char*) &emVersion, sizeof(int));
-
-        if (bytes == (int) sizeof(int) && emVersion == EM_MAGIC_V4)
-            loadVersion4(in.get());
-        else
-        {
-            log("ExtentMap::load(): That file is not a valid ExtentMap image");
-            throw runtime_error("ExtentMap::load(): That file is not a valid ExtentMap image");
-        }
+        load(in.get());
     }
+
     catch (...)
     {
         releaseFreeList(WRITE);
@@ -1294,6 +1286,77 @@ void ExtentMap::load(const string& filename, bool fixFL)
     releaseFreeList(WRITE);
     releaseEMEntryTable(WRITE);
 //	checkConsistency();
+}
+
+// This is a quick workaround, to be able to initialize initial system tables
+// from binary blob.
+// This should be updated, probably we need inherit from `IDBDataFile`.
+struct EMBinaryReader
+{
+    EMBinaryReader(const char* data) : src(data) {}
+
+    ssize_t read(char* dst, size_t size)
+    {
+        memcpy(dst, src, size);
+        src += size;
+        return size;
+    }
+
+    const char* src;
+};
+
+void ExtentMap::loadFromBinaryBlob(const char* blob)
+{
+    grabEMEntryTable(WRITE);
+
+    try
+    {
+        grabFreeList(WRITE);
+    }
+    catch (...)
+    {
+        releaseEMEntryTable(WRITE);
+        throw;
+    }
+
+    try
+    {
+        EMBinaryReader emBinReader(blob);
+        load(&emBinReader);
+    }
+    catch (...)
+    {
+        releaseFreeList(WRITE);
+        releaseEMEntryTable(WRITE);
+        throw;
+    }
+
+    releaseFreeList(WRITE);
+    releaseEMEntryTable(WRITE);
+}
+
+template <typename T> void ExtentMap::load(T* in)
+{
+    if (!in)
+        return;
+
+    try
+    {
+        int emVersion = 0;
+        int bytes = in->read((char*) &emVersion, sizeof(int));
+
+        if (bytes == (int) sizeof(int) && emVersion == EM_MAGIC_V4)
+            loadVersion4(in);
+        else
+        {
+            log("ExtentMap::load(): That file is not a valid ExtentMap image");
+            throw runtime_error("ExtentMap::load(): That file is not a valid ExtentMap image");
+        }
+    }
+    catch (...)
+    {
+        throw;
+    }
 }
 
 void ExtentMap::save(const string& filename)

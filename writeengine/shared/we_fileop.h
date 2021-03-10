@@ -103,7 +103,8 @@ public:
     int                 createFile( const char* fileName, int fileSize,
                                     uint64_t emptyVal, int width,
                                     execplan::CalpontSystemCatalog::ColDataType colDataType,
-                                    uint16_t dbRoot );
+                                    uint16_t dbRoot ,
+                                    BRM::LBID_t lbid = -1 );
 
     /**
      * @brief Delete a file
@@ -358,7 +359,8 @@ public:
                                           unsigned char* blockHdrInit,
                                           int      blockHdrInitSize,
                                           bool     bExpandExtent,
-                                          bool     bOptExtension = false );
+                                          bool     bOptExtension = false,
+                                          int64_t  lbid = 0);
 
     /**
      * @brief Check whether it is an directory
@@ -510,14 +512,15 @@ public:
                                           bool     bNewFile,
                                           bool     bExpandExtent,
                                           bool     bAbbrevExtent,
-                                          bool     bOptExtension=false );
+                                          bool     bOptExtension=false,
+                                          int64_t  lbid = 0 );
 
     // Calls a chown and logs an error message
     bool                chownDataPath(const std::string& fileName) const;
 
 protected:
-    EXPORT virtual int         updateColumnExtent(IDBDataFile* pFile, int nBlocks);
-    EXPORT virtual int         updateDctnryExtent(IDBDataFile* pFile, int nBlocks);
+    EXPORT virtual int         updateColumnExtent(IDBDataFile* pFile, int nBlocks, int64_t lbid);
+    EXPORT virtual int         updateDctnryExtent(IDBDataFile* pFile, int nBlocks, int64_t lbid);
 
     int                 m_compressionType;  // compresssion type
 
@@ -533,16 +536,16 @@ private:
             compress::CompChunkPtr& chunkOutPt);
 
     int initAbbrevCompColumnExtent(
-        IDBDataFile* pFile, uint16_t dbRoot, int nBlocks,
-        uint64_t emptyVal, int width,
+        IDBDataFile* pFile, uint16_t dbRoot, int nBlocks, uint64_t emptyVal,
+        int width, BRM::LBID_t lbid,
         execplan::CalpontSystemCatalog::ColDataType colDataType);
 
     static void         initDbRootExtentMutexes();
     static void         removeDbRootExtentMutexes();
 
     int writeInitialCompColumnChunk(
-        IDBDataFile* pFile, int nBlocksAllocated, int nRows,
-        uint64_t emptyVal, int width,
+        IDBDataFile* pFile, int nBlocksAllocated, int nRows, uint64_t emptyVal,
+        int width, BRM::LBID_t lbid,
         execplan::CalpontSystemCatalog::ColDataType colDataType, char* hdrs);
 
     TxnID       m_transId;

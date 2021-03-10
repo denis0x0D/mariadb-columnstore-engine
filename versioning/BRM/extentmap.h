@@ -304,6 +304,16 @@ public:
      */
     EXPORT void load(const std::string& filename, bool fixFL = false);
 
+    /** @brief Loads the ExtentMap entries from a binayr blob.
+     *
+     * Loads the ExtentMap entries from a file.  This will
+     * clear out any existing entries.  The intention is that before
+     * the system starts, an external tool instantiates a single Extent
+     * Map and loads the stored entries.
+     * @param pointer to a binary blob.
+     */
+    EXPORT void loadFromBinaryBlob(const char* blob);
+
     /** @brief Saves the ExtentMap entries to a file
      *
      * Saves the ExtentMap entries to a file.
@@ -960,8 +970,8 @@ private:
 
     int _markInvalid(const LBID_t lbid, const execplan::CalpontSystemCatalog::ColDataType colDataType);
 
-    void loadVersion4(std::ifstream& in);
-    void loadVersion4(idbdatafile::IDBDataFile* in);
+    template <class T> void loadVersion4(T* in);
+    template <class T> void load(T* in);
 
     ExtentMapImpl* fPExtMapImpl;
     FreeListImpl* fPFreeListImpl;
