@@ -163,6 +163,16 @@ TEST_F(RebuildEMTest, File2OidCalculationTest)
     }
 }
 
+// Currently we cannot delete on oid created for the file outside the systemcat
+// written in config file, for exampe following pipeline will not work for us:
+// filename - valid `ColumnStore` file name.
+// `fileOp.createDir("/tmp/dbroot/*);`
+// `fileOp.createFile("/tmp/dbroot" + filename)`
+// `oid = file2oid("000.dir/*")`
+// `deleteOID(OID)` -> throws an exception.
+// So currently this test should be run by user with a `write access` to
+// systemcat.
+#ifdef REBUILD_EM_UT_USER_CAN_WRITE_TO_SYSCAT
 TEST_F(RebuildEMTest, rebuildExtentMap)
 {
     WriteEngine::FileOp fileOp;
@@ -177,15 +187,25 @@ TEST_F(RebuildEMTest, rebuildExtentMap)
     int32_t nBlocks = INITIAL_EXTENT_ROWS_TO_DISK / BYTE_PER_BLOCK * width;
 
     uint32_t dbRoot = 1;
+    // FIXME: How to choose right oid and make sure the system does not have
+    // the same in use.
     uint32_t oid = getOid(255, 255, 255, 255);
     uint32_t partition = 0;
     uint32_t segment = 0;
     int32_t allocSize;
 
+    bool fileExists = fileOp.exists(oid, dbRoot, partition, segment);
+    ASSERT_EQ(fileExists, false);
+
     auto rc = fileOp.createFile(oid, allocSize, dbRoot, partition,
                                 execplan::CalpontSystemCatalog::BIGINT,
                                 emptyVal, width);
     ASSERT_EQ(rc, 0);
+
+#ifdef DEBUG_REBUILD_EM_UT
+    RM::instance()->getEM().dumpTo(std::cout);
+    std::cout << std::endl;
+#endif
     // Delete Extent by OID.
     try
     {
@@ -201,6 +221,11 @@ TEST_F(RebuildEMTest, rebuildExtentMap)
         ASSERT_EQ(1, 0);
     }
     RM::instance()->getEM().confirmChanges();
+
+#ifdef DEBUG_REBUILD_EM_UT
+    RM::instance()->getEM().dumpTo(std::cout);
+    std::cout << std::endl;
+#endif
 
     // Get the filename.
     char fileName[64];
@@ -221,6 +246,11 @@ TEST_F(RebuildEMTest, rebuildExtentMap)
     // Rebuild extent map.
     rc = rebuildEM(fullFileName);
     ASSERT_EQ(rc, 0);
+#ifdef DEBUG_REBUILD_EM_UT
+    RM::instance()->getEM().dumpTo(std::cout);
+    std::cout << endl;
+#endif
     rc = fileOp.deleteFile(fullFileName.c_str());
     EXPECT_EQ(rc, 0);
 }
+#endif
