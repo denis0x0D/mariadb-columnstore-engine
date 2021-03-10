@@ -20,6 +20,13 @@
 #include <vector>
 
 #include "we_convertor.h"
+#include "we_fileop.h"
+#include "rebuildEM.h"
+
+using namespace idbdatafile;
+using namespace WriteEngine;
+using namespace RebuildExtentMap;
+using RM = RebuildEMManager;
 
 class RebuildEMTest : public ::testing::Test
 {
@@ -156,3 +163,97 @@ TEST_F(RebuildEMTest, File2OidCalculationTest)
         EXPECT_EQ(expectedFileId.segment, calculatedFileId.segment);
     }
 }
+
+// Currently we cannot delete on oid created for the file outside the systemcat
+// written in config file, for exampe following pipeline will not work for us:
+// filename - valid `ColumnStore` file name.
+// `fileOp.createDir("/tmp/dbroot/*);`
+// `fileOp.createFile("/tmp/dbroot" + filename)`
+// `oid = file2oid("000.dir/*")`
+// `deleteOID(OID)` -> throws an exception.
+// So currently this test should be run by user with a `write access` to
+// systemcat.
+// #define REBUILD_EM_UT_USER_CAN_WRITE_TO_SYSCAT
+// #define DEBUG_REBUILD_EM_UT
+#ifdef REBUILD_EM_UT_USER_CAN_WRITE_TO_SYSCAT
+TEST_F(RebuildEMTest, rebuildExtentMap)
+{
+    WriteEngine::FileOp fileOp;
+    WriteEngine::BlockOp blockOp;
+    IDBPolicy::init(true, false, "", 0);
+    fileOp.compressionType(1);
+
+    const uint8_t* emptyVal =
+        blockOp.getEmptyRowValue(execplan::CalpontSystemCatalog::BIGINT, 8);
+    int32_t width =
+        blockOp.getCorrectRowWidth(execplan::CalpontSystemCatalog::BIGINT, 8);
+    int32_t nBlocks = INITIAL_EXTENT_ROWS_TO_DISK / BYTE_PER_BLOCK * width;
+
+    uint32_t dbRoot = 1;
+    // FIXME: How to choose right oid and make sure the system does not have
+    // the same in use.
+    uint32_t oid = getOid(255, 255, 255, 255);
+    uint32_t partition = 0;
+    uint32_t segment = 0;
+    int32_t allocSize;
+
+    bool fileExists = fileOp.exists(oid, dbRoot, partition, segment);
+    ASSERT_EQ(fileExists, false);
+
+    auto rc = fileOp.createFile(oid, allocSize, dbRoot, partition,
+                                execplan::CalpontSystemCatalog::BIGINT,
+                                emptyVal, width);
+    ASSERT_EQ(rc, 0);
+
+#ifdef DEBUG_REBUILD_EM_UT
+    RM::instance()->getEM().dumpTo(std::cout);
+    std::cout << std::endl;
+#endif
+    // Delete Extent by OID.
+    try
+    {
+        RM::instance()->getEM().deleteOID(oid);
+    }
+    catch (std::exception& e)
+    {
+        // This is really nightmare to debug, if we fogret to release `WRITE`
+        // lock.
+        RM::instance()->getEM().undoChanges();
+        fileOp.deleteFile(oid);
+        std::cerr << e.what() << std::endl;
+        ASSERT_EQ(1, 0);
+    }
+    RM::instance()->getEM().confirmChanges();
+
+#ifdef DEBUG_REBUILD_EM_UT
+    RM::instance()->getEM().dumpTo(std::cout);
+    std::cout << std::endl;
+#endif
+
+    // Get the filename.
+    char fileName[64];
+    char dbDirName[20][20];
+    rc = WriteEngine::Convertor::oid2FileName(oid, fileName, dbDirName,
+                                              partition, segment);
+    ASSERT_EQ(rc, 0);
+
+    // Initialize.
+    auto* config = config::Config::makeConfig();
+    std::string filePath =
+        config->getConfig("SystemConfig", "DBRoot" + std::to_string(dbRoot));
+
+    RM::instance()->setDBRoot(dbRoot);
+    RM::instance()->setVerbose(true);
+    std::string fullFileName = filePath + "/" + fileName;
+
+    // Rebuild extent map.
+    rc = RebuildExtentMap::rebuildEM(fullFileName);
+    ASSERT_EQ(rc, 0);
+#ifdef DEBUG_REBUILD_EM_UT
+    RM::instance()->getEM().dumpTo(std::cout);
+    std::cout << endl;
+#endif
+    rc = fileOp.deleteFile(fullFileName.c_str());
+    EXPECT_EQ(rc, 0);
+}
+#endif
