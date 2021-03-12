@@ -32,7 +32,7 @@ int32_t walkDB(const char* fp, const struct stat* sb, int typeflag,
 
 static void usage(const string& pname)
 {
-    std::cout << "usage: " << pname << " [-vdh]" << std::endl;
+    std::cout << "usage: " << pname << " [-vdhs]" << std::endl;
     std::cout
         << "rebuilds the extent map from the contents of the database file "
            "system."
@@ -42,14 +42,22 @@ static void usage(const string& pname)
         << std::endl;
     std::cout << "   -d display what would be done--don't do it" << std::endl;
     std::cout << "   -h display this help text" << std::endl;
+    std::cout << "   -s show extent map and quit" << std::endl;
+}
+
+static void header() {
+    std::cout << "range.start|range.size|fileId|blockOffset|HWM|partition|"
+                 "segment|dbroot|width|status|hiVal|loVal|seqNum|isValid|"
+              << std::endl;
 }
 
 int main(int argc, char** argv)
 {
     int32_t c;
     std::string pname(argv[0]);
+    bool showExtentMap = false;
 
-    while ((c = getopt(argc, argv, "vdh")) != EOF)
+    while ((c = getopt(argc, argv, "vdhs")) != EOF)
     {
         switch (c)
         {
@@ -61,6 +69,10 @@ int main(int argc, char** argv)
                 RM::instance()->setDisplay(true);
                 break;
 
+            case 's':
+                showExtentMap = true;
+                break;
+
             case 'h':
             case '?':
             default:
@@ -68,6 +80,14 @@ int main(int argc, char** argv)
                 return (c == 'h' ? 0 : 1);
                 break;
         }
+    }
+
+    // Just show EM and quit.
+    if (showExtentMap)
+    {
+        header();
+        RM::instance()->getEM().dumpTo(std::cout);
+        return 0;
     }
 
     // Make config from default path.

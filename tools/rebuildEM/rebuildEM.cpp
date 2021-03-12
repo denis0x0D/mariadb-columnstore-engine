@@ -53,13 +53,6 @@ int32_t rebuildEM(const std::string& fullFileName)
         return rc;
     }
 
-    if (RM::instance()->verbose())
-    {
-        std::cout << "Processing file: " << fullFileName << "  [OID: " << oid
-                  << ", partition: " << partition << ", segment: " << segment
-                  << "] " << std::endl;
-    }
-
     // Open the given file.
     auto* dbFile = IDBDataFile::open(
         IDBPolicy::getType(fullFileName, IDBPolicy::WRITEENG),
@@ -98,6 +91,14 @@ int32_t rebuildEM(const std::string& fullFileName)
         }
         return rc;
     }
+
+    if (RM::instance()->verbose())
+    {
+        std::cout << "Processing file: " << fullFileName << "  [OID: " << oid
+                  << ", partition: " << partition << ", segment: " << segment
+                  << "] " << std::endl;
+    }
+
 
     // Read the `colDataType` and `colWidth` from the given header.
     compress::IDBCompressInterface compressor;
