@@ -32,7 +32,7 @@ int32_t walkDB(const char* fp, const struct stat* sb, int typeflag,
 
 static void usage(const string& pname)
 {
-    std::cout << "usage: " << pname << " [-vdhs]" << std::endl;
+    std::cout << "usage: " << pname << " [-vdhsi]" << std::endl;
     std::cout
         << "rebuilds the extent map from the contents of the database file "
            "system."
@@ -42,6 +42,9 @@ static void usage(const string& pname)
         << std::endl;
     std::cout << "   -d display what would be done--don't do it" << std::endl;
     std::cout << "   -h display this help text" << std::endl;
+    // This is a hack to be able rebuild extents for system tables.
+    std::cout << "   -i initialize system tables from initial state"
+              << std::endl;
     std::cout << "   -s show extent map and quit" << std::endl;
 }
 
@@ -56,8 +59,9 @@ int main(int argc, char** argv)
     int32_t c;
     std::string pname(argv[0]);
     bool showExtentMap = false;
+    bool initSysCat = false;
 
-    while ((c = getopt(argc, argv, "vdhs")) != EOF)
+    while ((c = getopt(argc, argv, "vdhsi")) != EOF)
     {
         switch (c)
         {
@@ -71,6 +75,10 @@ int main(int argc, char** argv)
 
             case 's':
                 showExtentMap = true;
+                break;
+
+            case 'i':
+                initSysCat = true;
                 break;
 
             case 'h':
@@ -90,6 +98,12 @@ int main(int argc, char** argv)
         return 0;
     }
 
+    IDBPolicy::init(true, false, "", 0);
+    if (initSysCat)
+    {
+        RM::instance()->getEM().load("/home/denis/task/BRM_saves_em", 0);
+    }
+
     // Make config from default path.
     // FIXME: Should we allow user to specify a path to config?
     auto* config = config::Config::makeConfig();
@@ -97,7 +111,6 @@ int main(int argc, char** argv)
 
     // Read the number of DBRoots.
     uint32_t dbRootCount = config->uFromText(count);
-    IDBPolicy::init(true, false, "", 0);
 
     // Iterate over DBRoots starting from the first one.
     for (uint32_t dbRootNumber = 1; dbRootNumber <= dbRootCount;

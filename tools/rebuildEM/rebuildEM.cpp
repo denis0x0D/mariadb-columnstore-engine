@@ -53,6 +53,22 @@ int32_t rebuildEM(const std::string& fullFileName)
         return rc;
     }
 
+    bool found = false;
+    int32_t status = 0;
+    // Check the extent map first.
+    RM::instance()->getEM().getExtentState(oid, partition, segment, found,
+                                           status);
+    if (found)
+    {
+        if (RM::instance()->verbose())
+        {
+            std::cout << "The extent for oid " << oid << ", partition "
+                      << partition << ", segment " << segment
+                      << " already exists." << std::endl;
+        }
+        return -1;
+    }
+
     // Open the given file.
     auto* dbFile = IDBDataFile::open(
         IDBPolicy::getType(fullFileName, IDBPolicy::WRITEENG),
@@ -162,7 +178,12 @@ int32_t rebuildEM(const std::string& fullFileName)
                       << std::endl;
             return -1;
         }
-        // Release write lock.
+        RM::instance()->getEM().confirmChanges();
+        // This is important part, it sets a status for specific extent as
+        // 'available' that means we can use it.
+        RM::instance()->getEM().setLocalHWM(oid, partition, segment, 0,
+                                            /*firstNode=*/false,
+                                            /*uselock=*/true);
         RM::instance()->getEM().confirmChanges();
     }
 
