@@ -173,8 +173,8 @@ TEST_F(RebuildEMTest, File2OidCalculationTest)
 // `deleteOID(OID)` -> throws an exception.
 // So currently this test should be run by user with a `write access` to
 // systemcat.
-// #define REBUILD_EM_UT_USER_CAN_WRITE_TO_SYSCAT
-// #define DEBUG_REBUILD_EM_UT
+#define REBUILD_EM_UT_USER_CAN_WRITE_TO_SYSCAT
+#define DEBUG_REBUILD_EM_UT
 #ifdef REBUILD_EM_UT_USER_CAN_WRITE_TO_SYSCAT
 TEST_F(RebuildEMTest, rebuildExtentMap)
 {
@@ -192,7 +192,7 @@ TEST_F(RebuildEMTest, rebuildExtentMap)
     uint32_t dbRoot = 1;
     // FIXME: How to choose right oid and make sure the system does not have
     // the same in use.
-    uint32_t oid = getOid(255, 255, 255, 255);
+    uint32_t oid = getOid(0, 255, 255, 255);
     uint32_t partition = 0;
     uint32_t segment = 0;
     int32_t allocSize;

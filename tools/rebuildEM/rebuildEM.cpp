@@ -70,9 +70,10 @@ int32_t rebuildEM(const std::string& fullFileName)
     }
 
     // Open the given file.
-    auto* dbFile = IDBDataFile::open(
+    std::unique_ptr<IDBDataFile> dbFile(IDBDataFile::open(
         IDBPolicy::getType(fullFileName, IDBPolicy::WRITEENG),
-        fullFileName.c_str(), "rb", 1);
+        fullFileName.c_str(), "rb", 1));
+
     if (!dbFile)
     {
         std::cerr << "Cannot open file " << fullFileName << std::endl;
@@ -84,16 +85,14 @@ int32_t rebuildEM(const std::string& fullFileName)
     {
         std::cerr << "IDBDataFile::seek failed for the file " << fullFileName
                   << std::endl;
-        fileOp.closeFile(dbFile);
         return rc;
     }
 
     // Read and verify header.
     char fileHeader[compress::IDBCompressInterface::HDR_BUF_LEN * 2];
-    rc = fileOp.readHeaders(dbFile, fileHeader);
+    rc = fileOp.readHeaders(dbFile.get(), fileHeader);
     if (rc != 0)
     {
-        fileOp.closeFile(dbFile);
         // FIXME: If the file was created without a compression, it does not
         // have a header block, so header verification fails in this case,
         // currently we skip it, because we cannot deduce needed data to create
@@ -122,7 +121,6 @@ int32_t rebuildEM(const std::string& fullFileName)
     // Verify header number.
     if (versionNumber < 3)
     {
-        fileOp.closeFile(dbFile);
         if (RM::instance()->verbose())
         {
             std::cerr << "File version " << versionNumber
@@ -135,7 +133,6 @@ int32_t rebuildEM(const std::string& fullFileName)
     auto colWidth = compressor.getColumnWidth(fileHeader);
     if (colDataType == execplan::CalpontSystemCatalog::UNDEFINED || !colWidth)
     {
-        fileOp.closeFile(dbFile);
         if (RM::instance()->verbose())
         {
             std::cout << "File header has invalid data. " << std::endl;
@@ -173,7 +170,6 @@ int32_t rebuildEM(const std::string& fullFileName)
         catch (std::exception& e)
         {
             RM::instance()->getEM().undoChanges();
-            fileOp.closeFile(dbFile);
             std::cerr << "Cannot create column extent: " << e.what()
                       << std::endl;
             return -1;
@@ -197,7 +193,6 @@ int32_t rebuildEM(const std::string& fullFileName)
                   << " starting LBID " << lbid << " for OID " << oid
                   << std::endl;
     }
-    fileOp.closeFile(dbFile);
     return 0;
 }
 } // namespace RebuildExtentMap

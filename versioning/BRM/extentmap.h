@@ -344,6 +344,8 @@ public:
      */
     EXPORT void load(const std::string& filename, bool fixFL = false);
 
+    template <class T> EXPORT void load(T* in);
+
     /** @brief Saves the ExtentMap entries to a file
      *
      * Saves the ExtentMap entries to a file.
@@ -1008,7 +1010,7 @@ private:
      * @param upgradeV4ToV5 (in) flag indicating whether we are upgrading
      * extent map from v4 to v5.
      */
-    void loadVersion4or5(idbdatafile::IDBDataFile* in, bool upgradeV4ToV5);
+    template <class T> void loadVersion4or5(T* in, bool upgradeV4ToV5);
 
     ExtentMapImpl* fPExtMapImpl;
     FreeListImpl* fPFreeListImpl;

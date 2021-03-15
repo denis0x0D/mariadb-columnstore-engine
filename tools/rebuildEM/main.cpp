@@ -42,9 +42,6 @@ static void usage(const string& pname)
         << std::endl;
     std::cout << "   -d display what would be done--don't do it" << std::endl;
     std::cout << "   -h display this help text" << std::endl;
-    // This is a hack to be able rebuild extents for system tables.
-    std::cout << "   -i initialize system tables from initial state"
-              << std::endl;
     std::cout << "   -s show extent map and quit" << std::endl;
 }
 
@@ -77,10 +74,6 @@ int main(int argc, char** argv)
                 showExtentMap = true;
                 break;
 
-            case 'i':
-                initSysCat = true;
-                break;
-
             case 'h':
             case '?':
             default:
@@ -99,10 +92,7 @@ int main(int argc, char** argv)
     }
 
     IDBPolicy::init(true, false, "", 0);
-    if (initSysCat)
-    {
-        RM::instance()->getEM().load("/home/denis/task/BRM_saves_em", 0);
-    }
+    RM::instance()->getEM().load("/home/denis/task/BRM_saves_em", 0);
 
     // Make config from default path.
     // FIXME: Should we allow user to specify a path to config?
