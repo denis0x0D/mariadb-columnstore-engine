@@ -13,7 +13,6 @@
 
 using namespace idbdatafile;
 using namespace RebuildExtentMap;
-using RM = EMBuilder;
 
 static void usage(const string& pname)
 {
@@ -28,12 +27,6 @@ static void usage(const string& pname)
     std::cout << "   -d display what would be done--don't do it" << std::endl;
     std::cout << "   -h display this help text" << std::endl;
     std::cout << "   -s show extent map and quit" << std::endl;
-}
-
-static void header() {
-    std::cout << "range.start|range.size|fileId|blockOffset|HWM|partition|"
-                 "segment|dbroot|width|status|hiVal|loVal|seqNum|isValid|"
-              << std::endl;
 }
 
 int main(int argc, char** argv)
@@ -70,7 +63,6 @@ int main(int argc, char** argv)
     }
 
     EMBuilder emBuilder(verbose, display);
-
     // Just show EM and quit.
     if (showExtentMap)
     {
@@ -100,7 +92,7 @@ int main(int argc, char** argv)
             std::cout << "Using DBRoot " << dbRootPath << std::endl;
         }
 
-        emBuilder.collect(dbRootPath.c_str());
+        emBuilder.collectExtents(dbRootPath.c_str());
         emBuilder.rebuildEM();
         emBuilder.clear();
     }

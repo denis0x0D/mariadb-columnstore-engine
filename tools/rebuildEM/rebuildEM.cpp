@@ -30,19 +30,31 @@ using namespace idbdatafile;
 
 namespace RebuildExtentMap
 {
-using RM = EMBuilder;
 
 // Check for hard-coded values which define dictionary file.
-static bool isDictFile(execplan::CalpontSystemCatalog::ColDataType colDataType,
-                       uint64_t width)
+bool EMBuilder::isDictFile(
+    execplan::CalpontSystemCatalog::ColDataType colDataType, uint64_t width)
 {
     return (colDataType == execplan::CalpontSystemCatalog::VARCHAR) &&
            (width == 65000);
 }
 
-int32_t EMBuilder::collect(const string& dbRootPath)
+void EMBuilder::showExtentMap()
 {
-    if (verbose())
+    std::cout << "range.start|range.size|fileId|blockOffset|HWM|partition|"
+                 "segment|dbroot|width|status|hiVal|loVal|seqNum|isValid|"
+              << std::endl;
+    getEM().dumpTo(std::cout);
+}
+
+void EMBuilder::initializeSystemTables()
+{
+    getEM().load("/home/denis/task/BRM_saves_em", 0);
+}
+
+int32_t EMBuilder::collectExtents(const string& dbRootPath)
+{
+    if (doVerbose())
     {
         std::cout << "Collect extents for the DBRoot " << dbRootPath
                   << std::endl;
@@ -58,7 +70,7 @@ int32_t EMBuilder::collect(const string& dbRootPath)
 
 int32_t EMBuilder::rebuildEM()
 {
-    if (verbose())
+    if (doVerbose())
     {
         std::cout << "Build extent map with size " << extentMap.size()
                   << std::endl;
@@ -70,8 +82,25 @@ int32_t EMBuilder::rebuildEM()
         int32_t allocdSize;
         BRM::LBID_t lbid;
 
-        if (!display())
+        if (!doDisplay())
         {
+            // Check the extent map first.
+            bool found;
+            int32_t status;
+            getEM().getExtentState(fileId.oid, fileId.partition,
+                                   fileId.segment, found, status);
+            if (found)
+            {
+                if (doVerbose())
+                {
+                    std::cout << "The extent for oid " << fileId.oid
+                              << ", partition " << fileId.partition
+                              << ", segment " << fileId.segment
+                              << " already exists." << std::endl;
+                }
+                return -1;
+            }
+
             try
             {
                 if (fileId.isDict)
@@ -102,7 +131,7 @@ int32_t EMBuilder::rebuildEM()
             }
 
             getEM().confirmChanges();
-            if (verbose())
+            if (doVerbose())
             {
                 std::cout << "Extent is created, allocated size " << allocdSize
                           << " starting LBID " << lbid << " for OID "
@@ -111,7 +140,7 @@ int32_t EMBuilder::rebuildEM()
 
             // This is important part, it sets a status for specific extent as
             // 'available' that means we can use it.
-            if (verbose())
+            if (doVerbose())
             {
                 std::cout << "Setting a HWM for oid " << fileId.oid
                           << ", partition " << fileId.partition << ", segment "
@@ -138,22 +167,6 @@ int32_t EMBuilder::collectExtent(const std::string& fullFileName)
     if (rc != 0)
     {
         return rc;
-    }
-
-    bool found = false;
-    int32_t status = 0;
-    // Check the extent map first.
-    getEM().getExtentState(oid, partition, segment, found,
-                                           status);
-    if (found)
-    {
-        if (verbose())
-        {
-            std::cout << "The extent for oid " << oid << ", partition "
-                      << partition << ", segment " << segment
-                      << " already exists." << std::endl;
-        }
-        return -1;
     }
 
     // Open the given file.
@@ -184,7 +197,7 @@ int32_t EMBuilder::collectExtent(const std::string& fullFileName)
         // have a header block, so header verification fails in this case,
         // currently we skip it, because we cannot deduce needed data to create
         // a column extent from the blob file.
-        if (verbose())
+        if (doVerbose())
         {
             std::cerr
                 << "Cannot read file header from the file " << fullFileName
@@ -194,7 +207,7 @@ int32_t EMBuilder::collectExtent(const std::string& fullFileName)
         return rc;
     }
 
-    if (verbose())
+    if (doVerbose())
     {
         std::cout << "Processing file: " << fullFileName << "  [OID: " << oid
                   << ", partition: " << partition << ", segment: " << segment
@@ -208,7 +221,7 @@ int32_t EMBuilder::collectExtent(const std::string& fullFileName)
     // Verify header number.
     if (versionNumber < 3)
     {
-        if (verbose())
+        if (doVerbose())
         {
             std::cerr << "File version " << versionNumber
                       << " is not supported. " << std::endl;
@@ -220,7 +233,7 @@ int32_t EMBuilder::collectExtent(const std::string& fullFileName)
     auto colWidth = compressor.getColumnWidth(fileHeader);
     if (colDataType == execplan::CalpontSystemCatalog::UNDEFINED || !colWidth)
     {
-        if (verbose())
+        if (doVerbose())
         {
             std::cout << "File header has invalid data. " << std::endl;
         }
@@ -229,7 +242,7 @@ int32_t EMBuilder::collectExtent(const std::string& fullFileName)
 
     extentMap.insert(FileId(oid, partition, segment, colWidth, colDataType,
                             isDictFile(colDataType, colWidth)));
-    if (verbose())
+    if (doVerbose())
     {
         std::cout << "FileId is collected for [OID: " << oid
                   << ", partition: " << partition << ", segment: " << segment
