@@ -26,12 +26,9 @@
 #include "we_fileop.h"
 #include "IDBPolicy.h"
 #include "IDBFileSystem.h"
-
 #include "BRM_saves_em_system_tables_blob.h"
 
 using namespace idbdatafile;
-
-extern const uint8_t BRM_saves_em_system_tables_blobp[];
 
 namespace RebuildExtentMap
 {

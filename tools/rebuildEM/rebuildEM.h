@@ -74,13 +74,23 @@ class EMReBuilder
     EMReBuilder& operator=(EMReBuilder&&) = delete;
     ~EMReBuilder() = default;
 
+    // Sets the dbroot to the given `number`.
     void setDBRoot(uint32_t number) { dbRoot = number; }
-    int32_t collectExtent(const std::string& fullFileName);
-    int32_t collectExtents(const std::string& fullFileName);
+
+    // Collects extents from the given DBRoot path.
+    int32_t collectExtents(const std::string& dbRootPath);
+
+    // Rebuilds extent map from the collected map.
     int32_t rebuildExtentMap();
+
+    // Checks if the given data specifies a dictionary file.
     bool isDictFile(execplan::CalpontSystemCatalog::ColDataType colDataType,
                     uint64_t width);
+
+    // Initializes system tables from the initial state.
     void initializeSystemTables();
+
+    // Shows the extent map.
     void showExtentMap();
 
     void clear() { extentMap.clear(); }
@@ -90,6 +100,8 @@ class EMReBuilder
     BRM::ExtentMap& getEM() { return em; }
 
   private:
+    // Collect extent information from the given file.
+    int32_t collectExtent(const std::string& fullFileName);
     BRM::ExtentMap em;
     bool verbose;
     bool display;
