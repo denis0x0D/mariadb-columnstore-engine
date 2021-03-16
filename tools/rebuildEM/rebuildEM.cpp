@@ -17,6 +17,7 @@
 
 #include <iostream>
 #include <boost/filesystem.hpp>
+#include <stdint.h>
 
 #include "rebuildEM.h"
 #include "calpontsystemcatalog.h"
@@ -26,7 +27,11 @@
 #include "IDBPolicy.h"
 #include "IDBFileSystem.h"
 
+#include "BRM_saves_em_system_tables_blob.h"
+
 using namespace idbdatafile;
+
+extern const uint8_t BRM_saves_em_system_tables_blobp[];
 
 namespace RebuildExtentMap
 {
@@ -49,7 +54,8 @@ void EMReBuilder::showExtentMap()
 
 void EMReBuilder::initializeSystemTables()
 {
-    getEM().load("/home/denis/task/BRM_saves_em", 0);
+    getEM().loadFromBinaryBlob(
+        reinterpret_cast<const char*>(BRM_saves_em_system_tables_blob));
 }
 
 int32_t EMReBuilder::collectExtents(const string& dbRootPath)

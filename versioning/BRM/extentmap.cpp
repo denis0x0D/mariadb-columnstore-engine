@@ -1445,6 +1445,24 @@ void ExtentMap::load(const string& filename, bool fixFL)
     load(in.get());
 }
 
+struct EMBinaryReader {
+    EMBinaryReader(const char* data) : src(data) {}
+
+    ssize_t read(char* dst, size_t size) { 
+      memcpy(dst, src, size);
+      src += size;
+      return size;
+    }
+
+    const char* src;
+};
+
+void ExtentMap::loadFromBinaryBlob(const char* blob)
+{
+    EMBinaryReader emBinReader(blob);
+    load(&emBinReader);
+}
+
 template <typename T>
 void ExtentMap::load(T *in) {
     if (!in)

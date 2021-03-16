@@ -26,7 +26,6 @@
 using namespace idbdatafile;
 using namespace WriteEngine;
 using namespace RebuildExtentMap;
-using RM = RebuildEMManager;
 
 class RebuildEMTest : public ::testing::Test
 {

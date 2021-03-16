@@ -343,8 +343,9 @@ public:
      * if the file "looks" bad.
      */
     EXPORT void load(const std::string& filename, bool fixFL = false);
-
     template <class T> EXPORT void load(T* in);
+
+    EXPORT void loadFromBinaryBlob(const char* blob);
 
     /** @brief Saves the ExtentMap entries to a file
      *

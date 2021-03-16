@@ -31,7 +31,6 @@ using namespace idbdatafile;
 
 namespace RebuildExtentMap
 {
-// TODO:
 struct FileId
 {
     FileId(uint32_t oid, uint32_t partition, uint32_t segment,
@@ -59,7 +58,7 @@ struct FileIdComparator
     }
 };
 
-// TODO.
+// This class represents extent map rebuilder.
 class EMReBuilder
 {
   public:
