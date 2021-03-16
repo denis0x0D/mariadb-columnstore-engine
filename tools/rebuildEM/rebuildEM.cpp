@@ -29,7 +29,7 @@ using namespace idbdatafile;
 
 namespace RebuildExtentMap
 {
-using RM = RebuildEMManager;
+using RM = EMBuilder;
 
 // Check for hard-coded values which define dictionary file.
 static bool isDictFile(execplan::CalpontSystemCatalog::ColDataType colDataType,
@@ -39,15 +39,16 @@ static bool isDictFile(execplan::CalpontSystemCatalog::ColDataType colDataType,
            (width == 65000);
 }
 
-int32_t RebuildEMManager::rebuildEM()
+int32_t EMBuilder::rebuildEM()
 {
+    std::cout << "extent map size " << extentMap.size() << std::endl;
     for (const auto& fileId : extentMap)
     {
         uint32_t startBlockOffset;
         int32_t allocdSize;
         BRM::LBID_t lbid;
 
-        if (!RM::instance()->display())
+        if (display())
         {
             try
             {
@@ -55,7 +56,7 @@ int32_t RebuildEMManager::rebuildEM()
                 {
                     // Create a dictionary extent for the given oid, partition,
                     // segment, dbroot.
-                    RM::instance()->getEM().createDictStoreExtent(
+                    getEM().createDictStoreExtent(
                         fileId.oid, RM::instance()->getDBRoot(),
                         fileId.partition, fileId.segment, lbid, allocdSize);
                 }
@@ -63,7 +64,7 @@ int32_t RebuildEMManager::rebuildEM()
                 {
                     // Create a column extent for the given oid, partition,
                     // segment, dbroot and column width.
-                    RM::instance()->getEM().createColumnExtentExactFile(
+                    getEM().createColumnExtentExactFile(
                         fileId.oid, fileId.colWidth,
                         RM::instance()->getDBRoot(), fileId.partition,
                         fileId.segment, fileId.colDataType, lbid, allocdSize,
@@ -73,26 +74,38 @@ int32_t RebuildEMManager::rebuildEM()
             // Could throw an logic_error exception.
             catch (std::exception& e)
             {
-                RM::instance()->getEM().undoChanges();
+                getEM().undoChanges();
                 std::cerr << "Cannot create column extent: " << e.what()
                           << std::endl;
                 return -1;
             }
-            RM::instance()->getEM().confirmChanges();
+
+            getEM().confirmChanges();
+            if (verbose())
+            {
+                std::cout << "Extent is created, allocated size " << allocdSize
+                          << " starting LBID " << lbid << " for OID "
+                          << fileId.oid << std::endl;
+            }
+
             // This is important part, it sets a status for specific extent as
             // 'available' that means we can use it.
-            RM::instance()->getEM().setLocalHWM(
-                fileId.oid, fileId.partition, fileId.segment, 0, false, true);
-            RM::instance()->getEM().confirmChanges();
+            if (verbose())
+            {
+                std::cout << "Setting a HWM for oid " << fileId.oid
+                          << ", partition " << fileId.partition << ", segment "
+                          << fileId.segment << std::endl;
+            }
+            getEM().setLocalHWM(fileId.oid, fileId.partition, fileId.segment,
+                                0, false, true);
+            getEM().confirmChanges();
         }
 
-        std::cout << "Extent is created, allocated size " << allocdSize
-                  << " starting LBID " << lbid << " for OID " << fileId.oid
-                  << std::endl;
-    }
+   }
+   return 0;
 }
 
-int32_t RebuildEMManager::collect(const std::string& fullFileName)
+int32_t EMBuilder::collect(const std::string& fullFileName)
 {
     WriteEngine::FileOp fileOp;
     uint32_t oid;
@@ -109,11 +122,11 @@ int32_t RebuildEMManager::collect(const std::string& fullFileName)
     bool found = false;
     int32_t status = 0;
     // Check the extent map first.
-    RM::instance()->getEM().getExtentState(oid, partition, segment, found,
+    getEM().getExtentState(oid, partition, segment, found,
                                            status);
     if (found)
     {
-        if (RM::instance()->verbose())
+        if (verbose())
         {
             std::cout << "The extent for oid " << oid << ", partition "
                       << partition << ", segment " << segment
@@ -150,7 +163,7 @@ int32_t RebuildEMManager::collect(const std::string& fullFileName)
         // have a header block, so header verification fails in this case,
         // currently we skip it, because we cannot deduce needed data to create
         // a column extent from the blob file.
-        if (RM::instance()->verbose())
+        if (verbose())
         {
             std::cerr
                 << "Cannot read file header from the file " << fullFileName
@@ -160,7 +173,7 @@ int32_t RebuildEMManager::collect(const std::string& fullFileName)
         return rc;
     }
 
-    if (RM::instance()->verbose())
+    if (verbose())
     {
         std::cout << "Processing file: " << fullFileName << "  [OID: " << oid
                   << ", partition: " << partition << ", segment: " << segment
@@ -174,7 +187,7 @@ int32_t RebuildEMManager::collect(const std::string& fullFileName)
     // Verify header number.
     if (versionNumber < 3)
     {
-        if (RM::instance()->verbose())
+        if (verbose())
         {
             std::cerr << "File version " << versionNumber
                       << " is not supported. " << std::endl;
@@ -186,7 +199,7 @@ int32_t RebuildEMManager::collect(const std::string& fullFileName)
     auto colWidth = compressor.getColumnWidth(fileHeader);
     if (colDataType == execplan::CalpontSystemCatalog::UNDEFINED || !colWidth)
     {
-        if (RM::instance()->verbose())
+        if (verbose())
         {
             std::cout << "File header has invalid data. " << std::endl;
         }
@@ -195,6 +208,6 @@ int32_t RebuildEMManager::collect(const std::string& fullFileName)
 
     extentMap.insert(FileId(oid, partition, segment, colWidth, colDataType,
                             isDictFile(colDataType, colWidth)));
-        return 0;
+    return 0;
 }
 } // namespace RebuildExtentMap

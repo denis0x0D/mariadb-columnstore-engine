@@ -59,19 +59,19 @@ struct FileIdComparator {
 // execution is not subject to ordering at all (they are effectively not
 // "run"); otherwise we are exposed to the risk of accessing objects after the
 // end of their lifetime."
-struct RebuildEMManager
+struct EMBuilder
 {
-    RebuildEMManager(const RebuildEMManager&) = delete;
-    RebuildEMManager(RebuildEMManager&&) = delete;
-    RebuildEMManager& operator=(const RebuildEMManager&) = delete;
-    RebuildEMManager& operator=(RebuildEMManager&&) = delete;
-    ~RebuildEMManager() = delete;
+    EMBuilder(const EMBuilder&) = delete;
+    EMBuilder(EMBuilder&&) = delete;
+    EMBuilder& operator=(const EMBuilder&) = delete;
+    EMBuilder& operator=(EMBuilder&&) = delete;
+    ~EMBuilder() = delete;
 
-    static RebuildEMManager* instance()
+    static EMBuilder* instance()
     {
-        // Initialize `RebuildEMManager` only once when call `instance` for the
+        // Initialize `EMBuilder` only once when call `instance` for the
         // first time.
-        static RebuildEMManager* instance = new RebuildEMManager();
+        static EMBuilder* instance = new EMBuilder();
         return instance;
     }
 
@@ -87,7 +87,7 @@ struct RebuildEMManager
     BRM::ExtentMap& getEM() { return extentMap_; }
 
   private:
-    RebuildEMManager() = default;
+    EMBuilder() = default;
 
     // FIXME: Should we call destructor for the ExtentMap?
     BRM::ExtentMap extentMap_;

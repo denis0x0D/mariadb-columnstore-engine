@@ -13,7 +13,7 @@
 
 using namespace idbdatafile;
 using namespace RebuildExtentMap;
-using RM = RebuildEMManager;
+using RM = EMBuilder;
 /*
 class StreamReader
 {
