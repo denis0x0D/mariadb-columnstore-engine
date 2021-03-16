@@ -32,14 +32,14 @@ namespace RebuildExtentMap
 {
 
 // Check for hard-coded values which define dictionary file.
-bool EMBuilder::isDictFile(
+bool EMReBuilder::isDictFile(
     execplan::CalpontSystemCatalog::ColDataType colDataType, uint64_t width)
 {
     return (colDataType == execplan::CalpontSystemCatalog::VARCHAR) &&
            (width == 65000);
 }
 
-void EMBuilder::showExtentMap()
+void EMReBuilder::showExtentMap()
 {
     std::cout << "range.start|range.size|fileId|blockOffset|HWM|partition|"
                  "segment|dbroot|width|status|hiVal|loVal|seqNum|isValid|"
@@ -47,12 +47,12 @@ void EMBuilder::showExtentMap()
     getEM().dumpTo(std::cout);
 }
 
-void EMBuilder::initializeSystemTables()
+void EMReBuilder::initializeSystemTables()
 {
     getEM().load("/home/denis/task/BRM_saves_em", 0);
 }
 
-int32_t EMBuilder::collectExtents(const string& dbRootPath)
+int32_t EMReBuilder::collectExtents(const string& dbRootPath)
 {
     if (doVerbose())
     {
@@ -68,7 +68,7 @@ int32_t EMBuilder::collectExtents(const string& dbRootPath)
     return 0;
 }
 
-int32_t EMBuilder::rebuildEM()
+int32_t EMReBuilder::rebuildExtentMap()
 {
     if (doVerbose())
     {
@@ -150,12 +150,11 @@ int32_t EMBuilder::rebuildEM()
                                 0, false, true);
             getEM().confirmChanges();
         }
-
-   }
-   return 0;
+    }
+    return 0;
 }
 
-int32_t EMBuilder::collectExtent(const std::string& fullFileName)
+int32_t EMReBuilder::collectExtent(const std::string& fullFileName)
 {
     WriteEngine::FileOp fileOp;
     uint32_t oid;
@@ -213,7 +212,6 @@ int32_t EMBuilder::collectExtent(const std::string& fullFileName)
                   << ", partition: " << partition << ", segment: " << segment
                   << "] " << std::endl;
     }
-
 
     // Read the `colDataType` and `colWidth` from the given header.
     compress::IDBCompressInterface compressor;

@@ -62,15 +62,15 @@ int main(int argc, char** argv)
         }
     }
 
-    EMBuilder emBuilder(verbose, display);
+    EMReBuilder emReBuilder(verbose, display);
     // Just show EM and quit.
     if (showExtentMap)
     {
-        emBuilder.showExtentMap();
+        emReBuilder.showExtentMap();
         return 0;
     }
 
-    emBuilder.initializeSystemTables();
+    emReBuilder.initializeSystemTables();
     // Make config from default path.
     // FIXME: Should we allow user to specify a path to config?
     auto* config = config::Config::makeConfig();
@@ -85,16 +85,16 @@ int main(int argc, char** argv)
     {
         std::string dbRootName = "DBRoot" + std::to_string(dbRootNumber);
         auto dbRootPath = config->getConfig("SystemConfig", dbRootName);
-        emBuilder.setDBRoot(dbRootNumber);
+        emReBuilder.setDBRoot(dbRootNumber);
 
         if (verbose)
         {
             std::cout << "Using DBRoot " << dbRootPath << std::endl;
         }
 
-        emBuilder.collectExtents(dbRootPath.c_str());
-        emBuilder.rebuildEM();
-        emBuilder.clear();
+        emReBuilder.collectExtents(dbRootPath.c_str());
+        emReBuilder.rebuildExtentMap();
+        emReBuilder.clear();
     }
 
     return 0;

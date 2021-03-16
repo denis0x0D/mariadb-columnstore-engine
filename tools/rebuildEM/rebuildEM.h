@@ -29,9 +29,11 @@
 
 using namespace idbdatafile;
 
-namespace RebuildExtentMap {
+namespace RebuildExtentMap
+{
 // TODO:
-struct FileId {
+struct FileId
+{
     FileId(uint32_t oid, uint32_t partition, uint32_t segment,
            uint32_t colWidth,
            execplan::CalpontSystemCatalog::ColDataType colDataType,
@@ -49,7 +51,8 @@ struct FileId {
     bool isDict;
 };
 
-struct FileIdComparator {
+struct FileIdComparator
+{
     bool operator()(const FileId& lhs, const FileId& rhs)
     {
         return lhs.oid < rhs.oid;
@@ -57,24 +60,25 @@ struct FileIdComparator {
 };
 
 // TODO.
-class EMBuilder
+class EMReBuilder
 {
   public:
-    EMBuilder(bool verbose, bool display) : verbose(verbose), display(display)
+    EMReBuilder(bool verbose, bool display)
+        : verbose(verbose), display(display)
     {
         IDBPolicy::init(true, false, "", 0);
     }
 
-    EMBuilder(const EMBuilder&) = delete;
-    EMBuilder(EMBuilder&&) = delete;
-    EMBuilder& operator=(const EMBuilder&) = delete;
-    EMBuilder& operator=(EMBuilder&&) = delete;
-    ~EMBuilder() = default;
+    EMReBuilder(const EMReBuilder&) = delete;
+    EMReBuilder(EMReBuilder&&) = delete;
+    EMReBuilder& operator=(const EMReBuilder&) = delete;
+    EMReBuilder& operator=(EMReBuilder&&) = delete;
+    ~EMReBuilder() = default;
 
     void setDBRoot(uint32_t number) { dbRoot = number; }
     int32_t collectExtent(const std::string& fullFileName);
     int32_t collectExtents(const std::string& fullFileName);
-    int32_t rebuildEM();
+    int32_t rebuildExtentMap();
     bool isDictFile(execplan::CalpontSystemCatalog::ColDataType colDataType,
                     uint64_t width);
     void initializeSystemTables();
