@@ -14,34 +14,6 @@
 using namespace idbdatafile;
 using namespace RebuildExtentMap;
 using RM = EMBuilder;
-/*
-class StreamReader
-{
-  public:
-    StreamReader(const vectror<uint8_t>& data) : data(data) {}
-    uint32_t read(uint8_t* ptr, uint32_t size) {
-
-    }
-
-  private:
-    const vector<uint8_t>& data;
-};
-*/
-
-int32_t walkDB(const char* fp, const struct stat* sb, int typeflag,
-               struct FTW* ftwbuf)
-{
-    if (typeflag != FTW_F)
-    {
-        return FTW_CONTINUE;
-    }
-    (void) sb;
-    (void) ftwbuf;
-
-    (void) RM::instance()->collect(fp);
-
-    return FTW_CONTINUE;
-}
 
 static void usage(const string& pname)
 {
@@ -69,18 +41,19 @@ int main(int argc, char** argv)
     int32_t c;
     std::string pname(argv[0]);
     bool showExtentMap = false;
-    bool initSysCat = false;
+    bool verbose = false;
+    bool display = false;
 
     while ((c = getopt(argc, argv, "vdhsi")) != EOF)
     {
         switch (c)
         {
             case 'v':
-                RM::instance()->setVerbose(true);
+                verbose = true;
                 break;
 
             case 'd':
-                RM::instance()->setDisplay(true);
+                display = true;
                 break;
 
             case 's':
@@ -96,17 +69,16 @@ int main(int argc, char** argv)
         }
     }
 
+    EMBuilder emBuilder(verbose, display);
+
     // Just show EM and quit.
     if (showExtentMap)
     {
-        header();
-        RM::instance()->getEM().dumpTo(std::cout);
+        emBuilder.showExtentMap();
         return 0;
     }
 
-    IDBPolicy::init(true, false, "", 0);
-    RM::instance()->getEM().load("/home/denis/task/BRM_saves_em", 0);
-
+    emBuilder.initializeSystemTables();
     // Make config from default path.
     // FIXME: Should we allow user to specify a path to config?
     auto* config = config::Config::makeConfig();
@@ -121,27 +93,16 @@ int main(int argc, char** argv)
     {
         std::string dbRootName = "DBRoot" + std::to_string(dbRootNumber);
         auto dbRootPath = config->getConfig("SystemConfig", dbRootName);
-        RM::instance()->setDBRoot(dbRootNumber);
+        emBuilder.setDBRoot(dbRootNumber);
 
-        if (RM::instance()->verbose())
+        if (verbose)
         {
             std::cout << "Using DBRoot " << dbRootPath << std::endl;
         }
 
-        if (access(dbRootPath.c_str(), X_OK) != 0)
-        {
-            std::cerr << "Could not scan DBRoot " << dbRootPath << std::endl;
-            return 1;
-        }
-
-        if (nftw(dbRootPath.c_str(), walkDB, 64,
-                 FTW_PHYS | FTW_ACTIONRETVAL) != 0)
-        {
-            std::cerr << "Error processing files in DBRoot " << dbRootPath
-                      << std::endl;
-            return 1;
-        }
-        RM::instance()->rebuildEM();
+        emBuilder.collect(dbRootPath.c_str());
+        emBuilder.rebuildEM();
+        emBuilder.clear();
     }
 
     return 0;

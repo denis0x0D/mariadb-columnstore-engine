@@ -16,6 +16,7 @@
    MA 02110-1301, USA. */
 
 #include <iostream>
+#include <boost/filesystem.hpp>
 
 #include "rebuildEM.h"
 #include "calpontsystemcatalog.h"
@@ -39,16 +40,37 @@ static bool isDictFile(execplan::CalpontSystemCatalog::ColDataType colDataType,
            (width == 65000);
 }
 
+int32_t EMBuilder::collect(const string& dbRootPath)
+{
+    if (verbose())
+    {
+        std::cout << "Collect extents for the DBRoot " << dbRootPath
+                  << std::endl;
+    }
+    for (const auto& dir :
+         boost::filesystem::recursive_directory_iterator(dbRootPath))
+    {
+        (void) collectExtent(dir.path().string());
+    }
+
+    return 0;
+}
+
 int32_t EMBuilder::rebuildEM()
 {
-    std::cout << "extent map size " << extentMap.size() << std::endl;
+    if (verbose())
+    {
+        std::cout << "Build extent map with size " << extentMap.size()
+                  << std::endl;
+    }
+
     for (const auto& fileId : extentMap)
     {
         uint32_t startBlockOffset;
         int32_t allocdSize;
         BRM::LBID_t lbid;
 
-        if (display())
+        if (!display())
         {
             try
             {
@@ -57,18 +79,17 @@ int32_t EMBuilder::rebuildEM()
                     // Create a dictionary extent for the given oid, partition,
                     // segment, dbroot.
                     getEM().createDictStoreExtent(
-                        fileId.oid, RM::instance()->getDBRoot(),
-                        fileId.partition, fileId.segment, lbid, allocdSize);
+                        fileId.oid, getDBRoot(), fileId.partition,
+                        fileId.segment, lbid, allocdSize);
                 }
                 else
                 {
                     // Create a column extent for the given oid, partition,
                     // segment, dbroot and column width.
                     getEM().createColumnExtentExactFile(
-                        fileId.oid, fileId.colWidth,
-                        RM::instance()->getDBRoot(), fileId.partition,
-                        fileId.segment, fileId.colDataType, lbid, allocdSize,
-                        startBlockOffset);
+                        fileId.oid, fileId.colWidth, getDBRoot(),
+                        fileId.partition, fileId.segment, fileId.colDataType,
+                        lbid, allocdSize, startBlockOffset);
                 }
             }
             // Could throw an logic_error exception.
@@ -105,7 +126,7 @@ int32_t EMBuilder::rebuildEM()
    return 0;
 }
 
-int32_t EMBuilder::collect(const std::string& fullFileName)
+int32_t EMBuilder::collectExtent(const std::string& fullFileName)
 {
     WriteEngine::FileOp fileOp;
     uint32_t oid;
@@ -208,6 +229,12 @@ int32_t EMBuilder::collect(const std::string& fullFileName)
 
     extentMap.insert(FileId(oid, partition, segment, colWidth, colDataType,
                             isDictFile(colDataType, colWidth)));
+    if (verbose())
+    {
+        std::cout << "FileId is collected for [OID: " << oid
+                  << ", partition: " << partition << ", segment: " << segment
+                  << "] " << std::endl;
+    }
     return 0;
 }
 } // namespace RebuildExtentMap

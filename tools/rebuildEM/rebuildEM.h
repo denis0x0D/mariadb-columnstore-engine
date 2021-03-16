@@ -20,12 +20,16 @@
 
 #include <string>
 #include <map>
+#include <ftw.h>
 
 #include "calpontsystemcatalog.h"
 #include "extentmap.h"
+#include "IDBPolicy.h"
+#include "IDBFileSystem.h"
+
+using namespace idbdatafile;
 
 namespace RebuildExtentMap {
-
 // TODO:
 struct FileId {
     FileId(uint32_t oid, uint32_t partition, uint32_t segment,
@@ -53,33 +57,52 @@ struct FileIdComparator {
     }
 };
 
-// This struct manages the global data.
-// Actually it is a much safe to use singleton to manage global data,
-// instead of defining it directly e.g. "When destructors are trivial, their
-// execution is not subject to ordering at all (they are effectively not
-// "run"); otherwise we are exposed to the risk of accessing objects after the
-// end of their lifetime."
+// TODO.
 struct EMBuilder
 {
+    EMBuilder(bool verbose, bool display)
+        : verbose_(verbose), display_(display)
+    {
+        IDBPolicy::init(true, false, "", 0);
+    }
+
     EMBuilder(const EMBuilder&) = delete;
     EMBuilder(EMBuilder&&) = delete;
     EMBuilder& operator=(const EMBuilder&) = delete;
     EMBuilder& operator=(EMBuilder&&) = delete;
-    ~EMBuilder() = delete;
-
-    static EMBuilder* instance()
-    {
-        // Initialize `EMBuilder` only once when call `instance` for the
-        // first time.
-        static EMBuilder* instance = new EMBuilder();
-        return instance;
-    }
+    ~EMBuilder() = default;
+    /*
+        static EMBuilder* instance()
+        {
+            // Initialize `EMBuilder` only once when call `instance` for the
+            // first time.
+            static EMBuilder* instance = new EMBuilder();
+            return instance;
+        }
+        */
 
     void setVerbose(bool verbose) { verbose_ = verbose; }
     void setDisplay(bool display) { display_ = display; }
     void setDBRoot(uint32_t number) { dbRoot_ = number; }
+    int32_t collectExtent(const std::string& fullFileName);
     int32_t collect(const std::string& fullFileName);
     int32_t rebuildEM();
+    void initializeSystemTables()
+    {
+        extentMap_.load("/home/denis/task/BRM_saves_em", 0);
+    }
+
+    void showExtentMap()
+    {
+        std::cout << "range.start|range.size|fileId|blockOffset|HWM|partition|"
+                     "segment|dbroot|width|status|hiVal|loVal|seqNum|isValid|"
+                  << std::endl;
+        extentMap_.dumpTo(std::cout);
+    }
+
+    int32_t walkDB(const char* fp, const struct stat* sb, int typeflag,
+                   struct FTW* ftwbuf);
+    void clear() { extentMap.clear(); }
 
     uint32_t getDBRoot() const { return dbRoot_; }
     bool verbose() const { return verbose_; }
@@ -87,15 +110,12 @@ struct EMBuilder
     BRM::ExtentMap& getEM() { return extentMap_; }
 
   private:
-    EMBuilder() = default;
 
-    // FIXME: Should we call destructor for the ExtentMap?
     BRM::ExtentMap extentMap_;
     bool verbose_{false};
     bool display_{false};
     uint32_t dbRoot_{1};
     std::set<FileId, FileIdComparator> extentMap;
-    std::mutex mut;
 };
 } // namespace RebuildExtentMap
 #endif
