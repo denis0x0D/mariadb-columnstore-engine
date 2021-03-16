@@ -14,6 +14,19 @@
 using namespace idbdatafile;
 using namespace RebuildExtentMap;
 using RM = RebuildEMManager;
+/*
+class StreamReader
+{
+  public:
+    StreamReader(const vectror<uint8_t>& data) : data(data) {}
+    uint32_t read(uint8_t* ptr, uint32_t size) {
+
+    }
+
+  private:
+    const vector<uint8_t>& data;
+};
+*/
 
 int32_t walkDB(const char* fp, const struct stat* sb, int typeflag,
                struct FTW* ftwbuf)
@@ -25,7 +38,7 @@ int32_t walkDB(const char* fp, const struct stat* sb, int typeflag,
     (void) sb;
     (void) ftwbuf;
 
-    (void) rebuildEM(fp);
+    (void) RM::instance()->collect(fp);
 
     return FTW_CONTINUE;
 }
@@ -128,6 +141,7 @@ int main(int argc, char** argv)
                       << std::endl;
             return 1;
         }
+        RM::instance()->rebuildEM();
     }
 
     return 0;

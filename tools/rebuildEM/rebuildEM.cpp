@@ -39,7 +39,60 @@ static bool isDictFile(execplan::CalpontSystemCatalog::ColDataType colDataType,
            (width == 65000);
 }
 
-int32_t rebuildEM(const std::string& fullFileName)
+int32_t RebuildEMManager::rebuildEM()
+{
+    for (const auto& fileId : extentMap)
+    {
+        uint32_t startBlockOffset;
+        int32_t allocdSize;
+        BRM::LBID_t lbid;
+
+        if (!RM::instance()->display())
+        {
+            try
+            {
+                if (fileId.isDict)
+                {
+                    // Create a dictionary extent for the given oid, partition,
+                    // segment, dbroot.
+                    RM::instance()->getEM().createDictStoreExtent(
+                        fileId.oid, RM::instance()->getDBRoot(),
+                        fileId.partition, fileId.segment, lbid, allocdSize);
+                }
+                else
+                {
+                    // Create a column extent for the given oid, partition,
+                    // segment, dbroot and column width.
+                    RM::instance()->getEM().createColumnExtentExactFile(
+                        fileId.oid, fileId.colWidth,
+                        RM::instance()->getDBRoot(), fileId.partition,
+                        fileId.segment, fileId.colDataType, lbid, allocdSize,
+                        startBlockOffset);
+                }
+            }
+            // Could throw an logic_error exception.
+            catch (std::exception& e)
+            {
+                RM::instance()->getEM().undoChanges();
+                std::cerr << "Cannot create column extent: " << e.what()
+                          << std::endl;
+                return -1;
+            }
+            RM::instance()->getEM().confirmChanges();
+            // This is important part, it sets a status for specific extent as
+            // 'available' that means we can use it.
+            RM::instance()->getEM().setLocalHWM(
+                fileId.oid, fileId.partition, fileId.segment, 0, false, true);
+            RM::instance()->getEM().confirmChanges();
+        }
+
+        std::cout << "Extent is created, allocated size " << allocdSize
+                  << " starting LBID " << lbid << " for OID " << fileId.oid
+                  << std::endl;
+    }
+}
+
+int32_t RebuildEMManager::collect(const std::string& fullFileName)
 {
     WriteEngine::FileOp fileOp;
     uint32_t oid;
@@ -140,59 +193,8 @@ int32_t rebuildEM(const std::string& fullFileName)
         return -1;
     }
 
-    uint32_t startBlockOffset;
-    int32_t allocdSize;
-    BRM::LBID_t lbid;
-    bool isDictionaryFile = isDictFile(colDataType, colWidth);
-
-    if (!RM::instance()->display())
-    {
-        try
-        {
-            if (isDictionaryFile)
-            {
-                // Create a dictionary extent for the given oid, partition,
-                // segment, dbroot.
-                RM::instance()->getEM().createDictStoreExtent(
-                    oid, RM::instance()->getDBRoot(), partition, segment, lbid,
-                    allocdSize);
-            }
-            else
-            {
-                // Create a column extent for the given oid, partition,
-                // segment, dbroot and column width.
-                RM::instance()->getEM().createColumnExtentExactFile(
-                    oid, colWidth, RM::instance()->getDBRoot(), partition,
-                    segment, colDataType, lbid, allocdSize, startBlockOffset);
-            }
-        }
-        // Could throw an logic_error exception.
-        catch (std::exception& e)
-        {
-            RM::instance()->getEM().undoChanges();
-            std::cerr << "Cannot create column extent: " << e.what()
-                      << std::endl;
-            return -1;
-        }
-        RM::instance()->getEM().confirmChanges();
-        // This is important part, it sets a status for specific extent as
-        // 'available' that means we can use it.
-        RM::instance()->getEM().setLocalHWM(oid, partition, segment, 0,
-                                            /*firstNode=*/false,
-                                            /*uselock=*/true);
-        RM::instance()->getEM().confirmChanges();
-    }
-
-    if (RM::instance()->verbose())
-    {
-        if (isDictionaryFile)
-            std::cout << "Dictionary ";
-        else
-            std::cout << "Column ";
-        std::cout << "extent is created, allocated size " << allocdSize
-                  << " starting LBID " << lbid << " for OID " << oid
-                  << std::endl;
-    }
-    return 0;
+    extentMap.insert(FileId(oid, partition, segment, colWidth, colDataType,
+                            isDictFile(colDataType, colWidth)));
+        return 0;
 }
 } // namespace RebuildExtentMap

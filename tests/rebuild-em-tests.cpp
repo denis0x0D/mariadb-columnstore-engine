@@ -176,6 +176,7 @@ TEST_F(RebuildEMTest, File2OidCalculationTest)
 #define REBUILD_EM_UT_USER_CAN_WRITE_TO_SYSCAT
 #define DEBUG_REBUILD_EM_UT
 #ifdef REBUILD_EM_UT_USER_CAN_WRITE_TO_SYSCAT
+/*
 TEST_F(RebuildEMTest, rebuildExtentMap)
 {
     WriteEngine::FileOp fileOp;
@@ -256,4 +257,5 @@ TEST_F(RebuildEMTest, rebuildExtentMap)
     rc = fileOp.deleteFile(fullFileName.c_str());
     EXPECT_EQ(rc, 0);
 }
+*/
 #endif

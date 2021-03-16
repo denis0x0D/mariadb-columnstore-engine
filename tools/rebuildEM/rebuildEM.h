@@ -19,11 +19,40 @@
 #define REBUILD_EM_H
 
 #include <string>
+#include <map>
 
 #include "calpontsystemcatalog.h"
 #include "extentmap.h"
 
 namespace RebuildExtentMap {
+
+// TODO:
+struct FileId {
+    FileId(uint32_t oid, uint32_t partition, uint32_t segment,
+           uint32_t colWidth,
+           execplan::CalpontSystemCatalog::ColDataType colDataType,
+           bool isDict)
+        : oid(oid), partition(partition), segment(segment), colWidth(colWidth),
+          colDataType(colDataType), isDict(isDict)
+    {
+    }
+
+  public:
+    uint32_t oid;
+    uint32_t partition;
+    uint32_t segment;
+    uint32_t colWidth;
+    execplan::CalpontSystemCatalog::ColDataType colDataType;
+    bool isDict;
+};
+
+struct FileIdComparator {
+    bool operator()(const FileId& lhs, const FileId& rhs)
+    {
+        return lhs.oid < rhs.oid;
+    }
+};
+
 // This struct manages the global data.
 // Actually it is a much safe to use singleton to manage global data,
 // instead of defining it directly e.g. "When destructors are trivial, their
@@ -49,6 +78,8 @@ struct RebuildEMManager
     void setVerbose(bool verbose) { verbose_ = verbose; }
     void setDisplay(bool display) { display_ = display; }
     void setDBRoot(uint32_t number) { dbRoot_ = number; }
+    int32_t collect(const std::string& fullFileName);
+    int32_t rebuildEM();
 
     uint32_t getDBRoot() const { return dbRoot_; }
     bool verbose() const { return verbose_; }
@@ -63,12 +94,8 @@ struct RebuildEMManager
     bool verbose_{false};
     bool display_{false};
     uint32_t dbRoot_{1};
+    std::set<FileId, FileIdComparator> extentMap;
+    std::mutex mut;
 };
-
-// Rebuild extention map by the given `fullFileName`
-// `fullFileName` should include full path to the segment file
-// e.g. syscat + DBRoot + filename.
-int32_t rebuildEM(const std::string& fullFileName);
-
 } // namespace RebuildExtentMap
 #endif
