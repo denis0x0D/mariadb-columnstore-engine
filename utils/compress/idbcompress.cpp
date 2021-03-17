@@ -88,9 +88,9 @@ union CompressedDBFileHeaderBlock
 };
 
 void initCompressedDBFileHeader(
-    void* hdrBuf, uint32_t columnWidth, uint64_t LBID,
+    void* hdrBuf, uint32_t columnWidth,
     execplan::CalpontSystemCatalog::ColDataType colDataType,
-    int compressionType, int hdrSize)
+    int compressionType, int hdrSize, uint64_t LBID = -1)
 {
     CompressedDBFileHeaderBlock* hdr = reinterpret_cast<CompressedDBFileHeaderBlock*>(hdrBuf);
     hdr->fHeader.fMagicNumber     = MAGIC_NUMBER;
@@ -351,12 +351,11 @@ void IDBCompressInterface::storePtrs(const std::vector<uint64_t>& ptrs, void* pt
 // Initialize the header blocks to be written at the start of a dictionary file.
 //------------------------------------------------------------------------------
 void IDBCompressInterface::initHdr(void* hdrBuf, void* ptrBuf,
-                                   int compressionType, int hdrSize,
-                                   int64_t lbid) const
+                                   int compressionType, int hdrSize) const
 {
     memset(hdrBuf, 0, HDR_BUF_LEN);
     memset(ptrBuf, 0, hdrSize - HDR_BUF_LEN);
-    initCompressedDBFileHeader(hdrBuf, DICTIONARY_COL_WIDTH, lbid,
+    initCompressedDBFileHeader(hdrBuf, DICTIONARY_COL_WIDTH,
                                DICTIONARY_COL_TYPE, compressionType, hdrSize);
 }
 
@@ -364,12 +363,12 @@ void IDBCompressInterface::initHdr(void* hdrBuf, void* ptrBuf,
 // Initialize the header blocks to be written at the start of a column file.
 //------------------------------------------------------------------------------
 void IDBCompressInterface::initHdr(
-    void* hdrBuf, uint32_t columnWidth, uint64_t LBID,
+    void* hdrBuf, uint32_t columnWidth,
     execplan::CalpontSystemCatalog::ColDataType columnType,
     int compressionType) const
 {
     memset(hdrBuf, 0, HDR_BUF_LEN * 2);
-    initCompressedDBFileHeader(hdrBuf, columnWidth, LBID, columnType,
+    initCompressedDBFileHeader(hdrBuf, columnWidth, columnType,
                                compressionType, HDR_BUF_LEN * 2);
 }
 

@@ -816,8 +816,8 @@ int FileOp::extendFile(
         if ((m_compressionType) && (hdrs))
         {
             IDBCompressInterface compressor;
-            compressor.initHdr(hdrs, width, startLbid, colDataType,
-                               m_compressionType);
+            compressor.initHdr(hdrs, width, colDataType, m_compressionType);
+            compressor.setLBID(hdrs, startLbid);
         }
     }
 
@@ -975,8 +975,8 @@ int FileOp::addExtentExactFile(
         if ((m_compressionType) && (hdrs))
         {
             IDBCompressInterface compressor;
-            compressor.initHdr(hdrs, width, startLbid, colDataType,
-                               m_compressionType);
+            compressor.initHdr(hdrs, width, colDataType, m_compressionType);
+            compressor.setLBID(hdrs, startLbid);
         }
     }
 
@@ -1062,7 +1062,7 @@ int FileOp::initColumnExtent(
     {
         char hdrs[IDBCompressInterface::HDR_BUF_LEN * 2];
         IDBCompressInterface compressor;
-        compressor.initHdr(hdrs, width, 0, colDataType, m_compressionType);
+        compressor.initHdr(hdrs, width, colDataType, m_compressionType);
 
         if (bAbbrevExtent)
             compressor.setBlockCount(hdrs, nBlocks);
@@ -1341,8 +1341,9 @@ int FileOp::writeInitialCompColumnChunk(
 //      "; blkAllocCnt: "   << nBlocksAllocated  <<
 //      "; compressedByteCnt: "  << outputLen << std::endl;
 
-    compressor.initHdr(hdrs, width, startLBID, colDataType, m_compressionType);
+    compressor.initHdr(hdrs, width, colDataType, m_compressionType);
     compressor.setBlockCount(hdrs, nBlocksAllocated);
+    compressor.setLBID(hdrs, startLBID);
 
     // Store compression pointers in the header
     std::vector<uint64_t> ptrs;

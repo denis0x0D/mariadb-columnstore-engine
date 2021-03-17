@@ -442,6 +442,7 @@ int ColumnBufferCompressed::compressAndFlush( bool bFinishingFile )
     if ( bFinishingFile || !fFlushedStartHwmChunk )
     {
         fileOffset = fFile->tell();
+        // TODO: write lbid.
         RETURN_ON_ERROR( saveCompressionHeaders() );
 
         // If we just updated the chunk header for the starting HWM chunk,
@@ -582,7 +583,7 @@ int ColumnBufferCompressed::saveCompressionHeaders( )
 {
     // Construct the header records
     char hdrBuf[IDBCompressInterface::HDR_BUF_LEN * 2];
-    fCompressor->initHdr(hdrBuf, fColInfo->column.width, -1,
+    fCompressor->initHdr(hdrBuf, fColInfo->column.width,
                          fColInfo->column.dataType,
                          fColInfo->column.compressionType);
     fCompressor->setBlockCount(hdrBuf,

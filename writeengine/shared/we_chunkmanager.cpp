@@ -443,7 +443,8 @@ IDBDataFile* ChunkManager::createDctnryFile(const FID& fid,
 
     fCompressor.initHdr(fileData->fFileHeader.fControlData,
                         fileData->fFileHeader.fPtrSection,
-                        fFileOp->compressionType(), hdrSize, lbid);
+                        fFileOp->compressionType(), hdrSize);
+    fCompressor.setLBID(fileData->fFileHeader.fControlData, lbid);
 
     if (writeHeader(fileData, __LINE__) != NO_ERROR)
     {

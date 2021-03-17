@@ -108,14 +108,14 @@ public:
     * @warning ptrBuf must be at least (hdrSize-HDR_BUF_LEN) bytes
     */
     EXPORT void initHdr(void* hdrBuf, void* ptrBuf, int compressionType,
-                        int hdrSize, int64_t lbid) const;
+                        int hdrSize) const;
 
     /**
      * Initialize header buffer at start of compressed db file.
      *
      * @warning hdrBuf must be at least HDR_BUF_LEN*2 bytes
      */
-    EXPORT void initHdr(void* hdrBuf, uint32_t columnWidth, uint64_t LBID,
+    EXPORT void initHdr(void* hdrBuf, uint32_t columnWidth,
                         execplan::CalpontSystemCatalog::ColDataType columnType,
                         int compressionType) const;
 
