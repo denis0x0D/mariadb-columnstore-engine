@@ -71,6 +71,103 @@ int32_t EMReBuilder::collectExtents(const string& dbRootPath)
     return 0;
 }
 
+int32_t EMReBuilder::collectExtent(const std::string& fullFileName)
+{
+    WriteEngine::FileOp fileOp;
+    uint32_t oid;
+    uint32_t partition;
+    uint32_t segment;
+    // Initialize oid, partition and segment from the given `fullFileName`.
+    auto rc = WriteEngine::Convertor::fileName2Oid(fullFileName, oid,
+                                                   partition, segment);
+    if (rc != 0)
+    {
+        return rc;
+    }
+
+    // Open the given file.
+    std::unique_ptr<IDBDataFile> dbFile(IDBDataFile::open(
+        IDBPolicy::getType(fullFileName, IDBPolicy::WRITEENG),
+        fullFileName.c_str(), "rb", 1));
+
+    if (!dbFile)
+    {
+        std::cerr << "Cannot open file " << fullFileName << std::endl;
+        return -1;
+    }
+
+    rc = dbFile->seek(0, 0);
+    if (rc != 0)
+    {
+        std::cerr << "IDBDataFile::seek failed for the file " << fullFileName
+                  << std::endl;
+        return rc;
+    }
+
+    // Read and verify header.
+    char fileHeader[compress::IDBCompressInterface::HDR_BUF_LEN * 2];
+    rc = fileOp.readHeaders(dbFile.get(), fileHeader);
+    if (rc != 0)
+    {
+        // FIXME: If the file was created without a compression, it does not
+        // have a header block, so header verification fails in this case,
+        // currently we skip it, because we cannot deduce needed data to create
+        // a column extent from the blob file.
+        if (doVerbose())
+        {
+            std::cerr
+                << "Cannot read file header from the file " << fullFileName
+                << ", probably this file was created without compression. "
+                << std::endl;
+        }
+        return rc;
+    }
+
+    if (doVerbose())
+    {
+        std::cout << "Processing file: " << fullFileName << "  [OID: " << oid
+                  << ", partition: " << partition << ", segment: " << segment
+                  << "] " << std::endl;
+    }
+
+    // Read the `colDataType` and `colWidth` from the given header.
+    compress::IDBCompressInterface compressor;
+    auto versionNumber = compressor.getVersionNumber(fileHeader);
+    // Verify header number.
+    if (versionNumber < 3)
+    {
+        if (doVerbose())
+        {
+            std::cerr << "File version " << versionNumber
+                      << " is not supported. " << std::endl;
+        }
+        return -1;
+    }
+
+    auto colDataType = compressor.getColDataType(fileHeader);
+    auto colWidth = compressor.getColumnWidth(fileHeader);
+    auto lbid = compressor.getLBID(fileHeader);
+    std::cout << "LBID " << lbid << std::endl;
+    if (colDataType == execplan::CalpontSystemCatalog::UNDEFINED || !colWidth)
+    {
+        if (doVerbose())
+        {
+            std::cout << "File header has invalid data. " << std::endl;
+        }
+        return -1;
+    }
+
+    extentMap.insert(FileId(oid, partition, segment, colWidth, colDataType,
+                            isDictFile(colDataType, colWidth)));
+    if (doVerbose())
+    {
+        std::cout << "FileId is collected for [OID: " << oid
+                  << ", partition: " << partition << ", segment: " << segment
+                  << "] " << std::endl;
+    }
+    return 0;
+}
+
 int32_t EMReBuilder::rebuildExtentMap()
 {
     if (doVerbose())
@@ -153,101 +250,6 @@ int32_t EMReBuilder::rebuildExtentMap()
                                 0, false, true);
             getEM().confirmChanges();
         }
-    }
-    return 0;
-}
-
-int32_t EMReBuilder::collectExtent(const std::string& fullFileName)
-{
-    WriteEngine::FileOp fileOp;
-    uint32_t oid;
-    uint32_t partition;
-    uint32_t segment;
-    // Initialize oid, partition and segment from the given `fullFileName`.
-    auto rc = WriteEngine::Convertor::fileName2Oid(fullFileName, oid,
-                                                   partition, segment);
-    if (rc != 0)
-    {
-        return rc;
-    }
-
-    // Open the given file.
-    std::unique_ptr<IDBDataFile> dbFile(IDBDataFile::open(
-        IDBPolicy::getType(fullFileName, IDBPolicy::WRITEENG),
-        fullFileName.c_str(), "rb", 1));
-
-    if (!dbFile)
-    {
-        std::cerr << "Cannot open file " << fullFileName << std::endl;
-        return -1;
-    }
-
-    rc = dbFile->seek(0, 0);
-    if (rc != 0)
-    {
-        std::cerr << "IDBDataFile::seek failed for the file " << fullFileName
-                  << std::endl;
-        return rc;
-    }
-
-    // Read and verify header.
-    char fileHeader[compress::IDBCompressInterface::HDR_BUF_LEN * 2];
-    rc = fileOp.readHeaders(dbFile.get(), fileHeader);
-    if (rc != 0)
-    {
-        // FIXME: If the file was created without a compression, it does not
-        // have a header block, so header verification fails in this case,
-        // currently we skip it, because we cannot deduce needed data to create
-        // a column extent from the blob file.
-        if (doVerbose())
-        {
-            std::cerr
-                << "Cannot read file header from the file " << fullFileName
-                << ", probably this file was created without compression. "
-                << std::endl;
-        }
-        return rc;
-    }
-
-    if (doVerbose())
-    {
-        std::cout << "Processing file: " << fullFileName << "  [OID: " << oid
-                  << ", partition: " << partition << ", segment: " << segment
-                  << "] " << std::endl;
-    }
-
-    // Read the `colDataType` and `colWidth` from the given header.
-    compress::IDBCompressInterface compressor;
-    auto versionNumber = compressor.getVersionNumber(fileHeader);
-    // Verify header number.
-    if (versionNumber < 3)
-    {
-        if (doVerbose())
-        {
-            std::cerr << "File version " << versionNumber
-                      << " is not supported. " << std::endl;
-        }
-        return -1;
-    }
-
-    auto colDataType = compressor.getColDataType(fileHeader);
-    auto colWidth = compressor.getColumnWidth(fileHeader);
-    if (colDataType == execplan::CalpontSystemCatalog::UNDEFINED || !colWidth)
-    {
-        if (doVerbose())
-        {
-            std::cout << "File header has invalid data. " << std::endl;
-        }
-        return -1;
-    }
-
-    extentMap.insert(FileId(oid, partition, segment, colWidth, colDataType,
-                            isDictFile(colDataType, colWidth)));
-    if (doVerbose())
-    {
-        std::cout << "FileId is collected for [OID: " << oid
-                  << ", partition: " << partition << ", segment: " << segment
-                  << "] " << std::endl;
     }
     return 0;
 }

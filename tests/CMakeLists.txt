@@ -39,6 +39,6 @@ endif()
 
 if (WITH_REBUILD_EM_UT)
     add_executable(rebuild_em_tests rebuild-em-tests.cpp)
-    target_link_libraries(rebuild_em_tests ${ENGINE_LDFLAGS} ${GTEST_LIBRARIES} ${MARIADB_CLIENT_LIBS} ${ENGINE_WRITE_LIBS} rebuildEMTest)
+    target_link_libraries(rebuild_em_tests ${ENGINE_LDFLAGS} ${GTEST_LIBRARIES} ${MARIADB_CLIENT_LIBS} ${ENGINE_WRITE_LIBS})
     install(TARGETS rebuild_em_tests DESTINATION ${ENGINE_BINDIR} COMPONENT columnstore-engine)
 endif()
