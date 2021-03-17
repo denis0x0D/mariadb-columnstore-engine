@@ -204,18 +204,22 @@ int  Dctnry::createDctnry( const OID& dctnryOID, int colWidth,
     Stats::startParseEvent(WE_STATS_ALLOC_DCT_EXTENT);
 #endif
 
+    rc = BRMWrapper::getInstance()->allocateDictStoreExtent(
+        (OID) dctnryOID, dbRoot, partition, segment, startLbid, allocSize);
+
     if (flag)
     {
         m_dctnryOID   = dctnryOID;
         m_partition   = partition;
-        m_segment     = segment;
+        m_segment = segment;
         m_dbRoot      = dbRoot;
-        RETURN_ON_ERROR( ( rc = oid2FileName( m_dctnryOID, fileName, true,
-                                              m_dbRoot, m_partition, m_segment ) ) );
+        RETURN_ON_ERROR((rc = oid2FileName(m_dctnryOID, fileName, true,
+                                           m_dbRoot, m_partition, m_segment)));
         m_segFileName = fileName;
 
         // if obsolete file exists, "w+b" will truncate and write over
-        m_dFile = createDctnryFile(fileName, colWidth, "w+b", DEFAULT_BUFSIZ);
+        m_dFile = createDctnryFile(fileName, colWidth, "w+b", DEFAULT_BUFSIZ,
+                                   startLbid);
 
         {
             // We presume the path will contain /
@@ -231,9 +235,26 @@ int  Dctnry::createDctnry( const OID& dctnryOID, int colWidth,
         RETURN_ON_ERROR( setFileOffset(m_dFile, 0, SEEK_END) );
     }
 
-    rc = BRMWrapper::getInstance()->allocateDictStoreExtent(
-             (OID)m_dctnryOID, m_dbRoot, m_partition, m_segment,
-             startLbid, allocSize);
+
+    /*
+    if (flag)
+    {
+        FileOp fileOp;
+        char dctHeader[compress::IDBCompressInterface::HDR_BUF_LEN * 2];
+        auto rc = fileOp.readHeaders(m_dFile, dctHeader);
+        if (rc != NO_ERROR)
+        {
+            return rc;
+        }
+
+        compress::IDBCompressInterface compressor;
+        // Set the start LBID for dictionary file.
+        compressor.setLBID(dctHeader, startLbid);
+
+        // We have to update only control header.
+        rc = fileOp.writeControlHeader(m_dFile, dctHeader);
+    }
+    */
 
     if (rc != NO_ERROR)
     {
@@ -245,7 +266,7 @@ int  Dctnry::createDctnry( const OID& dctnryOID, int colWidth,
         return rc;
     }
 
-    // We allocate a full extent from BRM, but only write an abbreviated 256K
+       // We allocate a full extent from BRM, but only write an abbreviated 256K
     // rows to disk for 1st extent in each store file, to conserve disk usage.
     int totalSize = allocSize;
 
@@ -1488,7 +1509,7 @@ int  Dctnry::updateDctnry(unsigned char* sigValue, int& sigSize,
  * open dictionary file
  ******************************************************************************/
 IDBDataFile* Dctnry::createDctnryFile(
-    const char* name, int, const char* mode, int ioBuffSize)
+    const char* name, int, const char* mode, int ioBuffSize, int64_t lbid)
 {
     return openFile(name, mode, ioBuffSize, false);
 }

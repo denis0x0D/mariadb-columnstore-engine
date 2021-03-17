@@ -197,7 +197,8 @@ public:
                                   uint16_t segment,
                                   const char* filename,
                                   const char* mode,
-                                  int size);
+                                  int size,
+                                  int64_t lbid);
 
     // @brief Read a block from pFile at offset fbo.
     //        The data may copied from memory if the chunk it belongs to is already available.

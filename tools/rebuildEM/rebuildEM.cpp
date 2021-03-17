@@ -147,7 +147,6 @@ int32_t EMReBuilder::collectExtent(const std::string& fullFileName)
     auto colDataType = compressor.getColDataType(fileHeader);
     auto colWidth = compressor.getColumnWidth(fileHeader);
     auto lbid = compressor.getLBID(fileHeader);
-    std::cout << "LBID " << lbid << std::endl;
     if (colDataType == execplan::CalpontSystemCatalog::UNDEFINED || !colWidth)
     {
         if (doVerbose())
@@ -157,12 +156,15 @@ int32_t EMReBuilder::collectExtent(const std::string& fullFileName)
         return -1;
     }
 
-    extentMap.insert(FileId(oid, partition, segment, colWidth, colDataType,
-                            isDictFile(colDataType, colWidth)));
+    auto isDict = isDictFile(colDataType, colWidth);
+    extentMap.insert(
+        FileId(oid, partition, segment, colWidth, colDataType, lbid, isDict));
+
     if (doVerbose())
     {
         std::cout << "FileId is collected for [OID: " << oid
                   << ", partition: " << partition << ", segment: " << segment
+                  << ", collected LBID: " << lbid << ", isDict " << isDict
                   << "] " << std::endl;
     }
     return 0;
@@ -234,7 +236,7 @@ int32_t EMReBuilder::rebuildExtentMap()
             if (doVerbose())
             {
                 std::cout << "Extent is created, allocated size " << allocdSize
-                          << " starting LBID " << lbid << " for OID "
+                          << " actual LBID " << lbid << " for OID "
                           << fileId.oid << std::endl;
             }
 

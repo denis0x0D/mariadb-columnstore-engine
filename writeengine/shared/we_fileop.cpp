@@ -161,7 +161,7 @@ int FileOp::createDir( const char* dirName, mode_t mode ) const
  *    ERR_FILE_CREATE if can not create the file
  ***********************************************************/
 int FileOp::createFile( const char* fileName, int numOfBlock,
-                        const uint8_t* emptyVal, int width,
+                        const uint8_t* emptyVal, int width, BRM::LBID_t startLBID,
                         execplan::CalpontSystemCatalog::ColDataType colDataType,
                         uint16_t dbRoot )
 {
@@ -185,6 +185,7 @@ int FileOp::createFile( const char* fileName, int numOfBlock,
                                              numOfBlock,
                                              emptyVal,
                                              width,
+                                             startLBID,
                                              colDataType );
         }
         else
@@ -284,7 +285,8 @@ int FileOp::createFile(FID fid,
 
 //timer.stop( "allocateColExtent" );
 
-    return createFile( fileName, totalSize, emptyVal, width, colDataType, dbRoot );
+    return createFile(fileName, totalSize, emptyVal, width, startLbid,
+                      colDataType, dbRoot);
 }
 
 /***********************************************************
@@ -814,7 +816,8 @@ int FileOp::extendFile(
         if ((m_compressionType) && (hdrs))
         {
             IDBCompressInterface compressor;
-            compressor.initHdr(hdrs, width, colDataType, m_compressionType);
+            compressor.initHdr(hdrs, width, startLbid, colDataType,
+                               m_compressionType);
         }
     }
 
@@ -972,7 +975,8 @@ int FileOp::addExtentExactFile(
         if ((m_compressionType) && (hdrs))
         {
             IDBCompressInterface compressor;
-            compressor.initHdr(hdrs, width, colDataType, m_compressionType);
+            compressor.initHdr(hdrs, width, startLbid, colDataType,
+                               m_compressionType);
         }
     }
 
@@ -1058,7 +1062,7 @@ int FileOp::initColumnExtent(
     {
         char hdrs[IDBCompressInterface::HDR_BUF_LEN * 2];
         IDBCompressInterface compressor;
-        compressor.initHdr(hdrs, width, colDataType, m_compressionType);
+        compressor.initHdr(hdrs, width, 0, colDataType, m_compressionType);
 
         if (bAbbrevExtent)
             compressor.setBlockCount(hdrs, nBlocks);
@@ -1229,6 +1233,7 @@ int FileOp::initAbbrevCompColumnExtent(
     int      nBlocks,
     const uint8_t* emptyVal,
     int      width,
+    BRM::LBID_t startLBID,
     execplan::CalpontSystemCatalog::ColDataType colDataType)
 {
     // Reserve disk space for optimized abbreviated extent
@@ -1257,6 +1262,7 @@ int FileOp::initAbbrevCompColumnExtent(
                                       INITIAL_EXTENT_ROWS_TO_DISK,
                                       emptyVal,
                                       width,
+                                      startLBID,
                                       colDataType,
                                       hdrs );
 
@@ -1292,6 +1298,7 @@ int FileOp::writeInitialCompColumnChunk(
     int      nRows,
     const uint8_t* emptyVal,
     int      width,
+    BRM::LBID_t   startLBID,
     execplan::CalpontSystemCatalog::ColDataType colDataType,
     char*    hdrs)
 {
@@ -1334,7 +1341,7 @@ int FileOp::writeInitialCompColumnChunk(
 //      "; blkAllocCnt: "   << nBlocksAllocated  <<
 //      "; compressedByteCnt: "  << outputLen << std::endl;
 
-    compressor.initHdr(hdrs, width, colDataType, m_compressionType);
+    compressor.initHdr(hdrs, width, startLBID, colDataType, m_compressionType);
     compressor.setBlockCount(hdrs, nBlocksAllocated);
 
     // Store compression pointers in the header
@@ -1801,6 +1808,30 @@ int FileOp::writeHeaders(IDBDataFile* pFile, const char* controlHdr,
 
     // Write the pointer header
     if (pFile->write( pointerHdr, ptrHdrSize ) !=  (ssize_t) ptrHdrSize)
+    {
+        return ERR_FILE_WRITE;
+    }
+
+    return NO_ERROR;
+}
+
+/***********************************************************
+ * DESCRIPTION:
+ *    Write headers to a compressed column or dictionary control header.
+ * PARAMETERS:
+ *    pFile   (in) - IDBDataFile* of column segment file to be written to
+ *    controlHdr (in) - control header to be written
+ * RETURN:
+ *    returns ERR_FILE_WRITE or ERR_FILE_SEEK if an error occurs,
+ *    else returns NO_ERROR.
+ ***********************************************************/
+int FileOp::writeControlHeader(IDBDataFile* pFile,
+                               const char* controlHdr) const
+{
+    RETURN_ON_ERROR(setFileOffset(pFile, 0, SEEK_SET));
+    // Write the control header
+    if (pFile->write(controlHdr, IDBCompressInterface::HDR_BUF_LEN) !=
+        IDBCompressInterface::HDR_BUF_LEN)
     {
         return ERR_FILE_WRITE;
     }

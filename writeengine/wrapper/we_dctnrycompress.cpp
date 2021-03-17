@@ -95,11 +95,14 @@ int DctnryCompress1::updateDctnryExtent(IDBDataFile* pFile, int nBlocks)
     return m_chunkManager->updateDctnryExtent(pFile, nBlocks);
 }
 
-
-IDBDataFile* DctnryCompress1::createDctnryFile(const char* name, int width, const char* mode, int ioBuffSize)
+IDBDataFile* DctnryCompress1::createDctnryFile(const char* name, int width,
+                                               const char* mode,
+                                               int ioBuffSize,
+                                               BRM::LBID_t lbid)
 {
-    return m_chunkManager->createDctnryFile(
-               m_dctnryOID, width, m_dbRoot, m_partition, m_segment, name, mode, ioBuffSize);
+    return m_chunkManager->createDctnryFile(m_dctnryOID, width, m_dbRoot,
+                                            m_partition, m_segment, name, mode,
+                                            ioBuffSize, lbid);
 }
 
 

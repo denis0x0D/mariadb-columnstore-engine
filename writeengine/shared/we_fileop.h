@@ -102,6 +102,7 @@ public:
      */
     int                 createFile( const char* fileName, int fileSize,
                                     const uint8_t* emptyVal, int width,
+                                    BRM::LBID_t lbid,
                                     execplan::CalpontSystemCatalog::ColDataType colDataType,
                                     uint16_t dbRoot );
 
@@ -289,6 +290,15 @@ public:
                                      const char* controlHdr,
                                      const char* pointerHdr,
                                      uint64_t ptrHdrSize) const;
+
+    /**
+     * @brief Write the specified header info to control header.
+     *
+     * @param pFile Column file to be written to
+     * @param controlHdr Control header info to be written
+     */
+    EXPORT int writeControlHeader(IDBDataFile* pFile,
+                                  const char* controlHdr) const;
 
     /**
      * @brief Get the Version Buffer filename for the specified fid (OID).
@@ -534,7 +544,7 @@ private:
 
     int initAbbrevCompColumnExtent(
         IDBDataFile* pFile, uint16_t dbRoot, int nBlocks,
-        const uint8_t* emptyVal, int width,
+        const uint8_t* emptyVal, int width, BRM::LBID_t lbid,
         execplan::CalpontSystemCatalog::ColDataType colDataType);
 
     static void         initDbRootExtentMutexes();
@@ -542,7 +552,7 @@ private:
 
     int writeInitialCompColumnChunk(
         IDBDataFile* pFile, int nBlocksAllocated, int nRows,
-        const uint8_t* emptyVal, int width,
+        const uint8_t* emptyVal, int width, BRM::LBID_t lbid,
         execplan::CalpontSystemCatalog::ColDataType colDataType, char* hdrs);
 
     TxnID       m_transId;

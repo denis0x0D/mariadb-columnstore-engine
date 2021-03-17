@@ -582,7 +582,7 @@ int ColumnBufferCompressed::saveCompressionHeaders( )
 {
     // Construct the header records
     char hdrBuf[IDBCompressInterface::HDR_BUF_LEN * 2];
-    fCompressor->initHdr(hdrBuf, fColInfo->column.width,
+    fCompressor->initHdr(hdrBuf, fColInfo->column.width, -1,
                          fColInfo->column.dataType,
                          fColInfo->column.compressionType);
     fCompressor->setBlockCount(hdrBuf,

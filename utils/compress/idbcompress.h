@@ -107,14 +107,15 @@ public:
     * @warning hdrBuf must be at least HDR_BUF_LEN bytes
     * @warning ptrBuf must be at least (hdrSize-HDR_BUF_LEN) bytes
     */
-    EXPORT void initHdr(void* hdrBuf, void* ptrBuf, int compressionType, int hdrSize) const;
+    EXPORT void initHdr(void* hdrBuf, void* ptrBuf, int compressionType,
+                        int hdrSize, int64_t lbid) const;
 
     /**
      * Initialize header buffer at start of compressed db file.
      *
      * @warning hdrBuf must be at least HDR_BUF_LEN*2 bytes
      */
-    EXPORT void initHdr(void* hdrBuf, uint32_t columnWidth,
+    EXPORT void initHdr(void* hdrBuf, uint32_t columnWidth, uint64_t LBID,
                         execplan::CalpontSystemCatalog::ColDataType columnType,
                         int compressionType) const;
 
@@ -230,6 +231,16 @@ public:
      * getColumnWidth
      */
     EXPORT uint64_t getColumnWidth(const void* hdrBuf) const;
+
+    /**
+     * getLBID
+     */
+    EXPORT uint64_t getLBID(const void* hdrBuf) const;
+
+    /**
+     * setBID
+     */
+    EXPORT void setLBID(void* hdrBuf, uint64_t lbid) const;
 
     /**
      * Mutator methods for the user padding bytes

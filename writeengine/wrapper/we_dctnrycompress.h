@@ -97,7 +97,9 @@ public:
     /**
     * @brief virtual method in Dctnry
     */
-    IDBDataFile* createDctnryFile(const char* name, int width, const char* mode, int ioBuffSize);
+    IDBDataFile* createDctnryFile(const char* name, int width,
+                                  const char* mode, int ioBuffSize,
+                                  int64_t lbid);
 
     /**
     * @brief virtual method in Dctnry

@@ -404,6 +404,7 @@ public:
             nBlocks, // number of blocks
             emptyVal, // NULL value
             width, // width
+            0, // LBID
             execplan::CalpontSystemCatalog::BIGINT,
             1 ); // dbroot
         CPPUNIT_ASSERT( rc == NO_ERROR );
@@ -988,6 +989,7 @@ public:
             nBlocks, // number of blocks
             emptyVal, // NULL value
             width, // width
+            0, // LBID
             execplan::CalpontSystemCatalog::BIGINT,
             dbRoot ); // dbroot
         CPPUNIT_ASSERT( rc == NO_ERROR );
@@ -1034,6 +1036,7 @@ public:
             nBlocks, // number of blocks
             emptyVal, // NULL value
             width, // width
+            0, // LBID
             execplan::CalpontSystemCatalog::BIGINT,
             dbRoot ); // dbroot
         CPPUNIT_ASSERT( rc == NO_ERROR );

@@ -36,9 +36,9 @@ struct FileId
     FileId(uint32_t oid, uint32_t partition, uint32_t segment,
            uint32_t colWidth,
            execplan::CalpontSystemCatalog::ColDataType colDataType,
-           bool isDict)
+           int64_t lbid, bool isDict)
         : oid(oid), partition(partition), segment(segment), colWidth(colWidth),
-          colDataType(colDataType), isDict(isDict)
+          colDataType(colDataType), lbid(lbid), isDict(isDict)
     {
     }
 
@@ -47,6 +47,7 @@ struct FileId
     uint32_t segment;
     uint32_t colWidth;
     execplan::CalpontSystemCatalog::ColDataType colDataType;
+    int64_t lbid;
     bool isDict;
 };
 
@@ -54,7 +55,7 @@ struct FileIdComparator
 {
     bool operator()(const FileId& lhs, const FileId& rhs)
     {
-        return lhs.oid < rhs.oid;
+        return lhs.lbid < rhs.lbid;
     }
 };
 
