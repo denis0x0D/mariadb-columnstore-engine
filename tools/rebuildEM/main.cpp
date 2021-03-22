@@ -55,24 +55,24 @@ int main(int argc, char** argv)
     {
         switch (option)
         {
-            case 'v':
-                verbose = true;
-                break;
+        case 'v':
+            verbose = true;
+            break;
 
-            case 'd':
-                display = true;
-                break;
+        case 'd':
+            display = true;
+            break;
 
-            case 's':
-                showExtentMap = true;
-                break;
+        case 's':
+            showExtentMap = true;
+            break;
 
-            case 'h':
-            case '?':
-            default:
-                usage(pname);
-                return (option == 'h' ? 0 : 1);
-                break;
+        case 'h':
+        case '?':
+        default:
+            usage(pname);
+            return (option == 'h' ? 0 : 1);
+            break;
         }
     }
 

@@ -189,6 +189,15 @@ public:
                             int size,
                             bool useTmpSuffix) const;
 
+    // @brief Retrieve a file pointer in the chunk manager.
+    //        for column segment file
+    IDBDataFile*
+    getColumnFilePtr(FID& fid, uint16_t root, uint32_t partition,
+                     uint16_t segment,
+                     execplan::CalpontSystemCatalog::ColDataType colDataType,
+                     uint32_t colWidth, std::string& filename,
+                     const char* mode, int32_t size, bool useTmpSuffix) const;
+
     // @brief Create a compressed dictionary file with an appropriate header.
     IDBDataFile* createDctnryFile(const FID& fid,
                                   int64_t  width,

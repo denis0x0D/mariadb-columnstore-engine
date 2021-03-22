@@ -37,9 +37,9 @@ struct FileId
     FileId(uint32_t oid, uint32_t partition, uint32_t segment,
            uint32_t colWidth,
            execplan::CalpontSystemCatalog::ColDataType colDataType,
-           int64_t lbid, bool isDict)
+           int64_t lbid, uint64_t hwm, bool isDict)
         : oid(oid), partition(partition), segment(segment), colWidth(colWidth),
-          colDataType(colDataType), lbid(lbid), isDict(isDict)
+          colDataType(colDataType), lbid(lbid), hwm(hwm), isDict(isDict)
     {
     }
 
@@ -49,21 +49,10 @@ struct FileId
     uint32_t colWidth;
     execplan::CalpontSystemCatalog::ColDataType colDataType;
     int64_t lbid;
+    uint64_t hwm;
     bool isDict;
 };
-std::ostream &operator<<(std::ostream &os, const FileId &fileID);
-
-// We have to restore extent map by restoring individual extent in order they
-// were created. This is important part, otherwise we will get invalid extents
-// for dictionary segment files and will not be able to access columns
-// through dictionay segment files.
-struct FileIdComparator
-{
-    bool operator()(const FileId& lhs, const FileId& rhs)
-    {
-        return lhs.lbid < rhs.lbid;
-    }
-};
+std::ostream& operator<<(std::ostream& os, const FileId& fileID);
 
 // This class represents extent map rebuilder.
 class EMReBuilder
@@ -97,8 +86,13 @@ class EMReBuilder
     BRM::ExtentMap& getEM() { return em; }
 
     // Checks if the given data specifies a dictionary file.
-    bool isDictFile(execplan::CalpontSystemCatalog::ColDataType colDataType,
-                    uint64_t width);
+    static bool
+    isDictFile(execplan::CalpontSystemCatalog::ColDataType colDataType,
+               uint64_t width);
+
+    // Checks if the given `value` is equal `emptyVaue` by specified width.
+    static bool isEmptyValue(uint8_t* value, const uint8_t* emptyValue,
+                             uint32_t width);
 
     // Initializes system extents from the binary blob.
     // This function solves the problem related to system segment files.
@@ -112,11 +106,17 @@ class EMReBuilder
     // Rebuilds extent map from the collected map.
     int32_t rebuildExtentMap();
 
-    // Shows the extent map.
-    void showExtentMap();
+    // Search HWM in the given segment file.
+    int32_t searchHWMInSegmentFile(
+        uint32_t oid, uint32_t dbRoot, uint32_t partition, uint32_t segment,
+        execplan::CalpontSystemCatalog::ColDataType colDataType,
+        uint32_t width, uint64_t blocksCount, uint64_t& hwm);
 
     // Sets the dbroot to the given `number`.
     void setDBRoot(uint32_t number) { dbRoot = number; }
+
+    // Shows the extent map.
+    void showExtentMap();
 
   private:
     EMReBuilder(const EMReBuilder&) = delete;
@@ -131,7 +131,7 @@ class EMReBuilder
     bool verbose;
     uint32_t dbRoot;
     BRM::ExtentMap em;
-    std::set<FileId, FileIdComparator> extentMap;
+    std::vector<FileId> extentMap;
 };
 
 } // namespace RebuildExtentMap
