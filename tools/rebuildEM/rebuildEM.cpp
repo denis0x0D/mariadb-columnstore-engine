@@ -261,8 +261,20 @@ int32_t EMReBuilder::rebuildExtentMap()
                 {
                     std::cout << "Setting a HWM for " << fileId << std::endl;
                 }
-                getEM().setLocalHWM(fileId.oid, fileId.partition,
-                                    fileId.segment, fileId.hwm, false, true);
+                try
+                {
+                    getEM().setLocalHWM(fileId.oid, fileId.partition,
+                                        fileId.segment, fileId.hwm, false,
+                                        true);
+
+                }
+                catch (std::exception& e)
+                {
+                    getEM().undoChanges();
+                    std::cerr << "Cannot set local HWM: " << e.what()
+                              << std::endl;
+                    return -1;
+                }
                 getEM().confirmChanges();
             }
         }
