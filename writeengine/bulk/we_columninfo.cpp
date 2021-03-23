@@ -750,26 +750,24 @@ int ColumnInfo::extendColumnNewExtent(
         "; file-"   << segFileNew;
     fLog->logMsg( oss.str(), MSGLVL_INFO2 );
 
+    if (pFileNew) 
+    {
+        char fileHeader[compress::IDBCompressInterface::HDR_BUF_LEN * 2];
+        auto rc = colOp->readHeaders(pFileNew, fileHeader);
+        if (rc == 0)
+        {
+            std::cout << "Setting lbid directly " << startLbid << std::endl;
+            compress::IDBCompressInterface compressor;
+            compressor.setLBID(fileHeader, startLbid);
+            colOp->writeHeaders(pFileNew, fileHeader);
+        }
+    }
+
+    fLastUpdatedLbid = startLbid;
+
     // Save the LBID with our CP extent info, so that we can update extent map
     if (saveLBIDForCP)
     {
-        std::cout << "Update entry lbid " << startLbid << std::endl;
-
-        if (curCol.dataFile.pFile)
-        {
-            std::cout << "write to file entry lbid " << startLbid << std::endl;
-            char fileHeader[compress::IDBCompressInterface::HDR_BUF_LEN * 2];
-            //            FileOp fileOp;
-            auto rc = colOp->readHeaders(curCol.dataFile.pFile, fileHeader);
-            if (rc == 0)
-            {
-                compress::IDBCompressInterface compressor;
-                compressor.setLBID(fileHeader, startLbid);
-                (void) colOp->writeHeaders(curCol.dataFile.pFile, fileHeader);
-            }
-        }
-
-        fLastUpdatedLbid = startLbid;
         int rcLBID = fColExtInf->updateEntryLbid( startLbid );
 
         // If error occurs, we log WARNING, but we don't fail the job.
@@ -1506,6 +1504,7 @@ int ColumnInfo::setupInitialColumnExtent(
     }
 
     fSavedLbid = lbid;
+    std::cout << "Initial lbid " << lbid << std::endl;
     fLastUpdatedLbid = lbid;
 
     if (bSkippedToNewExtent)
@@ -1760,8 +1759,14 @@ int ColumnInfo::openDctnryStore( bool bMustExist )
             return rc;
         }
 
-        if (INVALID_LBID != fStore->getCurLbid())
+        if (INVALID_LBID != fStore->getCurLbid()) {
+            if (curCol.dataFile.pFile != nullptr)
+            {
+                std::cout << "file not null " << std::endl;
+            }
+            std::cout << " Current lbid " << fStore->getCurLbid() << std::endl;
             fDictBlocks.push_back(fStore->getCurLbid());
+        }
 
         std::ostringstream oss;
         oss << "Opening existing store file for " << column.colName <<

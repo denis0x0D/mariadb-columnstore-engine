@@ -547,6 +547,16 @@ int ColumnBufferManager::writeToFileExtentCheck(
         fLog->logMsg( oss.str(), MSGLVL_INFO2 );
     }
 
+    /*
+    std::cout << "write to file " << std::endl;
+    std::cout << fColInfo->curCol.dataFile.fid << "; DBRoot-"
+              << fColInfo->curCol.dataFile.fDbRoot << "; part-"
+              << fColInfo->curCol.dataFile.fPartition << "; seg-"
+              << fColInfo->curCol.dataFile.fSegment << std::endl;
+
+    std::cout << "LBID is " << fColInfo->getLastUpdatedLBID() << std::endl;
+    */
+
     // Don't need a mutex lock here because if writeToFile() is calling
     // us, we already have a lock; and if flush() is calling us, then
     // all parsing is complete, so we should have no thread contention.
