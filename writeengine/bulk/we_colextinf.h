@@ -263,6 +263,7 @@ private:
     std::set<RID>   fPendingExtentRows;   // list of lastInputRow entries that
     // are awaiting an LBID assignment.
 
+    // Search this struct for lbid.
     // unordered map where we collect the min/max values per extent
     std::tr1::unordered_map<RID, ColExtInfEntry, uint64Hasher> fMap;
 

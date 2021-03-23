@@ -260,6 +260,7 @@ public:
     /** @brief Get saved LBID.
      */
     BRM::LBID_t getSavedLBID() const;
+    BRM::LBID_t getLastUpdatedLBID() const;
 
     /** @brief Initialize autoincrement value from the current "next" value
      *  taken from the system catalog.
@@ -466,6 +467,7 @@ protected:
     // extent whose CasualPartition stats are to be cleared, because we will
     // have written additional rows to that extent as part of an import.
     BRM::LBID_t fSavedLbid;
+    BRM::LBID_t fLastUpdatedLbid;
 
     // Size of a segment file (in bytes) when the file is opened
     // to add the next extent.
@@ -490,6 +492,8 @@ protected:
     ColExtInfBase* fColExtInf;              // Used to update CP at end of job
     long long      fMaxNumRowsPerSegFile;   // Max num rows per segment file
     Dctnry*        fStore;                  // Corresponding dctnry store file
+
+
 
     // For autoincrement column only... Tracks latest autoincrement value used
     long long fAutoIncLastValue;

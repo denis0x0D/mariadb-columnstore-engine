@@ -146,6 +146,7 @@ ColumnInfo::ColumnInfo(Log*             logger,
     fLog(logger),
     fDelayedFileStartBlksSkipped(0),
     fSavedLbid(0),
+    fLastUpdatedLbid(0),
     fSizeWrittenStart(0),
     fSizeWritten(0),
     fLastInputRowInCurrentExtent(0),
@@ -752,6 +753,23 @@ int ColumnInfo::extendColumnNewExtent(
     // Save the LBID with our CP extent info, so that we can update extent map
     if (saveLBIDForCP)
     {
+        std::cout << "Update entry lbid " << startLbid << std::endl;
+
+        if (curCol.dataFile.pFile)
+        {
+            std::cout << "write to file entry lbid " << startLbid << std::endl;
+            char fileHeader[compress::IDBCompressInterface::HDR_BUF_LEN * 2];
+            //            FileOp fileOp;
+            auto rc = colOp->readHeaders(curCol.dataFile.pFile, fileHeader);
+            if (rc == 0)
+            {
+                compress::IDBCompressInterface compressor;
+                compressor.setLBID(fileHeader, startLbid);
+                (void) colOp->writeHeaders(curCol.dataFile.pFile, fileHeader);
+            }
+        }
+
+        fLastUpdatedLbid = startLbid;
         int rcLBID = fColExtInf->updateEntryLbid( startLbid );
 
         // If error occurs, we log WARNING, but we don't fail the job.
@@ -1399,6 +1417,7 @@ int ColumnInfo::getHWMInfoForBRM( BRMReporter& brmReporter )
 
 // Returns a saved LBID.
 BRM::LBID_t ColumnInfo::getSavedLBID() const { return fSavedLbid; }
+BRM::LBID_t ColumnInfo::getLastUpdatedLBID() const { return fLastUpdatedLbid; }
 
 //------------------------------------------------------------------------------
 // Setup initial extent we will begin loading at start of import.
@@ -1487,6 +1506,7 @@ int ColumnInfo::setupInitialColumnExtent(
     }
 
     fSavedLbid = lbid;
+    fLastUpdatedLbid = lbid;
 
     if (bSkippedToNewExtent)
         oldHwm = hwm;
