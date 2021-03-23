@@ -580,6 +580,12 @@ int ColumnBufferCompressed::finishFile(bool bTruncFile)
 //------------------------------------------------------------------------------
 int ColumnBufferCompressed::saveCompressionHeaders( )
 {
+    char fileHeader[IDBCompressInterface::HDR_BUF_LEN * 2];
+    fColInfo->colOp->readHeaders(fFile, fileHeader);
+
+    auto lbid = fCompressor->getLBID(fileHeader);
+    std::cout << "Getting LBID from file at saveCompress" << lbid << std::endl;
+
     // Construct the header records
     char hdrBuf[IDBCompressInterface::HDR_BUF_LEN * 2];
     fCompressor->initHdr(hdrBuf, fColInfo->column.width,

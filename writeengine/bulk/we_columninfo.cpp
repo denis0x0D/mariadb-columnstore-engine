@@ -751,6 +751,7 @@ int ColumnInfo::extendColumnNewExtent(
     fLog->logMsg( oss.str(), MSGLVL_INFO2 );
 
     // Update lbid.
+    std::cout << "Last updated lbid " << startLbid << std::endl;
     fLastUpdatedLbid = startLbid;
 
     // Save the LBID with our CP extent info, so that we can update extent map
@@ -1491,6 +1492,7 @@ int ColumnInfo::setupInitialColumnExtent(
     }
 
     fSavedLbid = lbid;
+    std::cout << "last updated Lbid " << lbid << std::endl;
     fLastUpdatedLbid = lbid;
 
     if (bSkippedToNewExtent)
