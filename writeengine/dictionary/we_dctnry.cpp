@@ -208,9 +208,9 @@ int  Dctnry::createDctnry( const OID& dctnryOID, int colWidth,
     {
         // Allocate extent before file creation.
         // If we got an error while allocating dictionary store extent,
-        // we do not need to create/close the file, because it was not created yet.
-        // This logic is the same as column segment file creation - at first
-        // we allocate an extent, then we create a segment file.
+        // we do not need to create/close the file, because it was not created
+        // yet. This logic is the same as column segment file creation - at
+        // first we allocate an extent, then we create a segment file.
         rc = BRMWrapper::getInstance()->allocateDictStoreExtent(
             (OID) dctnryOID, dbRoot, partition, segment, startLbid, allocSize);
 
@@ -253,6 +253,7 @@ int  Dctnry::createDctnry( const OID& dctnryOID, int colWidth,
         }
 
         RETURN_ON_ERROR(setFileOffset(m_dFile, 0, SEEK_END));
+
     }
 
     // We allocate a full extent from BRM, but only write an abbreviated 256K
@@ -288,8 +289,8 @@ int  Dctnry::createDctnry( const OID& dctnryOID, int colWidth,
                                        m_dctnryHeader2,
                                        m_totalHdrBytes,
                                        false,
-                                       true ); // explicitly optimize
-
+                                       true, // explicitly optimize
+                                       startLbid );
         if (rc != NO_ERROR)
         {
             if (flag)

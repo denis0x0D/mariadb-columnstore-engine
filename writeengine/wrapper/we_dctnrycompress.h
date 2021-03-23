@@ -161,7 +161,7 @@ protected:
     /**
     * @brief virtual method in FileOp
     */
-    int updateDctnryExtent(IDBDataFile* pFile, int nBlocks);
+    int updateDctnryExtent(IDBDataFile* pFile, int nBlocks, int64_t lbid);
 
     /**
     * @brief convert lbid to fbo

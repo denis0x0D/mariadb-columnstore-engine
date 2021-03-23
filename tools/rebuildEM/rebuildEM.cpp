@@ -19,6 +19,7 @@
 #include <boost/filesystem.hpp>
 #include <stdint.h>
 
+#include "../writeengine/dictionary/we_dctnry.h"
 #include "rebuildEM.h"
 #include "calpontsystemcatalog.h"
 #include "idbcompress.h"
@@ -128,8 +129,8 @@ int32_t EMReBuilder::collectExtent(const std::string& fullFileName)
 
     auto colDataType = compressor.getColDataType(fileHeader);
     auto colWidth = compressor.getColumnWidth(fileHeader);
-    auto lbid = compressor.getLBID(fileHeader);
     auto blockCount = compressor.getBlockCount(fileHeader);
+    auto lbid = compressor.getLBID0(fileHeader);
 
     if (colDataType == execplan::CalpontSystemCatalog::UNDEFINED)
     {
@@ -141,37 +142,50 @@ int32_t EMReBuilder::collectExtent(const std::string& fullFileName)
     }
 
     auto isDict = isDictFile(colDataType, colWidth);
+    if (isDict)
+        colWidth = 8;
     uint64_t hwm = 0;
+
     // We don't need to calculate HWM for dictionary files, because dictionary
     // file stores char data and has associated segment file with tokens which
     // holds pointers to that data.
-    if (!isDict)
+    if (doVerbose())
     {
+        std::cout << "Searching for HWM... " << std::endl;
+        std::cout << "Block count: " << blockCount << std::endl;
+    }
+
+    rc =
+        searchHWMInSegmentFile(oid, getDBRoot(), partition, segment,
+                               colDataType, colWidth, blockCount, isDict, hwm);
+    if (rc != 0)
+    {
+        return rc;
+    }
+
+    const uint32_t extentMaxBlockCount =
+        getEM().getExtentRows() * colWidth / BLOCK_SIZE;
+
+    if (hwm >= extentMaxBlockCount)
+    {
+        auto lbid = compressor.getLBID1(fileHeader);
+        FileId fileId(oid, partition, segment, colWidth, colDataType, lbid,
+                      hwm, isDict);
+        extentMap.push_back(fileId);
+
+        // Update HWM.
+        hwm = extentMaxBlockCount - 1;
         if (doVerbose())
         {
-            std::cout << "Searching for HWM... " << std::endl;
-            std::cout << "Block count: " << blockCount << std::endl;
+            std::cout << "Found multiple extents per segment file "
+                      << std::endl;
+            std::cout << "FileId is collected " << fileId << std::endl;
         }
+    }
 
-        rc = searchHWMInSegmentFile(oid, getDBRoot(), partition, segment,
-                                    colDataType, colWidth, blockCount, hwm);
-        if (rc != 0)
-        {
-            return rc;
-        }
-
-        // FIXME: Add support for multiple extents per segment file.
-        if (hwm >= (getEM().getExtentRows() * colWidth) / BLOCK_SIZE)
-        {
-            std::cerr << "Multiple extents per segment file is not supported."
-                      << endl;
-            return -1;
-        }
-
-        if (doVerbose())
-        {
-            std::cout << "HWM is: " << hwm << std::endl;
-        }
+    if (doVerbose())
+    {
+        std::cout << "HWM is: " << hwm << std::endl;
     }
 
     FileId fileId(oid, partition, segment, colWidth, colDataType, lbid, hwm,
@@ -210,21 +224,6 @@ int32_t EMReBuilder::rebuildExtentMap()
 
         if (!doDisplay())
         {
-            // Check the extent map first.
-            bool found;
-            int32_t status;
-            getEM().getExtentState(fileId.oid, fileId.partition,
-                                   fileId.segment, found, status);
-            if (found)
-            {
-                if (doVerbose())
-                {
-                    std::cout << "The extent for " << fileId
-                              << " already exists." << std::endl;
-                }
-                return -1;
-            }
-
             try
             {
                 if (fileId.isDict)
@@ -262,30 +261,24 @@ int32_t EMReBuilder::rebuildExtentMap()
                 std::cout << "For " << fileId << std::endl;
             }
 
-            if (!fileId.isDict)
+            // This is important part, it sets a status for specific extent
+            // as 'available' that means we can use it.
+            if (doVerbose())
             {
-                // This is important part, it sets a status for specific extent
-                // as 'available' that means we can use it.
-                if (doVerbose())
-                {
-                    std::cout << "Setting a HWM for " << fileId << std::endl;
-                }
-                try
-                {
-                    getEM().setLocalHWM(fileId.oid, fileId.partition,
-                                        fileId.segment, fileId.hwm, false,
-                                        true);
-
-                }
-                catch (std::exception& e)
-                {
-                    getEM().undoChanges();
-                    std::cerr << "Cannot set local HWM: " << e.what()
-                              << std::endl;
-                    return -1;
-                }
-                getEM().confirmChanges();
+                std::cout << "Setting a HWM for " << fileId << std::endl;
             }
+            try
+            {
+                getEM().setLocalHWM(fileId.oid, fileId.partition,
+                                    fileId.segment, fileId.hwm, false, true);
+            }
+            catch (std::exception& e)
+            {
+                getEM().undoChanges();
+                std::cerr << "Cannot set local HWM: " << e.what() << std::endl;
+                return -1;
+            }
+            getEM().confirmChanges();
         }
     }
     return 0;
@@ -294,18 +287,27 @@ int32_t EMReBuilder::rebuildExtentMap()
 int32_t EMReBuilder::searchHWMInSegmentFile(
     uint32_t oid, uint32_t dbRoot, uint32_t partition, uint32_t segment,
     execplan::CalpontSystemCatalog::ColDataType colDataType, uint32_t colWidth,
-    uint64_t blockCount, uint64_t& hwm)
+    uint64_t blockCount, bool isDict, uint64_t& hwm)
 {
     WriteEngine::ChunkManager chunkManager;
-    WriteEngine::FileOp fileOp;
+    WriteEngine::FileOp* pFileOp;
+    if (isDict)
+    {
+        pFileOp = new WriteEngine::Dctnry();
+    }
+    else
+    {
+        pFileOp = new WriteEngine::FileOp();
+    }
     // Spent one night to debug, if not set will get a strange segfault in
     // m_typeHandler which is not null but points to memory which is not
     // accessible by current process. Is it related to initialization order
     // fiasko?
-    chunkManager.fileOp(&fileOp);
+    chunkManager.fileOp(pFileOp);
     std::string fileName;
     uint8_t blockData[WriteEngine::BYTE_PER_BLOCK];
-    const uint8_t* emptyValue = fileOp.getEmptyRowValue(colDataType, colWidth);
+    const uint8_t* emptyValue =
+        pFileOp->getEmptyRowValue(colDataType, colWidth);
     int32_t size = colWidth;
     hwm = 0;
 
@@ -314,9 +316,10 @@ int32_t EMReBuilder::searchHWMInSegmentFile(
     // Note: We cannot use `unique_ptr` here or close it directly, because
     // `ChunkManager` closes this file for us, otherwise we will get double
     // free error.
-    auto* pFile = chunkManager.getColumnFilePtr(oid, dbRoot, partition,
-                                                segment, colDataType, colWidth,
-                                                fileName, "rb", size, false);
+    auto* pFile = chunkManager.getColumnFilePtr(
+        oid, dbRoot, partition, segment, colDataType, colWidth, fileName, "rb",
+        size, false, isDict);
+
     if (!pFile)
     {
         return -1;
@@ -338,11 +341,23 @@ int32_t EMReBuilder::searchHWMInSegmentFile(
         {
             return rc;
         }
-        // Check the first row for not empty value.
-        if (!isEmptyValue(blockData, emptyValue, colWidth))
+
+        if (isDict)
         {
-            hwm = currentBlock;
-            break;
+            if (!isEmptyDict(blockData))
+            {
+                hwm = currentBlock;
+                break;
+            }
+        }
+        else
+        {
+            // Check the first row for not empty value.
+            if (!isEmptyValue(blockData, emptyValue, colWidth))
+            {
+                hwm = currentBlock;
+                break;
+            }
         }
     }
 
@@ -369,7 +384,6 @@ bool EMReBuilder::isDictFile(
 
 int32_t EMReBuilder::initializeSystemExtents()
 {
-
     if (!doDisplay())
     {
         if (doVerbose())
@@ -390,6 +404,18 @@ int32_t EMReBuilder::initializeSystemExtents()
         }
     }
     return 0;
+}
+
+bool EMReBuilder::isEmptyDict(uint8_t* block) {
+  if (!block)
+      return true;
+  const uint32_t dictBlockHeaderSize =
+      WriteEngine::HDR_UNIT_SIZE + WriteEngine::NEXT_PTR_BYTES +
+      WriteEngine::HDR_UNIT_SIZE + WriteEngine::HDR_UNIT_SIZE;
+  const uint32_t emptyBlock =
+      WriteEngine::BYTE_PER_BLOCK - dictBlockHeaderSize;
+
+  return (*(uint16_t*) block) == emptyBlock;
 }
 
 // This function is copy pasted from `ColumnOp` file, unfortunately it's not

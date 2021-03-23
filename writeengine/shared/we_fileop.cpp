@@ -660,6 +660,8 @@ int FileOp::extendFile(
             unsigned int chunkIndex = 0;
             unsigned int blockOffsetWithinChunk = 0;
             compressor.locateBlock((hwm - 1), chunkIndex, blockOffsetWithinChunk);
+            compressor.setLBID1(hdrs, startLbid);
+            RETURN_ON_ERROR(writeHeaders(pFile, hdrsIn));
 
             //std::ostringstream oss1;
             //oss1 << "Extending compressed column file"<<
@@ -818,7 +820,7 @@ int FileOp::extendFile(
         {
             IDBCompressInterface compressor;
             compressor.initHdr(hdrs, width, colDataType, m_compressionType);
-            compressor.setLBID(hdrs, startLbid);
+            compressor.setLBID0(hdrs, startLbid);
         }
     }
 
@@ -977,7 +979,7 @@ int FileOp::addExtentExactFile(
         {
             IDBCompressInterface compressor;
             compressor.initHdr(hdrs, width, colDataType, m_compressionType);
-            compressor.setLBID(hdrs, startLbid);
+            compressor.setLBID0(hdrs, startLbid);
         }
     }
 
@@ -1344,7 +1346,7 @@ int FileOp::writeInitialCompColumnChunk(
 
     compressor.initHdr(hdrs, width, colDataType, m_compressionType);
     compressor.setBlockCount(hdrs, nBlocksAllocated);
-    compressor.setLBID(hdrs, startLBID);
+    compressor.setLBID0(hdrs, startLBID);
 
     // Store compression pointers in the header
     std::vector<uint64_t> ptrs;
@@ -1850,13 +1852,14 @@ int FileOp::initDctnryExtent(
     unsigned char* blockHdrInit,
     int            blockHdrInitSize,
     bool           bExpandExtent,
-    bool           bOptExtension )
+    bool           bOptExtension,
+    int64_t        lbid)
 {
     // @bug5769 Don't initialize extents or truncate db files on HDFS
     if (idbdatafile::IDBPolicy::useHdfs())
     {
         if (m_compressionType)
-            updateDctnryExtent(pFile, nBlocks);
+            updateDctnryExtent(pFile, nBlocks, lbid);
 
         // Synchronize to avoid write buffer pile up too much, which could cause
         // controllernode to timeout later when it needs to save a snapshot.
@@ -1981,7 +1984,7 @@ int FileOp::initDctnryExtent(
         // MCOL-498 CS has to set a number of blocs in the chunk header
         if ( m_compressionType )
         {
-            updateDctnryExtent(pFile, nBlocks);
+            updateDctnryExtent(pFile, nBlocks, lbid);
         }
         pFile->flush();
     }
@@ -2911,7 +2914,7 @@ int FileOp::updateColumnExtent(IDBDataFile* pFile, int nBlocks)
     return NO_ERROR;
 }
 
-int FileOp::updateDctnryExtent(IDBDataFile* pFile, int nBlocks)
+int FileOp::updateDctnryExtent(IDBDataFile* pFile, int nBlocks, int64_t lbid)
 {
     return NO_ERROR;
 }
