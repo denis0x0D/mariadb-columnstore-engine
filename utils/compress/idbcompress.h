@@ -234,12 +234,22 @@ public:
     /**
      * getLBID
      */
-    EXPORT uint64_t getLBID(const void* hdrBuf) const;
+    EXPORT uint64_t getLBID0(const void* hdrBuf) const;
 
     /**
      * setBID
      */
-    EXPORT void setLBID(void* hdrBuf, uint64_t lbid) const;
+    EXPORT void setLBID0(void* hdrBuf, uint64_t lbid) const;
+
+    /**
+     * getLBID
+     */
+    EXPORT uint64_t getLBID1(const void* hdrBuf) const;
+
+    /**
+     * setBID
+     */
+    EXPORT void setLBID1(void* hdrBuf, uint64_t lbid) const;
 
     /**
      * Mutator methods for the user padding bytes
@@ -360,8 +370,10 @@ inline uint64_t IDBCompressInterface::maxCompressedSize(uint64_t uncompSize)
 {
     return uncompSize;
 }
-inline uint64_t getLBID(const void* hdrBuf) const { return -1; }
-void setLBID(void* hdrBuf, uint64_t lbid) const {}
+inline uint64_t getLBID0(const void* hdrBuf) const { return -1; }
+void setLBID0(void* hdrBuf, uint64_t lbid) const {}
+inline uint64_t getLBID1(const void* hdrBuf) const { return -1; }
+void setLBID1(void* hdrBuf, uint64_t lbid) const {}
 inline bool IDBCompressInterface::getUncompressedSize(char* in, size_t inLen, size_t* outLen)
 {
     return false;

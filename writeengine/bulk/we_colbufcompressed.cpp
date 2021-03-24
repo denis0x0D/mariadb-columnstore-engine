@@ -580,21 +580,26 @@ int ColumnBufferCompressed::finishFile(bool bTruncFile)
 //------------------------------------------------------------------------------
 int ColumnBufferCompressed::saveCompressionHeaders( )
 {
-    char fileHeader[IDBCompressInterface::HDR_BUF_LEN * 2];
-    fColInfo->colOp->readHeaders(fFile, fileHeader);
-
-    auto lbid = fCompressor->getLBID(fileHeader);
-    std::cout << "Getting LBID from file at saveCompress" << lbid << std::endl;
-
     // Construct the header records
     char hdrBuf[IDBCompressInterface::HDR_BUF_LEN * 2];
+    fColInfo->colOp->readHeaders(fFile, hdrBuf);
+    auto lbid = fCompressor->getLBID0(hdrBuf);
+    std::cout << "Getting LBID from file at saveCompress" << lbid << std::endl;
+
     fCompressor->initHdr(hdrBuf, fColInfo->column.width,
                          fColInfo->column.dataType,
                          fColInfo->column.compressionType);
     fCompressor->setBlockCount(hdrBuf,
                                (fColInfo->getFileSize() / BYTE_PER_BLOCK) );
-    // Have to use latest lbid, in case bulk decides to create a new extent.
-    fCompressor->setLBID(hdrBuf, fColInfo->getLastUpdatedLBID());
+    if (lbid)
+    {
+        fCompressor->setLBID0(hdrBuf, lbid);
+        fCompressor->setLBID1(hdrBuf, fColInfo->getLastUpdatedLBID());
+    }
+    else
+    {
+        fCompressor->setLBID0(hdrBuf, fColInfo->getLastUpdatedLBID());
+    }
 
     std::vector<uint64_t> ptrs;
 

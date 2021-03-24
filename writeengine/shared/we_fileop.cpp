@@ -660,6 +660,9 @@ int FileOp::extendFile(
             unsigned int chunkIndex = 0;
             unsigned int blockOffsetWithinChunk = 0;
             compressor.locateBlock((hwm - 1), chunkIndex, blockOffsetWithinChunk);
+            std::cout << "old file setting libd 2" << startLbid << std::endl;
+            compressor.setLBID1(hdrs, startLbid);
+            RETURN_ON_ERROR(writeHeaders(pFile, hdrsIn));
 
             //std::ostringstream oss1;
             //oss1 << "Extending compressed column file"<<
@@ -818,7 +821,7 @@ int FileOp::extendFile(
         {
             IDBCompressInterface compressor;
             compressor.initHdr(hdrs, width, colDataType, m_compressionType);
-            compressor.setLBID(hdrs, startLbid);
+            compressor.setLBID0(hdrs, startLbid);
         }
     }
 
@@ -977,7 +980,7 @@ int FileOp::addExtentExactFile(
         {
             IDBCompressInterface compressor;
             compressor.initHdr(hdrs, width, colDataType, m_compressionType);
-            compressor.setLBID(hdrs, startLbid);
+            compressor.setLBID0(hdrs, startLbid);
         }
     }
 
@@ -1344,7 +1347,7 @@ int FileOp::writeInitialCompColumnChunk(
 
     compressor.initHdr(hdrs, width, colDataType, m_compressionType);
     compressor.setBlockCount(hdrs, nBlocksAllocated);
-    compressor.setLBID(hdrs, startLBID);
+    compressor.setLBID0(hdrs, startLBID);
 
     // Store compression pointers in the header
     std::vector<uint64_t> ptrs;

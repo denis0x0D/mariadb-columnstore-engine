@@ -128,8 +128,8 @@ int32_t EMReBuilder::collectExtent(const std::string& fullFileName)
 
     auto colDataType = compressor.getColDataType(fileHeader);
     auto colWidth = compressor.getColumnWidth(fileHeader);
-    auto lbid = compressor.getLBID(fileHeader);
     auto blockCount = compressor.getBlockCount(fileHeader);
+    auto lbid = compressor.getLBID0(fileHeader);
 
     if (colDataType == execplan::CalpontSystemCatalog::UNDEFINED)
     {
@@ -141,6 +141,7 @@ int32_t EMReBuilder::collectExtent(const std::string& fullFileName)
     }
 
     auto isDict = isDictFile(colDataType, colWidth);
+
     uint64_t hwm = 0;
     // We don't need to calculate HWM for dictionary files, because dictionary
     // file stores char data and has associated segment file with tokens which
@@ -160,14 +161,25 @@ int32_t EMReBuilder::collectExtent(const std::string& fullFileName)
             return rc;
         }
 
-        // FIXME: Add support for multiple extents per segment file.
-        if (hwm >= (getEM().getExtentRows() * colWidth) / BLOCK_SIZE)
-        {
-            std::cerr << "Multiple extents per segment file is not supported."
-                      << endl;
-            return -1;
-        }
+        const uint32_t extentMaxBlockCount =
+            getEM().getExtentRows() * colWidth / BLOCK_SIZE;
 
+        if (hwm >= extentMaxBlockCount)
+        {
+            auto lbid = compressor.getLBID1(fileHeader);
+            FileId fileId(oid, partition, segment, colWidth, colDataType, lbid,
+                          hwm, isDict);
+            extentMap.push_back(fileId);
+
+            // Update HWM.
+            hwm = extentMaxBlockCount - 1;
+            if (doVerbose())
+            {
+                std::cout << "Found multiple extents per segment file "
+                          << std::endl;
+                std::cout << "FileId is collected " << fileId << std::endl;
+            }
+        }
         if (doVerbose())
         {
             std::cout << "HWM is: " << hwm << std::endl;
@@ -210,21 +222,6 @@ int32_t EMReBuilder::rebuildExtentMap()
 
         if (!doDisplay())
         {
-            // Check the extent map first.
-            bool found;
-            int32_t status;
-            getEM().getExtentState(fileId.oid, fileId.partition,
-                                   fileId.segment, found, status);
-            if (found)
-            {
-                if (doVerbose())
-                {
-                    std::cout << "The extent for " << fileId
-                              << " already exists." << std::endl;
-                }
-                return -1;
-            }
-
             try
             {
                 if (fileId.isDict)
@@ -262,30 +259,24 @@ int32_t EMReBuilder::rebuildExtentMap()
                 std::cout << "For " << fileId << std::endl;
             }
 
-            if (!fileId.isDict)
+            // This is important part, it sets a status for specific extent
+            // as 'available' that means we can use it.
+            if (doVerbose())
             {
-                // This is important part, it sets a status for specific extent
-                // as 'available' that means we can use it.
-                if (doVerbose())
-                {
-                    std::cout << "Setting a HWM for " << fileId << std::endl;
-                }
-                try
-                {
-                    getEM().setLocalHWM(fileId.oid, fileId.partition,
-                                        fileId.segment, fileId.hwm, false,
-                                        true);
-
-                }
-                catch (std::exception& e)
-                {
-                    getEM().undoChanges();
-                    std::cerr << "Cannot set local HWM: " << e.what()
-                              << std::endl;
-                    return -1;
-                }
-                getEM().confirmChanges();
+                std::cout << "Setting a HWM for " << fileId << std::endl;
             }
+            try
+            {
+                getEM().setLocalHWM(fileId.oid, fileId.partition,
+                                    fileId.segment, fileId.hwm, false, true);
+            }
+            catch (std::exception& e)
+            {
+                getEM().undoChanges();
+                std::cerr << "Cannot set local HWM: " << e.what() << std::endl;
+                return -1;
+            }
+            getEM().confirmChanges();
         }
     }
     return 0;
