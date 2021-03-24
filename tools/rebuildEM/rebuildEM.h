@@ -110,7 +110,7 @@ class EMReBuilder
     int32_t searchHWMInSegmentFile(
         uint32_t oid, uint32_t dbRoot, uint32_t partition, uint32_t segment,
         execplan::CalpontSystemCatalog::ColDataType colDataType,
-        uint32_t width, uint64_t blocksCount, uint64_t& hwm);
+        uint32_t width, uint64_t blocksCount, bool isDict, uint64_t& hwm);
 
     // Sets the dbroot to the given `number`.
     void setDBRoot(uint32_t number) { dbRoot = number; }

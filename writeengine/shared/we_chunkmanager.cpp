@@ -300,12 +300,12 @@ IDBDataFile* ChunkManager::getFilePtr(const FID& fid,
 IDBDataFile* ChunkManager::getColumnFilePtr(
     FID& fid, uint16_t root, uint32_t partition, uint16_t segment,
     execplan::CalpontSystemCatalog::ColDataType colDataType, uint32_t colWidth,
-    std::string& filename, const char* mode, int32_t size,
-    bool useTmpSuffix) const
+    std::string& filename, const char* mode, int32_t size, bool useTmpSuffix,
+    bool isDict) const
 {
     CompFileData* fileData =
         getFileData(fid, root, partition, segment, filename, mode, size,
-                    colDataType, colWidth, useTmpSuffix, false);
+                    colDataType, colWidth, useTmpSuffix, isDict);
     return (fileData ? fileData->fFilePtr : NULL);
 }
 

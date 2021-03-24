@@ -141,49 +141,50 @@ int32_t EMReBuilder::collectExtent(const std::string& fullFileName)
     }
 
     auto isDict = isDictFile(colDataType, colWidth);
-
     uint64_t hwm = 0;
+
+    if (isDict)
+        colWidth = 8;
     // We don't need to calculate HWM for dictionary files, because dictionary
     // file stores char data and has associated segment file with tokens which
     // holds pointers to that data.
-    if (!isDict)
+    if (doVerbose())
     {
+        std::cout << "Searching for HWM... " << std::endl;
+        std::cout << "Block count: " << blockCount << std::endl;
+    }
+
+    rc =
+        searchHWMInSegmentFile(oid, getDBRoot(), partition, segment,
+                               colDataType, colWidth, blockCount, isDict, hwm);
+    if (rc != 0)
+    {
+        return rc;
+    }
+
+    const uint32_t extentMaxBlockCount =
+        getEM().getExtentRows() * colWidth / BLOCK_SIZE;
+
+    if (hwm >= extentMaxBlockCount)
+    {
+        auto lbid = compressor.getLBID1(fileHeader);
+        FileId fileId(oid, partition, segment, colWidth, colDataType, lbid,
+                      hwm, isDict);
+        extentMap.push_back(fileId);
+
+        // Update HWM.
+        hwm = extentMaxBlockCount - 1;
         if (doVerbose())
         {
-            std::cout << "Searching for HWM... " << std::endl;
-            std::cout << "Block count: " << blockCount << std::endl;
+            std::cout << "Found multiple extents per segment file "
+                      << std::endl;
+            std::cout << "FileId is collected " << fileId << std::endl;
         }
+    }
 
-        rc = searchHWMInSegmentFile(oid, getDBRoot(), partition, segment,
-                                    colDataType, colWidth, blockCount, hwm);
-        if (rc != 0)
-        {
-            return rc;
-        }
-
-        const uint32_t extentMaxBlockCount =
-            getEM().getExtentRows() * colWidth / BLOCK_SIZE;
-
-        if (hwm >= extentMaxBlockCount)
-        {
-            auto lbid = compressor.getLBID1(fileHeader);
-            FileId fileId(oid, partition, segment, colWidth, colDataType, lbid,
-                          hwm, isDict);
-            extentMap.push_back(fileId);
-
-            // Update HWM.
-            hwm = extentMaxBlockCount - 1;
-            if (doVerbose())
-            {
-                std::cout << "Found multiple extents per segment file "
-                          << std::endl;
-                std::cout << "FileId is collected " << fileId << std::endl;
-            }
-        }
-        if (doVerbose())
-        {
-            std::cout << "HWM is: " << hwm << std::endl;
-        }
+    if (doVerbose())
+    {
+        std::cout << "HWM is: " << hwm << std::endl;
     }
 
     FileId fileId(oid, partition, segment, colWidth, colDataType, lbid, hwm,
@@ -285,7 +286,7 @@ int32_t EMReBuilder::rebuildExtentMap()
 int32_t EMReBuilder::searchHWMInSegmentFile(
     uint32_t oid, uint32_t dbRoot, uint32_t partition, uint32_t segment,
     execplan::CalpontSystemCatalog::ColDataType colDataType, uint32_t colWidth,
-    uint64_t blockCount, uint64_t& hwm)
+    uint64_t blockCount, bool isDict, uint64_t& hwm)
 {
     WriteEngine::ChunkManager chunkManager;
     WriteEngine::FileOp fileOp;
@@ -305,9 +306,10 @@ int32_t EMReBuilder::searchHWMInSegmentFile(
     // Note: We cannot use `unique_ptr` here or close it directly, because
     // `ChunkManager` closes this file for us, otherwise we will get double
     // free error.
-    auto* pFile = chunkManager.getColumnFilePtr(oid, dbRoot, partition,
-                                                segment, colDataType, colWidth,
-                                                fileName, "rb", size, false);
+    auto* pFile = chunkManager.getColumnFilePtr(
+        oid, dbRoot, partition, segment, colDataType, colWidth, fileName, "rb",
+        size, false, isDict);
+
     if (!pFile)
     {
         return -1;
