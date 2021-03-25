@@ -148,7 +148,11 @@ class ChunkManagerWrapper
         execplan::CalpontSystemCatalog::ColDataType colDataType,
         uint32_t colWidth);
 
-    virtual ~ChunkManagerWrapper();
+    ~ChunkManagerWrapper() = default;
+    ChunkManagerWrapper(const ChunkManagerWrapper& other) = delete;
+    ChunkManagerWrapper& operator=(const ChunkManagerWrapper& other) = delete;
+    ChunkManagerWrapper(ChunkManagerWrapper&& other) = delete;
+    ChunkManagerWrapper& operator=(ChunkManagerWrapper&& other) = delete;
 
     // Reads block, by given `blockNumber` from associated segment file and
     // populates internal block buffer.
@@ -166,7 +170,7 @@ class ChunkManagerWrapper
     uint32_t colWidth;
     int32_t size;
     std::string fileName;
-    WriteEngine::FileOp* pFileOp;
+    std::unique_ptr<WriteEngine::FileOp> pFileOp;
     // Note: We cannot use clear this pointer directly,  because
     // `ChunkManager` closes this file for us, otherwise we will get double
     // free error.
@@ -184,6 +188,14 @@ class ChunkManagerWrapperColumn : public ChunkManagerWrapper
         execplan::CalpontSystemCatalog::ColDataType colDataType,
         uint32_t colWidth);
 
+    ~ChunkManagerWrapperColumn() = default;
+    ChunkManagerWrapperColumn(const ChunkManagerWrapperColumn& other) = delete;
+    ChunkManagerWrapperColumn&
+    operator=(const ChunkManagerWrapperColumn& other) = delete;
+    ChunkManagerWrapperColumn(ChunkManagerWrapperColumn&& other) = delete;
+    ChunkManagerWrapperColumn&
+    operator=(ChunkManagerWrapperColumn&& other) = delete;
+
     bool isEmptyBlock() override;
 
   private:
@@ -198,6 +210,14 @@ class ChunkManagerWrapperDict : public ChunkManagerWrapper
         uint32_t oid, uint32_t dbRoot, uint32_t partition, uint32_t segment,
         execplan::CalpontSystemCatalog::ColDataType colDataType,
         uint32_t colWidth);
+
+    ~ChunkManagerWrapperDict() = default;
+    ChunkManagerWrapperDict(const ChunkManagerWrapperDict& other) = delete;
+    ChunkManagerWrapperDict&
+    operator=(const ChunkManagerWrapperDict& other) = delete;
+    ChunkManagerWrapperDict(ChunkManagerWrapperDict&& other) = delete;
+    ChunkManagerWrapperDict&
+    operator=(ChunkManagerWrapperDict&& other) = delete;
 
     bool isEmptyBlock() override;
 

@@ -290,22 +290,25 @@ int32_t EMReBuilder::searchHWMInSegmentFile(
     execplan::CalpontSystemCatalog::ColDataType colDataType, uint32_t colWidth,
     uint64_t blockCount, bool isDict, uint64_t& hwm)
 {
-    ChunkManagerWrapper* chunkManagerWrapper;
+    std::unique_ptr<ChunkManagerWrapper> chunkManagerWrapper;
     try
     {
         if (isDict)
         {
-            chunkManagerWrapper = new ChunkManagerWrapperDict(
-                oid, dbRoot, partition, segment, colDataType, colWidth);
+            chunkManagerWrapper = std::unique_ptr<ChunkManagerWrapperDict>(
+                new ChunkManagerWrapperDict(oid, dbRoot, partition, segment,
+                                            colDataType, colWidth));
         }
         else
         {
-            chunkManagerWrapper = new ChunkManagerWrapperColumn(
-                oid, dbRoot, partition, segment, colDataType, colWidth);
+            chunkManagerWrapper = std::unique_ptr<ChunkManagerWrapperColumn>(
+                new ChunkManagerWrapperColumn(oid, dbRoot, partition, segment,
+                                              colDataType, colWidth));
         }
     }
     catch (...)
     {
+        std::cerr << "Cannot create ChunkManagerWrapper" << std::endl;
         return -1;
     }
 
@@ -329,7 +332,6 @@ int32_t EMReBuilder::searchHWMInSegmentFile(
         }
     }
 
-    delete chunkManagerWrapper;
     return 0;
 }
 
@@ -379,14 +381,9 @@ ChunkManagerWrapper::ChunkManagerWrapper(
     uint32_t oid, uint32_t dbRoot, uint32_t partition, uint32_t segment,
     execplan::CalpontSystemCatalog::ColDataType colDataType, uint32_t colWidth)
     : oid(oid), dbRoot(dbRoot), partition(partition), segment(segment),
-      colDataType(colDataType), colWidth(colWidth), size(colWidth)
+      colDataType(colDataType), colWidth(colWidth), size(colWidth),
+      pFileOp(nullptr)
 {
-}
-
-ChunkManagerWrapper::~ChunkManagerWrapper()
-{
-    if (pFileOp)
-        delete pFileOp;
 }
 
 int32_t ChunkManagerWrapper::readBlock(uint32_t blockNumber)
@@ -403,13 +400,13 @@ ChunkManagerWrapperColumn::ChunkManagerWrapperColumn(
     : ChunkManagerWrapper(oid, dbRoot, partition, segment, colDataType,
                           colWidth)
 {
-    pFileOp = new WriteEngine::FileOp();
-    chunkManager.fileOp(pFileOp);
+    pFileOp = std::unique_ptr<WriteEngine::FileOp>(new WriteEngine::FileOp());
+    chunkManager.fileOp(pFileOp.get());
     // Open compressed column segment file. We will read block by block
     // from the compressed chunks.
-    pFile = chunkManager.getColumnFilePtr(oid, dbRoot, partition, segment,
-                                          colDataType, colWidth, fileName,
-                                          "rb", size, false, false);
+    pFile = chunkManager.getSegmentFilePtr(oid, dbRoot, partition, segment,
+                                           colDataType, colWidth, fileName,
+                                           "rb", size, false, false);
     if (!pFile)
     {
         throw std::bad_alloc();
@@ -453,12 +450,12 @@ ChunkManagerWrapperDict::ChunkManagerWrapperDict(
     : ChunkManagerWrapper(oid, dbRoot, partition, segment, colDataType,
                           colWidth)
 {
-    pFileOp = new WriteEngine::Dctnry();
-    chunkManager.fileOp(pFileOp);
+    pFileOp = std::unique_ptr<WriteEngine::Dctnry>(new WriteEngine::Dctnry());
+    chunkManager.fileOp(pFileOp.get());
     // Open compressed dict segment file.
-    pFile = chunkManager.getColumnFilePtr(oid, dbRoot, partition, segment,
-                                          colDataType, colWidth, fileName,
-                                          "rb", size, false, true);
+    pFile = chunkManager.getSegmentFilePtr(oid, dbRoot, partition, segment,
+                                           colDataType, colWidth, fileName,
+                                           "rb", size, false, true);
     if (!pFile)
     {
         throw std::bad_alloc();

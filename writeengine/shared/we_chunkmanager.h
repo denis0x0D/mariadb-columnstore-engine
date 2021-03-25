@@ -190,8 +190,8 @@ public:
                             bool useTmpSuffix) const;
 
     // @brief Retrieve a file pointer in the chunk manager.
-    //        for column segment file
-    IDBDataFile* getColumnFilePtr(
+    //        for column/dict segment file
+    IDBDataFile* getSegmentFilePtr(
         FID& fid, uint16_t root, uint32_t partition, uint16_t segment,
         execplan::CalpontSystemCatalog::ColDataType colDataType,
         uint32_t colWidth, std::string& filename, const char* mode,

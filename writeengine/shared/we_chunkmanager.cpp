@@ -292,12 +292,12 @@ IDBDataFile* ChunkManager::getFilePtr(const FID& fid,
 
 //------------------------------------------------------------------------------
 // Get/Return IDBDataFile* for specified OID, root, partition, and segment.
-// Function is to be used to open column segment file.
+// Function is to be used to open column/dict segment file.
 // If the IDBDataFile* is not found, then a segment file will be opened using
 // the mode (mode) and I/O buffer size (size) that is given.  Name of the
 // resulting file is returned in filename.
 //------------------------------------------------------------------------------
-IDBDataFile* ChunkManager::getColumnFilePtr(
+IDBDataFile* ChunkManager::getSegmentFilePtr(
     FID& fid, uint16_t root, uint32_t partition, uint16_t segment,
     execplan::CalpontSystemCatalog::ColDataType colDataType, uint32_t colWidth,
     std::string& filename, const char* mode, int32_t size, bool useTmpSuffix,
