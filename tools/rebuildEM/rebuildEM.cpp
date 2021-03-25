@@ -19,6 +19,7 @@
 #include <boost/filesystem.hpp>
 #include <stdint.h>
 
+#include "../writeengine/dictionary/we_dctnry.h"
 #include "rebuildEM.h"
 #include "calpontsystemcatalog.h"
 #include "idbcompress.h"
@@ -141,10 +142,10 @@ int32_t EMReBuilder::collectExtent(const std::string& fullFileName)
     }
 
     auto isDict = isDictFile(colDataType, colWidth);
-    uint64_t hwm = 0;
-
     if (isDict)
         colWidth = 8;
+    uint64_t hwm = 0;
+
     // We don't need to calculate HWM for dictionary files, because dictionary
     // file stores char data and has associated segment file with tokens which
     // holds pointers to that data.
@@ -289,15 +290,24 @@ int32_t EMReBuilder::searchHWMInSegmentFile(
     uint64_t blockCount, bool isDict, uint64_t& hwm)
 {
     WriteEngine::ChunkManager chunkManager;
-    WriteEngine::FileOp fileOp;
+    WriteEngine::FileOp* pFileOp;
+    if (isDict)
+    {
+        pFileOp = new WriteEngine::Dctnry();
+    }
+    else
+    {
+        pFileOp = new WriteEngine::FileOp();
+    }
     // Spent one night to debug, if not set will get a strange segfault in
     // m_typeHandler which is not null but points to memory which is not
     // accessible by current process. Is it related to initialization order
     // fiasko?
-    chunkManager.fileOp(&fileOp);
+    chunkManager.fileOp(pFileOp);
     std::string fileName;
     uint8_t blockData[WriteEngine::BYTE_PER_BLOCK];
-    const uint8_t* emptyValue = fileOp.getEmptyRowValue(colDataType, colWidth);
+    const uint8_t* emptyValue =
+        pFileOp->getEmptyRowValue(colDataType, colWidth);
     int32_t size = colWidth;
     hwm = 0;
 
@@ -331,11 +341,23 @@ int32_t EMReBuilder::searchHWMInSegmentFile(
         {
             return rc;
         }
-        // Check the first row for not empty value.
-        if (!isEmptyValue(blockData, emptyValue, colWidth))
+
+        if (isDict)
         {
-            hwm = currentBlock;
-            break;
+            if (!isEmptyDict(blockData))
+            {
+                hwm = currentBlock;
+                break;
+            }
+        }
+        else
+        {
+            // Check the first row for not empty value.
+            if (!isEmptyValue(blockData, emptyValue, colWidth))
+            {
+                hwm = currentBlock;
+                break;
+            }
         }
     }
 
@@ -362,7 +384,6 @@ bool EMReBuilder::isDictFile(
 
 int32_t EMReBuilder::initializeSystemExtents()
 {
-
     if (!doDisplay())
     {
         if (doVerbose())
@@ -383,6 +404,18 @@ int32_t EMReBuilder::initializeSystemExtents()
         }
     }
     return 0;
+}
+
+bool EMReBuilder::isEmptyDict(uint8_t* block) {
+  if (!block)
+      return true;
+  const uint32_t dictBlockHeaderSize =
+      WriteEngine::HDR_UNIT_SIZE + WriteEngine::NEXT_PTR_BYTES +
+      WriteEngine::HDR_UNIT_SIZE + WriteEngine::HDR_UNIT_SIZE;
+  const uint32_t emptyBlock =
+      WriteEngine::BYTE_PER_BLOCK - dictBlockHeaderSize;
+
+  return (*(uint16_t*) block) == emptyBlock;
 }
 
 // This function is copy pasted from `ColumnOp` file, unfortunately it's not
