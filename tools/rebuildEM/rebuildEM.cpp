@@ -290,42 +290,26 @@ int32_t EMReBuilder::searchHWMInSegmentFile(
     execplan::CalpontSystemCatalog::ColDataType colDataType, uint32_t colWidth,
     uint64_t blockCount, bool isDict, uint64_t& hwm)
 {
-    WriteEngine::ChunkManager chunkManager;
-    WriteEngine::FileOp* pFileOp;
-    if (isDict)
+    ChunkManagerWrapper* chunkManagerWrapper;
+    try
     {
-        pFileOp = new WriteEngine::Dctnry();
+        if (isDict)
+        {
+            chunkManagerWrapper = new ChunkManagerWrapperDict(
+                oid, dbRoot, partition, segment, colDataType, colWidth);
+        }
+        else
+        {
+            chunkManagerWrapper = new ChunkManagerWrapperColumn(
+                oid, dbRoot, partition, segment, colDataType, colWidth);
+        }
     }
-    else
-    {
-        pFileOp = new WriteEngine::FileOp();
-    }
-    // Spent one night to debug, if not set will get a strange segfault in
-    // m_typeHandler which is not null but points to memory which is not
-    // accessible by current process. Is it related to initialization order
-    // fiasko?
-    chunkManager.fileOp(pFileOp);
-    std::string fileName;
-    uint8_t blockData[WriteEngine::BYTE_PER_BLOCK];
-    const uint8_t* emptyValue =
-        pFileOp->getEmptyRowValue(colDataType, colWidth);
-    int32_t size = colWidth;
-    hwm = 0;
-
-    // Open compressed segment file. We will read block by block from
-    // the compressed chunks.
-    // Note: We cannot use `unique_ptr` here or close it directly, because
-    // `ChunkManager` closes this file for us, otherwise we will get double
-    // free error.
-    auto* pFile = chunkManager.getColumnFilePtr(
-        oid, dbRoot, partition, segment, colDataType, colWidth, fileName, "rb",
-        size, false, isDict);
-
-    if (!pFile)
+    catch (...)
     {
         return -1;
     }
 
+    hwm = 0;
     // Starting from the end.
     // Note: This solves problem related to `bulk` insertion.
     // Currently it could start to insert values from any block into empty
@@ -337,31 +321,15 @@ int32_t EMReBuilder::searchHWMInSegmentFile(
         // The uncompressed chunk size is 512 * 1024 * 8, so for `abbreviated`
         // extent one chunk will hold all blocks, therefore we need to
         // decompress chunk only once, the cached chunk will be used later.
-        auto rc = chunkManager.readBlock(pFile, blockData, currentBlock);
-        if (rc != 0)
+        chunkManagerWrapper->readBlock(currentBlock);
+        if (!chunkManagerWrapper->isEmptyBlock())
         {
-            return rc;
-        }
-
-        if (isDict)
-        {
-            if (!isEmptyDict(blockData))
-            {
-                hwm = currentBlock;
-                break;
-            }
-        }
-        else
-        {
-            // Check the first row for not empty value.
-            if (!isEmptyValue(blockData, emptyValue, colWidth))
-            {
-                hwm = currentBlock;
-                break;
-            }
+            hwm = currentBlock;
+            break;
         }
     }
 
+    delete chunkManagerWrapper;
     return 0;
 }
 

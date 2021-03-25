@@ -163,7 +163,7 @@ class ChunkManagerWrapper
             delete pFileOp;
     }
 
-    virtual int32_t readBlock(uint32_t blockNumber)
+    int32_t readBlock(uint32_t blockNumber)
     {
         auto rc = chunkManager.readBlock(pFile, blockData, blockNumber);
         if (rc != 0)
@@ -181,11 +181,14 @@ class ChunkManagerWrapper
     execplan::CalpontSystemCatalog::ColDataType colDataType;
     uint32_t colWidth;
     int32_t size;
+    std::string fileName;
     WriteEngine::FileOp* pFileOp;
+    // Note: We cannot use clear this pointer directly,  because
+    // `ChunkManager` closes this file for us, otherwise we will get double
+    // free error.
     IDBDataFile* pFile;
     WriteEngine::ChunkManager chunkManager;
     uint8_t blockData[WriteEngine::BYTE_PER_BLOCK];
-    std::string fileName;
 };
 
 class ChunkManagerWrapperColumn : public ChunkManagerWrapper
@@ -199,12 +202,15 @@ class ChunkManagerWrapperColumn : public ChunkManagerWrapper
                               colWidth)
     {
         pFileOp = new WriteEngine::FileOp();
+        chunkManager.fileOp(pFileOp);
+        // Open compressed column segment file. We will read block by block
+        // from the compressed chunks.
         pFile = chunkManager.getColumnFilePtr(oid, dbRoot, partition, segment,
                                               colDataType, colWidth, fileName,
                                               "rb", size, false, false);
         if (!pFile)
         {
-            throw exception();
+            throw std::bad_alloc();
         }
 
         emptyValue = pFileOp->getEmptyRowValue(colDataType, colWidth);
@@ -240,7 +246,6 @@ class ChunkManagerWrapperColumn : public ChunkManagerWrapper
 
 class ChunkManagerWrapperDict : public ChunkManagerWrapper
 {
-
   public:
     ChunkManagerWrapperDict(
         uint32_t oid, uint32_t dbRoot, uint32_t partition, uint32_t segment,
@@ -250,12 +255,14 @@ class ChunkManagerWrapperDict : public ChunkManagerWrapper
                               colWidth)
     {
         pFileOp = new WriteEngine::Dctnry();
+        chunkManager.fileOp(pFileOp);
+        // Open compressed dict segment file.
         pFile = chunkManager.getColumnFilePtr(oid, dbRoot, partition, segment,
                                               colDataType, colWidth, fileName,
                                               "rb", size, false, true);
         if (!pFile)
         {
-            throw exception();
+            throw std::bad_alloc();
         }
 
         auto dictBlockHeaderSize =
