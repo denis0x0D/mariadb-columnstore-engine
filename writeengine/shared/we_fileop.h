@@ -359,7 +359,8 @@ public:
                                           unsigned char* blockHdrInit,
                                           int      blockHdrInitSize,
                                           bool     bExpandExtent,
-                                          bool     bOptExtension = false );
+                                          bool     bOptExtension = false,
+                                          int64_t  lbid = 0);
 
     /**
      * @brief Check whether it is an directory
@@ -518,7 +519,7 @@ public:
 
 protected:
     EXPORT virtual int         updateColumnExtent(IDBDataFile* pFile, int nBlocks);
-    EXPORT virtual int         updateDctnryExtent(IDBDataFile* pFile, int nBlocks);
+    EXPORT virtual int         updateDctnryExtent(IDBDataFile* pFile, int nBlocks, int64_t lbid);
 
     int                 m_compressionType;  // compresssion type
 

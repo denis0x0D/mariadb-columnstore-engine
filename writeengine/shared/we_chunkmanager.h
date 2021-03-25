@@ -229,7 +229,8 @@ public:
     int updateColumnExtent(IDBDataFile* pFile, int addBlockCount);
 
     // @brief Update dictionary extent
-    int updateDctnryExtent(IDBDataFile* pFile, int addBlockCount);
+    int updateDctnryExtent(IDBDataFile* pFile, int addBlockCount,
+                           int64_t lbid);
 
     // @brief Read in n continuous blocks to read buffer.
     //        for backing up blocks to version buffer

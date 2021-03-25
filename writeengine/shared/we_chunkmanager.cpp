@@ -1398,6 +1398,7 @@ int ChunkManager::expandAbbrevColumnExtent(IDBDataFile* pFile, const uint8_t* em
 // Increment the block count stored in the chunk header used to track how many
 // blocks are allocated to the corresponding segment file.
 //------------------------------------------------------------------------------
+// same here as for dict.
 int ChunkManager::updateColumnExtent(IDBDataFile* pFile, int addBlockCount)
 {
     map<IDBDataFile*, CompFileData*>::iterator i = fFilePtrMap.find(pFile);
@@ -1450,7 +1451,8 @@ int ChunkManager::updateColumnExtent(IDBDataFile* pFile, int addBlockCount)
 // Increment the block count stored in the chunk header used to track how many
 // blocks are allocated to the corresponding segment file.
 //------------------------------------------------------------------------------
-int ChunkManager::updateDctnryExtent(IDBDataFile* pFile, int addBlockCount)
+int ChunkManager::updateDctnryExtent(IDBDataFile* pFile, int addBlockCount,
+                                     BRM::LBID_t lbid)
 {
     map<IDBDataFile*, CompFileData*>::iterator i = fFilePtrMap.find(pFile);
 
@@ -1507,6 +1509,8 @@ int ChunkManager::updateDctnryExtent(IDBDataFile* pFile, int addBlockCount)
     if (rc == NO_ERROR)
         fCompressor.setBlockCount(hdr, fCompressor.getBlockCount(hdr) + addBlockCount);
 
+    if (currentBlockCount)
+        fCompressor.setLBID1(hdr, lbid);
     return rc;
 }
 

@@ -90,9 +90,10 @@ DctnryCompress1::~DctnryCompress1()
         delete m_chunkManager;
 }
 
-int DctnryCompress1::updateDctnryExtent(IDBDataFile* pFile, int nBlocks)
+int DctnryCompress1::updateDctnryExtent(IDBDataFile* pFile, int nBlocks,
+                                        int64_t lbid)
 {
-    return m_chunkManager->updateDctnryExtent(pFile, nBlocks);
+    return m_chunkManager->updateDctnryExtent(pFile, nBlocks, lbid);
 }
 
 IDBDataFile* DctnryCompress1::createDctnryFile(const char* name, int width,
