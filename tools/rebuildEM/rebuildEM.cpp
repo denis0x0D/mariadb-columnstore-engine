@@ -375,16 +375,47 @@ int32_t EMReBuilder::initializeSystemExtents()
     return 0;
 }
 
-bool EMReBuilder::isEmptyDict(uint8_t* block) {
-  if (!block)
-      return true;
-  const uint32_t dictBlockHeaderSize =
-      WriteEngine::HDR_UNIT_SIZE + WriteEngine::NEXT_PTR_BYTES +
-      WriteEngine::HDR_UNIT_SIZE + WriteEngine::HDR_UNIT_SIZE;
-  const uint32_t emptyBlock =
-      WriteEngine::BYTE_PER_BLOCK - dictBlockHeaderSize;
+ChunkManagerWrapper::ChunkManagerWrapper(
+    uint32_t oid, uint32_t dbRoot, uint32_t partition, uint32_t segment,
+    execplan::CalpontSystemCatalog::ColDataType colDataType, uint32_t colWidth)
+    : oid(oid), dbRoot(dbRoot), partition(partition), segment(segment),
+      colDataType(colDataType), colWidth(colWidth), size(colWidth)
+{
+}
 
-  return (*(uint16_t*) block) == emptyBlock;
+ChunkManagerWrapper::~ChunkManagerWrapper()
+{
+    if (pFileOp)
+        delete pFileOp;
+}
+
+int32_t ChunkManagerWrapper::readBlock(uint32_t blockNumber)
+{
+    auto rc = chunkManager.readBlock(pFile, blockData, blockNumber);
+    if (rc != 0)
+        return rc;
+    return 0;
+}
+
+ChunkManagerWrapperColumn::ChunkManagerWrapperColumn(
+    uint32_t oid, uint32_t dbRoot, uint32_t partition, uint32_t segment,
+    execplan::CalpontSystemCatalog::ColDataType colDataType, uint32_t colWidth)
+    : ChunkManagerWrapper(oid, dbRoot, partition, segment, colDataType,
+                          colWidth)
+{
+    pFileOp = new WriteEngine::FileOp();
+    chunkManager.fileOp(pFileOp);
+    // Open compressed column segment file. We will read block by block
+    // from the compressed chunks.
+    pFile = chunkManager.getColumnFilePtr(oid, dbRoot, partition, segment,
+                                          colDataType, colWidth, fileName,
+                                          "rb", size, false, false);
+    if (!pFile)
+    {
+        throw std::bad_alloc();
+    }
+
+    emptyValue = pFileOp->getEmptyRowValue(colDataType, colWidth);
 }
 
 // This function is copy pasted from `ColumnOp` file, unfortunately it's not
@@ -392,9 +423,9 @@ bool EMReBuilder::isEmptyDict(uint8_t* block) {
 // of object which inherits from `ColumnOp`, probably this should be moved to
 // utils and make a static as well, to be able to use it without creating an
 // object.
-bool EMReBuilder::isEmptyValue(uint8_t* value, const uint8_t* emptyValue,
-                               uint32_t colWidth)
+bool ChunkManagerWrapperColumn::isEmptyBlock()
 {
+    uint8_t* value = blockData;
     switch (colWidth)
     {
     case 1:
@@ -414,6 +445,36 @@ bool EMReBuilder::isEmptyValue(uint8_t* value, const uint8_t* emptyValue,
     }
 
     return false;
+}
+
+ChunkManagerWrapperDict::ChunkManagerWrapperDict(
+    uint32_t oid, uint32_t dbRoot, uint32_t partition, uint32_t segment,
+    execplan::CalpontSystemCatalog::ColDataType colDataType, uint32_t colWidth)
+    : ChunkManagerWrapper(oid, dbRoot, partition, segment, colDataType,
+                          colWidth)
+{
+    pFileOp = new WriteEngine::Dctnry();
+    chunkManager.fileOp(pFileOp);
+    // Open compressed dict segment file.
+    pFile = chunkManager.getColumnFilePtr(oid, dbRoot, partition, segment,
+                                          colDataType, colWidth, fileName,
+                                          "rb", size, false, true);
+    if (!pFile)
+    {
+        throw std::bad_alloc();
+    }
+
+    auto dictBlockHeaderSize =
+        WriteEngine::HDR_UNIT_SIZE + WriteEngine::NEXT_PTR_BYTES +
+        WriteEngine::HDR_UNIT_SIZE + WriteEngine::HDR_UNIT_SIZE;
+
+    emptyBlock = WriteEngine::BYTE_PER_BLOCK - dictBlockHeaderSize;
+}
+
+bool ChunkManagerWrapperDict::isEmptyBlock()
+{
+    // Check that block is completely empty.
+    return (*(uint16_t*) blockData) == emptyBlock;
 }
 
 std::ostream& operator<<(std::ostream& os, const FileId& fileID)

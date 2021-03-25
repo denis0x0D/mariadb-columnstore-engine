@@ -98,13 +98,6 @@ class EMReBuilder
     isDictFile(execplan::CalpontSystemCatalog::ColDataType colDataType,
                uint64_t width);
 
-    // Checks if the given `value` is equal `emptyVaue` by specified width.
-    static bool isEmptyValue(uint8_t* value, const uint8_t* emptyValue,
-                             uint32_t width);
-
-    // Check if the given dict block is empty.
-    bool isEmptyDict(uint8_t* block);
-
     // Initializes system extents from the binary blob.
     // This function solves the problem related to system segment files.
     // Currently those files do not have file header, so we cannot
@@ -145,32 +138,23 @@ class EMReBuilder
     std::vector<FileId> extentMap;
 };
 
+// The base class aroud `ChunkManager` to read and write decompressed blocks
+// from segment file.
 class ChunkManagerWrapper
 {
   public:
     ChunkManagerWrapper(
         uint32_t oid, uint32_t dbRoot, uint32_t partition, uint32_t segment,
         execplan::CalpontSystemCatalog::ColDataType colDataType,
-        uint32_t colWidth)
-        : oid(oid), dbRoot(dbRoot), partition(partition), segment(segment),
-          colDataType(colDataType), colWidth(colWidth), size(colWidth)
-    {
-    }
+        uint32_t colWidth);
 
-    virtual ~ChunkManagerWrapper()
-    {
-        if (pFileOp)
-            delete pFileOp;
-    }
+    virtual ~ChunkManagerWrapper();
 
-    int32_t readBlock(uint32_t blockNumber)
-    {
-        auto rc = chunkManager.readBlock(pFile, blockData, blockNumber);
-        if (rc != 0)
-            return rc;
-        return 0;
-    }
+    // Reads block, by given `blockNumber` from associated segment file and
+    // populates internal block buffer.
+    int32_t readBlock(uint32_t blockNumber);
 
+    // Checks that last read block is empty.
     virtual bool isEmptyBlock() = 0;
 
   protected:
@@ -191,89 +175,31 @@ class ChunkManagerWrapper
     uint8_t blockData[WriteEngine::BYTE_PER_BLOCK];
 };
 
+// Class to read decompressed blocks from column segment files.
 class ChunkManagerWrapperColumn : public ChunkManagerWrapper
 {
   public:
     ChunkManagerWrapperColumn(
         uint32_t oid, uint32_t dbRoot, uint32_t partition, uint32_t segment,
         execplan::CalpontSystemCatalog::ColDataType colDataType,
-        uint32_t colWidth)
-        : ChunkManagerWrapper(oid, dbRoot, partition, segment, colDataType,
-                              colWidth)
-    {
-        pFileOp = new WriteEngine::FileOp();
-        chunkManager.fileOp(pFileOp);
-        // Open compressed column segment file. We will read block by block
-        // from the compressed chunks.
-        pFile = chunkManager.getColumnFilePtr(oid, dbRoot, partition, segment,
-                                              colDataType, colWidth, fileName,
-                                              "rb", size, false, false);
-        if (!pFile)
-        {
-            throw std::bad_alloc();
-        }
+        uint32_t colWidth);
 
-        emptyValue = pFileOp->getEmptyRowValue(colDataType, colWidth);
-    }
-
-    bool isEmptyBlock()
-    {
-        uint8_t* value = blockData;
-        switch (colWidth)
-        {
-        case 1:
-            return *(uint8_t*) value == *(uint8_t*) emptyValue;
-
-        case 2:
-            return *(uint16_t*) value == *(uint16_t*) emptyValue;
-
-        case 4:
-            return *(uint32_t*) value == *(uint32_t*) emptyValue;
-
-        case 8:
-            return *(uint64_t*) value == *(uint64_t*) emptyValue;
-
-        case 16:
-            return *(uint128_t*) value == *(uint128_t*) emptyValue;
-        }
-
-        return false;
-    }
+    bool isEmptyBlock() override;
 
   private:
     const uint8_t* emptyValue;
 };
 
+// Class to read decompressed blocks from dict segment files.
 class ChunkManagerWrapperDict : public ChunkManagerWrapper
 {
   public:
     ChunkManagerWrapperDict(
         uint32_t oid, uint32_t dbRoot, uint32_t partition, uint32_t segment,
         execplan::CalpontSystemCatalog::ColDataType colDataType,
-        uint32_t colWidth)
-        : ChunkManagerWrapper(oid, dbRoot, partition, segment, colDataType,
-                              colWidth)
-    {
-        pFileOp = new WriteEngine::Dctnry();
-        chunkManager.fileOp(pFileOp);
-        // Open compressed dict segment file.
-        pFile = chunkManager.getColumnFilePtr(oid, dbRoot, partition, segment,
-                                              colDataType, colWidth, fileName,
-                                              "rb", size, false, true);
-        if (!pFile)
-        {
-            throw std::bad_alloc();
-        }
+        uint32_t colWidth);
 
-        auto dictBlockHeaderSize =
-            WriteEngine::HDR_UNIT_SIZE + WriteEngine::NEXT_PTR_BYTES +
-            WriteEngine::HDR_UNIT_SIZE + WriteEngine::HDR_UNIT_SIZE;
-
-        emptyBlock =
-            WriteEngine::BYTE_PER_BLOCK - dictBlockHeaderSize;
-    }
-
-    bool isEmptyBlock() { return (*(uint16_t*) blockData) == emptyBlock; }
+    bool isEmptyBlock() override;
 
   private:
     uint32_t emptyBlock;
