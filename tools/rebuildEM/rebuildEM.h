@@ -22,10 +22,18 @@
 #include <map>
 #include <ftw.h>
 
+#include "../writeengine/dictionary/we_dctnry.h"
 #include "calpontsystemcatalog.h"
 #include "extentmap.h"
 #include "IDBPolicy.h"
 #include "IDBFileSystem.h"
+#include "idbcompress.h"
+#include "blocksize.h"
+#include "we_convertor.h"
+#include "we_fileop.h"
+#include "we_blockop.h"
+#include "IDBPolicy.h"
+#include "we_chunkmanager.h"
 
 using namespace idbdatafile;
 
@@ -135,6 +143,133 @@ class EMReBuilder
     uint32_t dbRoot;
     BRM::ExtentMap em;
     std::vector<FileId> extentMap;
+};
+
+class ChunkManagerWrapper
+{
+  public:
+    ChunkManagerWrapper(
+        uint32_t oid, uint32_t dbRoot, uint32_t partition, uint32_t segment,
+        execplan::CalpontSystemCatalog::ColDataType colDataType,
+        uint32_t colWidth)
+        : oid(oid), dbRoot(dbRoot), partition(partition), segment(segment),
+          colDataType(colDataType), colWidth(colWidth), size(colWidth)
+    {
+    }
+
+    virtual ~ChunkManagerWrapper()
+    {
+        if (pFileOp)
+            delete pFileOp;
+    }
+
+    virtual int32_t readBlock(uint32_t blockNumber)
+    {
+        auto rc = chunkManager.readBlock(pFile, blockData, blockNumber);
+        if (rc != 0)
+            return rc;
+        return 0;
+    }
+
+    virtual bool isEmptyBlock() = 0;
+
+  protected:
+    uint32_t oid;
+    uint32_t dbRoot;
+    uint32_t partition;
+    uint32_t segment;
+    execplan::CalpontSystemCatalog::ColDataType colDataType;
+    uint32_t colWidth;
+    int32_t size;
+    WriteEngine::FileOp* pFileOp;
+    IDBDataFile* pFile;
+    WriteEngine::ChunkManager chunkManager;
+    uint8_t blockData[WriteEngine::BYTE_PER_BLOCK];
+    std::string fileName;
+};
+
+class ChunkManagerWrapperColumn : public ChunkManagerWrapper
+{
+  public:
+    ChunkManagerWrapperColumn(
+        uint32_t oid, uint32_t dbRoot, uint32_t partition, uint32_t segment,
+        execplan::CalpontSystemCatalog::ColDataType colDataType,
+        uint32_t colWidth)
+        : ChunkManagerWrapper(oid, dbRoot, partition, segment, colDataType,
+                              colWidth)
+    {
+        pFileOp = new WriteEngine::FileOp();
+        pFile = chunkManager.getColumnFilePtr(oid, dbRoot, partition, segment,
+                                              colDataType, colWidth, fileName,
+                                              "rb", size, false, false);
+        if (!pFile)
+        {
+            throw exception();
+        }
+
+        emptyValue = pFileOp->getEmptyRowValue(colDataType, colWidth);
+    }
+
+    bool isEmptyBlock()
+    {
+        uint8_t* value = blockData;
+        switch (colWidth)
+        {
+        case 1:
+            return *(uint8_t*) value == *(uint8_t*) emptyValue;
+
+        case 2:
+            return *(uint16_t*) value == *(uint16_t*) emptyValue;
+
+        case 4:
+            return *(uint32_t*) value == *(uint32_t*) emptyValue;
+
+        case 8:
+            return *(uint64_t*) value == *(uint64_t*) emptyValue;
+
+        case 16:
+            return *(uint128_t*) value == *(uint128_t*) emptyValue;
+        }
+
+        return false;
+    }
+
+  private:
+    const uint8_t* emptyValue;
+};
+
+class ChunkManagerWrapperDict : public ChunkManagerWrapper
+{
+
+  public:
+    ChunkManagerWrapperDict(
+        uint32_t oid, uint32_t dbRoot, uint32_t partition, uint32_t segment,
+        execplan::CalpontSystemCatalog::ColDataType colDataType,
+        uint32_t colWidth)
+        : ChunkManagerWrapper(oid, dbRoot, partition, segment, colDataType,
+                              colWidth)
+    {
+        pFileOp = new WriteEngine::Dctnry();
+        pFile = chunkManager.getColumnFilePtr(oid, dbRoot, partition, segment,
+                                              colDataType, colWidth, fileName,
+                                              "rb", size, false, true);
+        if (!pFile)
+        {
+            throw exception();
+        }
+
+        auto dictBlockHeaderSize =
+            WriteEngine::HDR_UNIT_SIZE + WriteEngine::NEXT_PTR_BYTES +
+            WriteEngine::HDR_UNIT_SIZE + WriteEngine::HDR_UNIT_SIZE;
+
+        emptyBlock =
+            WriteEngine::BYTE_PER_BLOCK - dictBlockHeaderSize;
+    }
+
+    bool isEmptyBlock() { return (*(uint16_t*) blockData) == emptyBlock; }
+
+  private:
+    uint32_t emptyBlock;
 };
 
 } // namespace RebuildExtentMap
