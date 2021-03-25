@@ -512,13 +512,14 @@ public:
                                           bool     bNewFile,
                                           bool     bExpandExtent,
                                           bool     bAbbrevExtent,
-                                          bool     bOptExtension=false );
+                                          bool     bOptExtension=false,
+                                          int64_t  lbid = 0 );
 
     // Calls a chown and logs an error message
     bool                chownDataPath(const std::string& fileName) const;
 
 protected:
-    EXPORT virtual int         updateColumnExtent(IDBDataFile* pFile, int nBlocks);
+    EXPORT virtual int         updateColumnExtent(IDBDataFile* pFile, int nBlocks, int64_t lbid);
     EXPORT virtual int         updateDctnryExtent(IDBDataFile* pFile, int nBlocks, int64_t lbid);
 
     int                 m_compressionType;  // compresssion type

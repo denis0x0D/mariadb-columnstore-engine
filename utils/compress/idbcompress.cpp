@@ -447,7 +447,8 @@ uint64_t IDBCompressInterface::getLBID0(const void* hdrBuf) const
 //------------------------------------------------------------------------------
 void IDBCompressInterface::setLBID0(void* hdrBuf, uint64_t lbid) const
 {
-    reinterpret_cast<CompressedDBFileHeader*>(hdrBuf)->fLBID0 = lbid;
+    if (lbid)
+        reinterpret_cast<CompressedDBFileHeader*>(hdrBuf)->fLBID0 = lbid;
 }
 
 //------------------------------------------------------------------------------
@@ -463,7 +464,8 @@ uint64_t IDBCompressInterface::getLBID1(const void* hdrBuf) const
 //------------------------------------------------------------------------------
 void IDBCompressInterface::setLBID1(void* hdrBuf, uint64_t lbid) const
 {
-    reinterpret_cast<CompressedDBFileHeader*>(hdrBuf)->fLBID1 = lbid;
+    if (lbid)
+        reinterpret_cast<CompressedDBFileHeader*>(hdrBuf)->fLBID1 = lbid;
 }
 
 //------------------------------------------------------------------------------

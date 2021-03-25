@@ -660,7 +660,6 @@ int FileOp::extendFile(
             unsigned int chunkIndex = 0;
             unsigned int blockOffsetWithinChunk = 0;
             compressor.locateBlock((hwm - 1), chunkIndex, blockOffsetWithinChunk);
-            compressor.setLBID1(hdrs, startLbid);
             RETURN_ON_ERROR(writeHeaders(pFile, hdrsIn));
 
             //std::ostringstream oss1;
@@ -855,7 +854,8 @@ int FileOp::extendFile(
                            newFile, // new or existing file
                            false,   // don't expand; new extent
                            false,   // add full (not abbreviated) extent
-                           true);   // try to optimize extent creation
+                           true,    // try to optimize extent creation
+                           startLbid );
 
     return rc;
 }
@@ -1014,7 +1014,8 @@ int FileOp::addExtentExactFile(
                            colDataType,
                            newFile, // new or existing file
                            false,   // don't expand; new extent
-                           false ); // add full (not abbreviated) extent
+                           false,   // add full (not abbreviated) extent
+                           startLbid );
 
     closeFile( pFile );
     return rc;
@@ -1059,13 +1060,15 @@ int FileOp::initColumnExtent(
     bool     bNewFile,
     bool     bExpandExtent,
     bool     bAbbrevExtent,
-    bool     bOptExtension)
+    bool     bOptExtension,
+    int64_t  lbid)
 {
     if ((bNewFile) && (m_compressionType))
     {
         char hdrs[IDBCompressInterface::HDR_BUF_LEN * 2];
         IDBCompressInterface compressor;
         compressor.initHdr(hdrs, width, colDataType, m_compressionType);
+        compressor.setLBID0(hdrs, lbid);
 
         if (bAbbrevExtent)
             compressor.setBlockCount(hdrs, nBlocks);
@@ -1079,7 +1082,7 @@ int FileOp::initColumnExtent(
         //@Bug 3219. update the compression header after the extent is expanded.
         if ((!bNewFile) && (m_compressionType) && (bExpandExtent))
         {
-            updateColumnExtent(pFile, nBlocks);
+            updateColumnExtent(pFile, nBlocks, lbid);
         }
 
         // @bug 2378. Synchronize here to avoid write buffer pile up too much,
@@ -1195,7 +1198,7 @@ int FileOp::initColumnExtent(
             //@Bug 3219. update the compression header after the extent is expanded.
             if ((!bNewFile) && (m_compressionType) && (bExpandExtent))
             {
-                updateColumnExtent(pFile, nBlocks);
+                updateColumnExtent(pFile, nBlocks, lbid);
             }
 
             // @bug 2378. Synchronize here to avoid write buffer pile up too much,
@@ -1249,7 +1252,8 @@ int FileOp::initAbbrevCompColumnExtent(
                                true,   // new file
                                false,  // don't expand; add new extent
                                true,   // add abbreviated extent
-                               true); // optimize the initial extent
+                               true,   // optimize the initial extent
+                               startLBID);
     if (rc != NO_ERROR)
     {
         return rc;
@@ -2909,7 +2913,7 @@ int FileOp::flushFile(int rc, std::map<FID, FID>& oids)
     return NO_ERROR;
 }
 
-int FileOp::updateColumnExtent(IDBDataFile* pFile, int nBlocks)
+int FileOp::updateColumnExtent(IDBDataFile* pFile, int nBlocks, int64_t lbid)
 {
     return NO_ERROR;
 }

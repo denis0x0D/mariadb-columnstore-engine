@@ -1399,7 +1399,7 @@ int ChunkManager::expandAbbrevColumnExtent(IDBDataFile* pFile, const uint8_t* em
 // blocks are allocated to the corresponding segment file.
 //------------------------------------------------------------------------------
 // same here as for dict.
-int ChunkManager::updateColumnExtent(IDBDataFile* pFile, int addBlockCount)
+int ChunkManager::updateColumnExtent(IDBDataFile* pFile, int addBlockCount, int64_t lbid)
 {
     map<IDBDataFile*, CompFileData*>::iterator i = fFilePtrMap.find(pFile);
 
@@ -1420,6 +1420,7 @@ int ChunkManager::updateColumnExtent(IDBDataFile* pFile, int addBlockCount)
     int rc = NO_ERROR;
     char* hdr = pFileData->fFileHeader.fControlData;
     fCompressor.setBlockCount(hdr, fCompressor.getBlockCount(hdr) + addBlockCount);
+    fCompressor.setLBID1(hdr, lbid);
     ChunkData* chunkData = (pFileData)->findChunk(0);
 
     if (chunkData != NULL)

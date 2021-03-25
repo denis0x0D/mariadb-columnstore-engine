@@ -166,6 +166,7 @@ int32_t EMReBuilder::collectExtent(const std::string& fullFileName)
     const uint32_t extentMaxBlockCount =
         getEM().getExtentRows() * colWidth / BLOCK_SIZE;
 
+    // We found multiple extents per one segment file.
     if (hwm >= extentMaxBlockCount)
     {
         auto lbid = compressor.getLBID1(fileHeader);

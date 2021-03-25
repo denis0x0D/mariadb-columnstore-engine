@@ -226,7 +226,8 @@ public:
     int expandAbbrevColumnExtent(IDBDataFile* pFile, const uint8_t* emptyVal, int width);
 
     // @brief Update column extent
-    int updateColumnExtent(IDBDataFile* pFile, int addBlockCount);
+    int updateColumnExtent(IDBDataFile* pFile, int addBlockCount,
+                           int64_t lbid);
 
     // @brief Update dictionary extent
     int updateDctnryExtent(IDBDataFile* pFile, int addBlockCount,

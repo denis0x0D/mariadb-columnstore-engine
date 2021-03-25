@@ -370,9 +370,9 @@ inline uint64_t IDBCompressInterface::maxCompressedSize(uint64_t uncompSize)
 {
     return uncompSize;
 }
-inline uint64_t getLBID0(const void* hdrBuf) const { return -1; }
+inline uint64_t getLBID0(const void* hdrBuf) const { return 0; }
 void setLBID0(void* hdrBuf, uint64_t lbid) const {}
-inline uint64_t getLBID1(const void* hdrBuf) const { return -1; }
+inline uint64_t getLBID1(const void* hdrBuf) const { return 0; }
 void setLBID1(void* hdrBuf, uint64_t lbid) const {}
 inline bool IDBCompressInterface::getUncompressedSize(char* in, size_t inLen, size_t* outLen)
 {
