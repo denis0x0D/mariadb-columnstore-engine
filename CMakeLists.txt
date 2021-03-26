@@ -200,7 +200,7 @@ ENDIF()
 
 
 
-SET (ENGINE_LDFLAGS    "-Wl,--no-as-needed -Wl,--add-needed")
+SET (ENGINE_LDFLAGS    "-Wl,--no-as-needed -Wl,--add-needed -llz4")
 SET (ENGINE_DT_LIB datatypes)
 SET (ENGINE_COMMON_LIBS     messageqcpp loggingcpp configcpp idbboot ${Boost_LIBRARIES} xml2 pthread rt libmysql_client ${ENGINE_DT_LIB})
 SET (ENGINE_OAM_LIBS        oamcpp)

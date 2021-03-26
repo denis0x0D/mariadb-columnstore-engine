@@ -29,6 +29,8 @@ using namespace std;
 #include "snappy.h"
 #include "hasher.h"
 
+#include "lz4.h"
+
 #define IDBCOMP_DLLEXPORT
 #include "idbcompress.h"
 #undef IDBCOMP_DLLEXPORT
@@ -61,6 +63,8 @@ const uint8_t CHUNK_MAGIC2 = 0xfe;
  * header).
  */
 const uint8_t CHUNK_MAGIC3 = 0xfd;
+
+const uint8_t CHUNK_MAGIC4 = 0xff;
 
 struct CompressedDBFileHeader
 {
@@ -145,22 +149,37 @@ int IDBCompressInterface::compressBlock(const char* in,
 {
     size_t snaplen = 0;
     utils::Hasher128 hasher;
+    // LZ4_COMPRESSBOUND(uncompSize)  +  Header_size
 
     // loose input checking.
-    if (outLen < snappy::MaxCompressedLength(inLen) + HEADER_SIZE)
+    if (outLen < LZ4_COMPRESSBOUND(inLen) + HEADER_SIZE)
     {
         cerr << "got outLen = " << outLen << " for inLen = " << inLen << ", needed " <<
              (snappy::MaxCompressedLength(inLen) + HEADER_SIZE) << endl;
         return ERR_BADOUTSIZE;
     }
 
-    //apparently this never fails?
-    snappy::RawCompress(in, inLen, reinterpret_cast<char*>(&out[HEADER_SIZE]), &snaplen);
+    snaplen = LZ4_compress_default(
+        in, reinterpret_cast<char*>(&out[HEADER_SIZE]), inLen, outLen);
+
+    if (snaplen < 0)
+    {
+        cerr << "LZ4_compress fail with error " << snaplen << endl;
+        return ERR_BADOUTSIZE;
+    }
+
+    cout << "LZ4 compress: intput size " << inLen << " compressed size "
+         << snaplen << endl;
+    /*
+        // apparently this never fails?
+        snappy::RawCompress(
+            in, inLen, reinterpret_cast<char*>(&out[HEADER_SIZE]), &snaplen);
+            */
 
     uint8_t* signature = (uint8_t*) &out[SIG_OFFSET];
     uint32_t* checksum = (uint32_t*) &out[CHECKSUM_OFFSET];
     uint32_t* len = (uint32_t*) &out[LEN_OFFSET];
-    *signature = CHUNK_MAGIC3;
+    *signature = CHUNK_MAGIC4;
     *checksum = hasher((char*) &out[HEADER_SIZE], snaplen);
     *len = snaplen;
 
@@ -187,7 +206,7 @@ int IDBCompressInterface::uncompressBlock(const char* in, const size_t inLen, un
     uint8_t storedMagic;
     utils::Hasher128 hasher;
 
-    outLen = 0;
+    //outLen = 0;
 
     if (inLen < 1)
     {
@@ -195,8 +214,9 @@ int IDBCompressInterface::uncompressBlock(const char* in, const size_t inLen, un
     }
 
     storedMagic = *((uint8_t*) &in[SIG_OFFSET]);
+    int decLen = 0;
 
-    if (storedMagic == CHUNK_MAGIC3)
+    if (storedMagic == CHUNK_MAGIC4)
     {
         if (inLen < HEADER_SIZE)
         {
@@ -218,8 +238,29 @@ int IDBCompressInterface::uncompressBlock(const char* in, const size_t inLen, un
             return ERR_CHECKSUM;
         }
 
+        std::cout << "LZ4 decompress safe "
+                  << "stored len: " << storedLen << " outlen " << outLen
+                  << std::endl;
+
+        decLen = LZ4_decompress_safe(
+            &in[HEADER_SIZE], reinterpret_cast<char*>(out), storedLen, outLen);
+
+        cout << "decompress: declen " << decLen << endl;
+
+        if (decLen < 0)
+        {
+            comprc = 0;
+            ol = decLen;
+        }
+        else
+        {
+            ol = decLen;
+            comprc = 1;
+        }
+        /*
         comprc = snappy::GetUncompressedLength(&in[HEADER_SIZE], storedLen, &ol) &&
                  snappy::RawUncompress(&in[HEADER_SIZE], storedLen, reinterpret_cast<char*>(out));
+                 */
     }
     else
     {
@@ -229,6 +270,7 @@ int IDBCompressInterface::uncompressBlock(const char* in, const size_t inLen, un
 
     if (!comprc)
     {
+        cerr << "decl len is  " << decLen << endl;
         cerr << "decomp failed!" << endl;
         return ERR_DECOMPRESS;
     }
@@ -467,25 +509,36 @@ int IDBCompressInterface::padCompressedChunks(unsigned char* buf,
 /* static */
 uint64_t IDBCompressInterface::maxCompressedSize(uint64_t uncompSize)
 {
-    return (snappy::MaxCompressedLength(uncompSize) + HEADER_SIZE);
+    return LZ4_COMPRESSBOUND(uncompSize) + HEADER_SIZE;
+    //return (snappy::MaxCompressedLength(uncompSize) + HEADER_SIZE);
 }
 
 int IDBCompressInterface::compress(const char* in, size_t inLen, char* out,
                                    size_t* outLen) const
 {
+    cerr << "compress 508 " << endl;
+    exit(0);
     snappy::RawCompress(in, inLen, out, outLen);
     return 0;
 }
 
 int IDBCompressInterface::uncompress(const char* in, size_t inLen, char* out) const
 {
+
+    cerr << "uncompress 517 " << endl;
+    exit(0);
+    // LZ4_decompress_safe
     return !(snappy::RawUncompress(in, inLen, out));
 }
 
 /* static */
 bool IDBCompressInterface::getUncompressedSize(char* in, size_t inLen, size_t* outLen)
 {
-    return snappy::GetUncompressedLength(in, inLen, outLen);
+    cerr << "get uncompressed size " << endl;
+    exit (0);
+    *outLen = 0;
+    return false;
+    //    return snappy::GetUncompressedLength(in, inLen, outLen);
 }
 
 #endif
