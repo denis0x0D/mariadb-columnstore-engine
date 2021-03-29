@@ -345,7 +345,8 @@ void RBMetaWriter::saveBulkRollbackMetaData(
                         columns[i].dataFile.fDbRoot,
                         columns[i].dataFile.fPartition,
                         columns[i].dataFile.fSegment,
-                        columns[i].dataFile.hwm );
+                        columns[i].dataFile.hwm,
+                        columns[i].compressionType );
                 }
 
             }         // End of loop through columns
@@ -725,13 +726,14 @@ void RBMetaWriter::backupColumnHWMChunk(
     uint16_t  dbRoot,
     uint32_t  partition,
     uint16_t  segment,
-    HWM       startingHWM)
+    HWM       startingHWM,
+    uint32_t  compressionType)
 {
     // @bug 5572 - Don't need db backup file for HDFS; we use hdfs buffer file
     if (!IDBPolicy::useHdfs())
     {
-        backupHWMChunk( true,
-                        columnOID, dbRoot, partition, segment, startingHWM );
+        backupHWMChunk(true, columnOID, dbRoot, partition, segment,
+                       startingHWM, compressionType);
     }
 }
 
@@ -753,7 +755,8 @@ bool RBMetaWriter::backupDctnryHWMChunk(
     OID       dctnryOID,
     uint16_t  dbRoot,
     uint32_t  partition,
-    uint16_t  segment)
+    uint16_t  segment,
+    uint32_t  compressionType)
 {
     bool bBackupApplies = false;
 
@@ -791,8 +794,9 @@ bool RBMetaWriter::backupDctnryHWMChunk(
 
                 if (!IDBPolicy::useHdfs())
                 {
-                    backupHWMChunk(false, dctnryOID,
-                                   dbRoot, partition, segment, chunkInfoFound.fHwm);
+                    backupHWMChunk(false, dctnryOID, dbRoot, partition,
+                                   segment, chunkInfoFound.fHwm,
+                                   compressionType);
                 }
             }
             else
@@ -960,7 +964,8 @@ void RBMetaWriter::backupHWMChunk(
     uint16_t  dbRoot,      // DB Root for db segment file
     uint32_t  partition,   // partition for db segment file
     uint16_t  segment,     // segment for db segment file
-    HWM       startingHWM) // starting HWM for db segment file
+    HWM       startingHWM, // starting HWM for db segment file
+    uint32_t  compressionType) // compressoin type for db segment file
 {
     std::string fileType("column");
 
@@ -1007,9 +1012,9 @@ void RBMetaWriter::backupHWMChunk(
     }
 
     // Read Control header
-    char controlHdr[ IDBCompressInterface::HDR_BUF_LEN ];
+    char controlHdr[ CompressInterface::HDR_BUF_LEN ];
     rc = fileOp.readFile( dbFile, (unsigned char*)controlHdr,
-                          IDBCompressInterface::HDR_BUF_LEN );
+                          CompressInterface::HDR_BUF_LEN );
 
     if (rc != NO_ERROR)
     {
@@ -1025,8 +1030,7 @@ void RBMetaWriter::backupHWMChunk(
         throw WeException( oss.str(), rc );
     }
 
-    IDBCompressInterface compressor;
-    int rc1 = compressor.verifyHdr( controlHdr );
+    int rc1 = compress::CompressInterface::verifyHdr(controlHdr);
 
     if (rc1 != 0)
     {
@@ -1046,8 +1050,8 @@ void RBMetaWriter::backupHWMChunk(
     }
 
     // Read Pointer header data
-    uint64_t hdrSize    = compressor.getHdrSize(controlHdr);
-    uint64_t ptrHdrSize = hdrSize - IDBCompressInterface::HDR_BUF_LEN;
+    uint64_t hdrSize = compress::CompressInterface::getHdrSize(controlHdr);
+    uint64_t ptrHdrSize = hdrSize - CompressInterface::HDR_BUF_LEN;
     char* pointerHdr    = new char[ptrHdrSize];
     rc = fileOp.readFile( dbFile, (unsigned char*)pointerHdr, ptrHdrSize );
 
@@ -1067,7 +1071,8 @@ void RBMetaWriter::backupHWMChunk(
     }
 
     CompChunkPtrList     chunkPtrs;
-    rc = compressor.getPtrList(pointerHdr, ptrHdrSize, chunkPtrs );
+    rc = compress::CompressInterface::getPtrList(pointerHdr, ptrHdrSize,
+                                                 chunkPtrs);
     delete[] pointerHdr;
 
     if (rc != 0)
@@ -1082,12 +1087,15 @@ void RBMetaWriter::backupHWMChunk(
         throw WeException( oss.str(), ERR_METADATABKUP_COMP_PARSE_HDRS );
     }
 
+    std::unique_ptr<compress::CompressInterface> compressor(
+        compress::getCompressInterfaceByType(compressionType));
+
     // Locate HWM chunk
     unsigned int chunkIndex             = 0;
     unsigned int blockOffsetWithinChunk = 0;
     unsigned char* buffer               = 0;
     uint64_t chunkSize                  = 0;
-    compressor.locateBlock(startingHWM, chunkIndex, blockOffsetWithinChunk);
+    compressor->locateBlock(startingHWM, chunkIndex, blockOffsetWithinChunk);
 
     if (chunkIndex < chunkPtrs.size())
     {

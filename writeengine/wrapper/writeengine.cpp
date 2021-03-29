@@ -1485,7 +1485,13 @@ int WriteEngineWrapper::insertColumnRecs(const TxnID& txnid,
             {
                 //@Bug 4854 back up hwm chunk for the file to be modified
                 if (fRBMetaWriter)
-                    fRBMetaWriter->backupDctnryHWMChunk(newDctnryStructList[i].dctnryOid, newDctnryStructList[i].fColDbRoot, newDctnryStructList[i].fColPartition, newDctnryStructList[i].fColSegment);
+                    fRBMetaWriter->backupDctnryHWMChunk(
+                        newDctnryStructList[i].dctnryOid,
+                        newDctnryStructList[i].fColDbRoot,
+                        newDctnryStructList[i].fColPartition,
+                        newDctnryStructList[i].fColSegment,
+                        // FIXME: This is a default compression type.
+                        newDctnryStructList[i].fCompressionType);
 
                 rc = dctnry->openDctnry(newDctnryStructList[i].dctnryOid,
                                         newDctnryStructList[i].fColDbRoot, newDctnryStructList[i].fColPartition,
@@ -2259,7 +2265,12 @@ int WriteEngineWrapper::insertColumnRecsBinary(const TxnID& txnid,
             {
                 //@Bug 4854 back up hwm chunk for the file to be modified
                 if (fRBMetaWriter)
-                    fRBMetaWriter->backupDctnryHWMChunk(newDctnryStructList[i].dctnryOid, newDctnryStructList[i].fColDbRoot, newDctnryStructList[i].fColPartition, newDctnryStructList[i].fColSegment);
+                    fRBMetaWriter->backupDctnryHWMChunk(
+                        newDctnryStructList[i].dctnryOid,
+                        newDctnryStructList[i].fColDbRoot,
+                        newDctnryStructList[i].fColPartition,
+                        newDctnryStructList[i].fColSegment,
+                        newDctnryStructList[i].fCompressionType);
 
                 rc = dctnry->openDctnry(newDctnryStructList[i].dctnryOid,
                                         newDctnryStructList[i].fColDbRoot, newDctnryStructList[i].fColPartition,

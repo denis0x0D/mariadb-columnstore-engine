@@ -70,7 +70,8 @@ DctnryCompress0::~DctnryCompress0()
 DctnryCompress1::DctnryCompress1(Log* logger)
 {
     m_compressionType = 1;
-    m_chunkManager = new ChunkManager();
+    // FIXME: compression type == 2?
+    m_chunkManager = new ChunkManager(m_compressionType);
 
     if (logger)
     {

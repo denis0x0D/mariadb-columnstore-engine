@@ -498,6 +498,7 @@ uint8_t WE_DMLCommandProc::processSingleInsert(messageqcpp::ByteStream& bs, std:
                     aDctnry.fColPartition = dbRootExtent.fPartition;
                     aDctnry.fColSegment = dbRootExtent.fSegment;
                     aDctnry.fColDbRoot = dbRootExtent.fDbRoot;
+                    aDctnry.fCompressionType = colType.compressionType;
                     dctnryList.push_back(aDctnry);
                 }
 
@@ -519,7 +520,9 @@ uint8_t WE_DMLCommandProc::processSingleInsert(messageqcpp::ByteStream& bs, std:
             {
                 // @bug 5572 HDFS tmp file - Ignoring return flag, don't need in this context
                 fRBMetaWriter->backupDctnryHWMChunk(
-                    dctnryList[i].dctnryOid, dctnryList[i].fColDbRoot, dctnryList[i].fColPartition, dctnryList[i].fColSegment);
+                    dctnryList[i].dctnryOid, dctnryList[i].fColDbRoot,
+                    dctnryList[i].fColPartition, dctnryList[i].fColSegment,
+                    dctnryList[i].fCompressionType);
             }
         }
         catch (std::exception& ex)
@@ -928,6 +931,7 @@ uint8_t WE_DMLCommandProc::processBatchInsert(messageqcpp::ByteStream& bs, std::
                     aDctnry.fColPartition = dbRootExtent.fPartition;
                     aDctnry.fColSegment = dbRootExtent.fSegment;
                     aDctnry.fColDbRoot = dbRootExtent.fDbRoot;
+                    aDctnry.fCompressionType = colType.compressionType;
                     dctnryList.push_back(aDctnry);
                 }
 
@@ -979,7 +983,9 @@ uint8_t WE_DMLCommandProc::processBatchInsert(messageqcpp::ByteStream& bs, std::
                 {
                     // @bug 5572 HDFS tmp file - Ignoring return flag, don't need in this context
                     fRBMetaWriter->backupDctnryHWMChunk(
-                        dctnryList[i].dctnryOid, dctnryList[i].fColDbRoot, dctnryList[i].fColPartition, dctnryList[i].fColSegment);
+                        dctnryList[i].dctnryOid, dctnryList[i].fColDbRoot,
+                        dctnryList[i].fColPartition, dctnryList[i].fColSegment,
+                        dctnryList[i].fCompressionType);
                 }
             }
         }
@@ -1507,6 +1513,7 @@ uint8_t WE_DMLCommandProc::processBatchInsertBinary(messageqcpp::ByteStream& bs,
                     aDctnry.fColPartition = dbRootExtent.fPartition;
                     aDctnry.fColSegment = dbRootExtent.fSegment;
                     aDctnry.fColDbRoot = dbRootExtent.fDbRoot;
+                    aDctnry.fCompressionType = colType.compressionType;
                     dctnryList.push_back(aDctnry);
                 }
 
@@ -1560,7 +1567,9 @@ uint8_t WE_DMLCommandProc::processBatchInsertBinary(messageqcpp::ByteStream& bs,
                 {
                     // @bug 5572 HDFS tmp file - Ignoring return flag, don't need in this context
                     fRBMetaWriter->backupDctnryHWMChunk(
-                        dctnryList[i].dctnryOid, dctnryList[i].fColDbRoot, dctnryList[i].fColPartition, dctnryList[i].fColSegment);
+                        dctnryList[i].dctnryOid, dctnryList[i].fColDbRoot,
+                        dctnryList[i].fColPartition, dctnryList[i].fColSegment,
+                        dctnryList[i].fCompressionType);
                 }
             }
         }
