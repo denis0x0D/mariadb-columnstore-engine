@@ -64,8 +64,8 @@ namespace WriteEngine
 // forward reference
 class FileOp;
 
-const int UNCOMPRESSED_CHUNK_SIZE = compress::IDBCompressInterface::UNCOMPRESSED_INBUF_LEN;
-const int COMPRESSED_FILE_HEADER_UNIT = compress::IDBCompressInterface::HDR_BUF_LEN;
+const int UNCOMPRESSED_CHUNK_SIZE = compress::CompressInterface::UNCOMPRESSED_INBUF_LEN;
+const int COMPRESSED_FILE_HEADER_UNIT = compress::CompressInterface::HDR_BUF_LEN;
 
 // assume UNCOMPRESSED_CHUNK_SIZE > 0xBFFF (49151), 8 * 1024 bytes padding
 
@@ -358,7 +358,7 @@ protected:
     std::list<std::pair<FileID, ChunkData*> >   fActiveChunks;
     unsigned int                                fMaxActiveChunkNum;  // max active chunks per file
     char*                                       fBufCompressed;
-    unsigned int                                fLenCompressed;
+    size_t                                      fLenCompressed;
     unsigned int                                fMaxCompressedBufSize;
     unsigned int                                fUserPaddings;
     bool                                        fIsBulkLoad;
@@ -366,14 +366,15 @@ protected:
     bool                                        fIsInsert;
     bool                                        fIsHdfs;
     FileOp*                                     fFileOp;
-    compress::IDBCompressInterface              fCompressor;
+    std::shared_ptr<compress::CompressInterface> fCompressor;
     logging::Logger*                            fSysLogger;
     TxnID                                       fTransId;
     int                                         fLocalModuleId;
     idbdatafile::IDBFileSystem&                 fFs;
     bool 										fIsFix;
+    size_t COMPRESSED_CHUNK_SIZE;
 
-private:
+  private:
 };
 
 }

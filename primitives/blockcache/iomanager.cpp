@@ -308,7 +308,8 @@ void waitForRetry(long count)
 
 
 //Must hold the FD cache lock!
-int updateptrs(char* ptr, FdCacheType_t::iterator fdit, const IDBCompressInterface& decompressor)
+int updateptrs(char* ptr, FdCacheType_t::iterator fdit,
+               const std::unique_ptr<CompressInterface>& decompressor)
 {
     ssize_t i;
     uint32_t progress;
@@ -357,7 +358,7 @@ int updateptrs(char* ptr, FdCacheType_t::iterator fdit, const IDBCompressInterfa
         fdit->second->cmpMTime = mtime;
 
     int gplRc = 0;
-    gplRc = decompressor.getPtrList(&ptr[4096], 4096, fdit->second->ptrList);
+    gplRc = decompressor->getPtrList(&ptr[4096], 4096, fdit->second->ptrList);
 
     if (gplRc != 0)
         return -5; // go for a retry.
@@ -391,7 +392,8 @@ int updateptrs(char* ptr, FdCacheType_t::iterator fdit, const IDBCompressInterfa
             return -8;
 
         CompChunkPtrList nextPtrList;
-        gplRc = decompressor.getPtrList(&nextHdrBufPtr[0], numHdrs * 4096, nextPtrList);
+        gplRc = decompressor->getPtrList(&nextHdrBufPtr[0], numHdrs * 4096,
+                                         nextPtrList);
 
         if (gplRc != 0)
             return -7; // go for a retry.
@@ -445,7 +447,8 @@ void* thr_popper(ioManager* arg)
     double rqst3;
     bool locked = false;
     SPFdEntry_t fe;
-    IDBCompressInterface decompressor;
+    std::unique_ptr<CompressInterface> decompressor(
+        new CompressInterfaceSnappy());
     vector<CacheInsert_t> cacheInsertOps;
     bool copyLocked = false;
 
@@ -463,7 +466,8 @@ void* thr_popper(ioManager* arg)
 
     FdCacheType_t::iterator fdit;
     IDBDataFile* fp = 0;
-    uint32_t maxCompSz = IDBCompressInterface::maxCompressedSize(iom->blocksPerRead * BLOCK_SIZE);
+    uint32_t maxCompSz =
+        decompressor->maxCompressedSize(iom->blocksPerRead * BLOCK_SIZE);
     uint32_t readBufferSz = maxCompSz + pageSize;
 
     realbuff.reset(new char[readBufferSz]);
@@ -1052,7 +1056,7 @@ retryReadHeaders:
 #ifdef _MSC_VER
                     unsigned int blen = 4 * 1024 * 1024 + 4;
 #else
-                    uint32_t blen = 4 * 1024 * 1024 + 4;
+                    size_t blen = 4 * 1024 * 1024 + 4;
 #endif
 #ifdef IDB_COMP_POC_DEBUG
                     {
@@ -1060,7 +1064,7 @@ retryReadHeaders:
                         cout << "decompress(0x" << hex << (ptrdiff_t)&alignedbuff[0] << dec << ", " << fdit->second->ptrList[cmpOffFact.quot].second << ", 0x" << hex << (ptrdiff_t)uCmpBuf << dec << ", " << blen << ")" << endl;
                     }
 #endif
-                    int dcrc = decompressor.uncompressBlock(&alignedbuff[0],
+                    int dcrc = decompressor->uncompressBlock(&alignedbuff[0],
                                                             fdit->second->ptrList[cmpOffFact.quot].second, uCmpBuf, blen);
 
                     if (dcrc != 0)

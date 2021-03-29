@@ -167,8 +167,9 @@ int ColumnOpCompress1::blocksInFile(IDBDataFile* pFile) const
     CompFileHeader compFileHeader;
     readHeaders(pFile, compFileHeader.fControlData, compFileHeader.fPtrSection);
 
-    compress::IDBCompressInterface compressor;
-    return compressor.getBlockCount(compFileHeader.fControlData);
+    std::unique_ptr<compress::CompressInterface> compressor(
+        new compress::CompressInterfaceSnappy());
+    return compressor->getBlockCount(compFileHeader.fControlData);
 }
 
 

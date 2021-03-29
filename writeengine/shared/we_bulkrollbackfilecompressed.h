@@ -148,7 +148,7 @@ private:
                                 uint64_t&   ptrHdrSize,
                                 std::string& errMsg ) const;
 
-    compress::IDBCompressInterface fCompressor;
+    std::unique_ptr<compress::CompressInterface> fCompressor;
 };
 
 } //end of namespace
