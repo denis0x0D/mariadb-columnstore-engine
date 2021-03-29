@@ -124,7 +124,7 @@ int ColumnOpCompress0::saveBlock(IDBDataFile* pFile, const unsigned char* writeB
 ColumnOpCompress1::ColumnOpCompress1(Log* logger)
 {
     m_compressionType = 1;
-    m_chunkManager = new ChunkManager();
+    m_chunkManager = new ChunkManager(m_compressionType);
 
     if (logger)
     {
@@ -164,11 +164,7 @@ bool ColumnOpCompress1::abbreviatedExtent(IDBDataFile* pFile, int colWidth) cons
 
 int ColumnOpCompress1::blocksInFile(IDBDataFile* pFile) const
 {
-    CompFileHeader compFileHeader;
-    readHeaders(pFile, compFileHeader.fControlData, compFileHeader.fPtrSection);
-
-    compress::IDBCompressInterface compressor;
-    return compressor.getBlockCount(compFileHeader.fControlData);
+    return m_chunkManager->getBlockCount(pFile);
 }
 
 

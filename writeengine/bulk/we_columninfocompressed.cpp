@@ -47,11 +47,13 @@ ColumnInfoCompressed::ColumnInfoCompressed(Log*             logger,
         int              idIn,
         const JobColumn& columnIn,
         DBRootExtentTracker* pDBRootExtTrk,
-        TableInfo*		pTableInfo):
+        TableInfo*		pTableInfo,
+        uint32_t compressionType):
     //RBMetaWriter*    rbMetaWriter) :
     ColumnInfo(logger, idIn, columnIn, pDBRootExtTrk, pTableInfo),
     fRBMetaWriter(pTableInfo->rbMetaWriter())
 {
+    compressor.reset(compress::getCompressInterfaceByType(compressionType));
 }
 
 //------------------------------------------------------------------------------
@@ -108,7 +110,7 @@ int ColumnInfoCompressed::closeColumnFile(bool bCompletingExtent, bool bAbort)
 //------------------------------------------------------------------------------
 int ColumnInfoCompressed::setupInitialColumnFile( HWM oldHwm, HWM hwm )
 {
-    char hdr[ compress::IDBCompressInterface::HDR_BUF_LEN * 2 ];
+    char hdr[ compress::CompressInterface::HDR_BUF_LEN * 2 ];
     RETURN_ON_ERROR( colOp->readHeaders(curCol.dataFile.pFile, hdr) );
 
     // Initialize the output buffer manager for the column.
@@ -129,9 +131,11 @@ int ColumnInfoCompressed::setupInitialColumnFile( HWM oldHwm, HWM hwm )
 
     fColBufferMgr = mgr;
 
-    IDBCompressInterface compressor;
+    // Is it possible to have compression type == 0 in `ColumnInfoCompressed`?
+    auto compressionType =
+        column.compressionType == 0 ? 2 : column.compressionType;
     int abbrevFlag =
-        ( compressor.getBlockCount(hdr) ==
+        ( compressor->getBlockCount(hdr) ==
           uint64_t(INITIAL_EXTENT_ROWS_TO_DISK * column.width / BYTE_PER_BLOCK) );
     setFileSize( hwm, abbrevFlag );
 
@@ -324,9 +328,9 @@ int ColumnInfoCompressed::truncateDctnryStore(
             return rc;
         }
 
-        char controlHdr[ IDBCompressInterface::HDR_BUF_LEN ];
+        char controlHdr[ CompressInterface::HDR_BUF_LEN ];
         rc = fTruncateDctnryFileOp.readFile( dFile,
-                                             (unsigned char*)controlHdr, IDBCompressInterface::HDR_BUF_LEN);
+                                             (unsigned char*)controlHdr, CompressInterface::HDR_BUF_LEN);
 
         if (rc != NO_ERROR)
         {
@@ -345,8 +349,7 @@ int ColumnInfoCompressed::truncateDctnryStore(
             return rc;
         }
 
-        IDBCompressInterface compressor;
-        int rc1 = compressor.verifyHdr( controlHdr );
+        int rc1 = compressor->verifyHdr(controlHdr);
 
         if (rc1 != 0)
         {
@@ -372,7 +375,7 @@ int ColumnInfoCompressed::truncateDctnryStore(
         // actually grow the file (something we don't want to do), because we have
         // not yet reserved a full extent (on disk) for this dictionary store file.
         const int PSEUDO_COL_WIDTH = 8;
-        uint64_t numBlocks = compressor.getBlockCount( controlHdr );
+        uint64_t numBlocks = compressor->getBlockCount( controlHdr );
 
         if ( numBlocks == uint64_t
                 (INITIAL_EXTENT_ROWS_TO_DISK * PSEUDO_COL_WIDTH / BYTE_PER_BLOCK) )
@@ -390,8 +393,8 @@ int ColumnInfoCompressed::truncateDctnryStore(
             return NO_ERROR;
         }
 
-        uint64_t hdrSize    = compressor.getHdrSize(controlHdr);
-        uint64_t ptrHdrSize = hdrSize - IDBCompressInterface::HDR_BUF_LEN;
+        uint64_t hdrSize    = compressor->getHdrSize(controlHdr);
+        uint64_t ptrHdrSize = hdrSize - CompressInterface::HDR_BUF_LEN;
         char*    pointerHdr = new char[ptrHdrSize];
 
         rc = fTruncateDctnryFileOp.readFile(dFile,
@@ -416,7 +419,7 @@ int ColumnInfoCompressed::truncateDctnryStore(
         }
 
         CompChunkPtrList chunkPtrs;
-        rc1 = compressor.getPtrList( pointerHdr, ptrHdrSize, chunkPtrs );
+        rc1 = compressor->getPtrList( pointerHdr, ptrHdrSize, chunkPtrs );
         delete[] pointerHdr;
 
         if (rc1 != 0)

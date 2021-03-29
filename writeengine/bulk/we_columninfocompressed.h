@@ -50,7 +50,8 @@ public:
                          int              id,
                          const JobColumn& column,
                          DBRootExtentTracker* pDBRootExtTrk,
-                         TableInfo*		pTableInfo);
+                         TableInfo*		pTableInfo,
+                         uint32_t compressionType = 2);
     //RBMetaWriter*    rbMetaWriter);
 
     /** @brief Destructor
@@ -93,7 +94,7 @@ private:
 
     RBMetaWriter* fRBMetaWriter;
     FileOp        fTruncateDctnryFileOp; // Used to truncate dctnry store file
-
+    std::unique_ptr<compress::CompressInterface> compressor;
 };
 
 }
