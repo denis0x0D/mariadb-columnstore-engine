@@ -147,8 +147,6 @@ private:
                                 compress::CompChunkPtrList& chunkPtrs,
                                 uint64_t&   ptrHdrSize,
                                 std::string& errMsg ) const;
-
-    compress::IDBCompressInterface fCompressor;
 };
 
 } //end of namespace

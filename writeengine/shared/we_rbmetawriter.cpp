@@ -1007,9 +1007,9 @@ void RBMetaWriter::backupHWMChunk(
     }
 
     // Read Control header
-    char controlHdr[ IDBCompressInterface::HDR_BUF_LEN ];
+    char controlHdr[ CompressInterface::HDR_BUF_LEN ];
     rc = fileOp.readFile( dbFile, (unsigned char*)controlHdr,
-                          IDBCompressInterface::HDR_BUF_LEN );
+                          CompressInterface::HDR_BUF_LEN );
 
     if (rc != NO_ERROR)
     {
@@ -1025,8 +1025,7 @@ void RBMetaWriter::backupHWMChunk(
         throw WeException( oss.str(), rc );
     }
 
-    IDBCompressInterface compressor;
-    int rc1 = compressor.verifyHdr( controlHdr );
+    int rc1 = compress::CompressInterface::verifyHdr(controlHdr);
 
     if (rc1 != 0)
     {
@@ -1046,8 +1045,8 @@ void RBMetaWriter::backupHWMChunk(
     }
 
     // Read Pointer header data
-    uint64_t hdrSize    = compressor.getHdrSize(controlHdr);
-    uint64_t ptrHdrSize = hdrSize - IDBCompressInterface::HDR_BUF_LEN;
+    uint64_t hdrSize = compress::CompressInterface::getHdrSize(controlHdr);
+    uint64_t ptrHdrSize = hdrSize - CompressInterface::HDR_BUF_LEN;
     char* pointerHdr    = new char[ptrHdrSize];
     rc = fileOp.readFile( dbFile, (unsigned char*)pointerHdr, ptrHdrSize );
 
@@ -1067,7 +1066,8 @@ void RBMetaWriter::backupHWMChunk(
     }
 
     CompChunkPtrList     chunkPtrs;
-    rc = compressor.getPtrList(pointerHdr, ptrHdrSize, chunkPtrs );
+    rc = compress::CompressInterface::getPtrList(pointerHdr, ptrHdrSize,
+                                                 chunkPtrs);
     delete[] pointerHdr;
 
     if (rc != 0)
@@ -1087,7 +1087,8 @@ void RBMetaWriter::backupHWMChunk(
     unsigned int blockOffsetWithinChunk = 0;
     unsigned char* buffer               = 0;
     uint64_t chunkSize                  = 0;
-    compressor.locateBlock(startingHWM, chunkIndex, blockOffsetWithinChunk);
+    compress::CompressInterface::locateBlock(startingHWM, chunkIndex,
+                                             blockOffsetWithinChunk);
 
     if (chunkIndex < chunkPtrs.size())
     {

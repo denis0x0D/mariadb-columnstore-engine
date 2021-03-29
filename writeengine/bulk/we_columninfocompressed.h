@@ -93,7 +93,6 @@ private:
 
     RBMetaWriter* fRBMetaWriter;
     FileOp        fTruncateDctnryFileOp; // Used to truncate dctnry store file
-
 };
 
 }
