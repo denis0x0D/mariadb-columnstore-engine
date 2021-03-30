@@ -447,6 +447,7 @@ void* thr_popper(ioManager* arg)
     double rqst3;
     bool locked = false;
     SPFdEntry_t fe;
+    // FIXME: How to properly specify compression type.
     std::unique_ptr<CompressInterface> decompressor(
         new CompressInterfaceSnappy());
     vector<CacheInsert_t> cacheInsertOps;

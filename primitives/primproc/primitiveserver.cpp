@@ -696,8 +696,9 @@ blockReadRetry:
                 i = fp->pread( &cmpHdrBuf[0], 0, 4096 * 3);
 
                 CompChunkPtrList ptrList;
-                std::unique_ptr<CompressInterface> decompressor(
-                    new CompressInterfaceSnappy());
+                std::unique_ptr<CompressInterface> decompressor =
+                    compress::getCompressInterfaceByType(compType);
+
                 int dcrc = 0;
 
                 if (i == 4096 * 3)
