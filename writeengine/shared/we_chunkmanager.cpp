@@ -99,7 +99,8 @@ ChunkManager::ChunkManager(uint32_t compressionType)
                         ? IDBFileSystem::getFs(IDBDataFile::CLOUD)
                         : IDBFileSystem::getFs(IDBDataFile::BUFFERED))
 {
-    fCompressor = compress::getCompressInterfaceByType(compressionType);
+    fCompressor = std::unique_ptr<compress::CompressInterface>(
+        compress::getCompressInterfaceByType(compressionType));
     COMPRESSED_CHUNK_SIZE =
         fCompressor->maxCompressedSize(UNCOMPRESSED_CHUNK_SIZE) + 64 + 3 +
         8 * 1024;

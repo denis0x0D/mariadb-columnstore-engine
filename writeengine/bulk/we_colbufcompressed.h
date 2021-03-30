@@ -53,7 +53,7 @@ public:
 
     /** @brief default Constructor
      */
-    ColumnBufferCompressed( ColumnInfo* pColInfo, Log* logger);
+    ColumnBufferCompressed( ColumnInfo* pColInfo, Log* logger, uint32_t compressionType = 2 );
 
     /** @brief default Destructor
      */

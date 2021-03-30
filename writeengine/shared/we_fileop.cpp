@@ -815,8 +815,8 @@ int FileOp::extendFile(
 
         if ((m_compressionType) && (hdrs))
         {
-            std::unique_ptr<CompressInterface> compressor =
-                compress::getCompressInterfaceByType(m_compressionType);
+            std::unique_ptr<CompressInterface> compressor(
+                compress::getCompressInterfaceByType(m_compressionType));
             compressor->initHdr(hdrs, width, colDataType, m_compressionType);
         }
     }
@@ -974,8 +974,8 @@ int FileOp::addExtentExactFile(
 
         if ((m_compressionType) && (hdrs))
         {
-            std::unique_ptr<CompressInterface> compressor =
-                compress::getCompressInterfaceByType(m_compressionType);
+            std::unique_ptr<CompressInterface> compressor(
+                compress::getCompressInterfaceByType(m_compressionType));
             compressor->initHdr(hdrs, width, colDataType, m_compressionType);
         }
     }
@@ -1061,8 +1061,8 @@ int FileOp::initColumnExtent(
     if ((bNewFile) && (m_compressionType))
     {
         char hdrs[CompressInterface::HDR_BUF_LEN * 2];
-        std::unique_ptr<CompressInterface> compressor =
-            compress::getCompressInterfaceByType(m_compressionType);
+        std::unique_ptr<CompressInterface> compressor(
+            compress::getCompressInterfaceByType(m_compressionType));
         compressor->initHdr(hdrs, width, colDataType, m_compressionType);
 
         if (bAbbrevExtent)

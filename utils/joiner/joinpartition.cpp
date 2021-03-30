@@ -108,6 +108,9 @@ JoinPartition::JoinPartition(const RowGroup& lRG,
     for (int i = 0; i < (int) bucketCount; i++)
         buckets.push_back(boost::shared_ptr<JoinPartition>(new JoinPartition(*this, false)));
 
+    // FIXME: Whether to specify the compression type in the config file?
+    // We have to initialize a `compressor` anyway, even `useCompression` is
+    // false.
     compressor = std::shared_ptr<compress::CompressInterfaceSnappy>(
         new compress::CompressInterfaceSnappy());
 }

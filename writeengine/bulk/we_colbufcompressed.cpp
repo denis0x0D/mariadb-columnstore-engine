@@ -55,7 +55,7 @@ namespace WriteEngine
 // Constructor
 //------------------------------------------------------------------------------
 ColumnBufferCompressed::ColumnBufferCompressed( ColumnInfo* pColInfo,
-        Log* logger) :
+        Log* logger, uint32_t compressionType) :
     ColumnBuffer(pColInfo, logger),
     fToBeCompressedBuffer(0),
     fToBeCompressedCapacity(0),
@@ -65,7 +65,8 @@ ColumnBufferCompressed::ColumnBufferCompressed( ColumnInfo* pColInfo,
     fFlushedStartHwmChunk(false)
 {
     fUserPaddingBytes = Config::getNumCompressedPadBlks() * BYTE_PER_BLOCK;
-    fCompressor = new compress::CompressInterfaceSnappy(fUserPaddingBytes);
+    fCompressor = compress::getCompressInterfaceByType(compressionType,
+                                                       fUserPaddingBytes);
 }
 
 //------------------------------------------------------------------------------
