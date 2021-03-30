@@ -89,18 +89,17 @@ ChunkData* CompFileData::findChunk(int64_t id) const
 //------------------------------------------------------------------------------
 // ChunkManager constructor
 //------------------------------------------------------------------------------
-ChunkManager::ChunkManager() : fMaxActiveChunkNum(100), fLenCompressed(0), fIsBulkLoad(false),
-    fDropFdCache(false), fIsInsert(false), fIsHdfs(IDBPolicy::useHdfs()),
-    fFileOp(0), fSysLogger(NULL), fTransId(-1),
-    fLocalModuleId(Config::getLocalModuleID()),
-    fFs(fIsHdfs ?
-        IDBFileSystem::getFs(IDBDataFile::HDFS) :
-        IDBPolicy::useCloud() ?
-            IDBFileSystem::getFs(IDBDataFile::CLOUD) :
-            IDBFileSystem::getFs(IDBDataFile::BUFFERED))
+ChunkManager::ChunkManager(uint32_t compressionType)
+    : fMaxActiveChunkNum(100), fLenCompressed(0), fIsBulkLoad(false),
+      fDropFdCache(false), fIsInsert(false), fIsHdfs(IDBPolicy::useHdfs()),
+      fFileOp(0), fSysLogger(NULL), fTransId(-1),
+      fLocalModuleId(Config::getLocalModuleID()),
+      fFs(fIsHdfs ? IDBFileSystem::getFs(IDBDataFile::HDFS)
+                  : IDBPolicy::useCloud()
+                        ? IDBFileSystem::getFs(IDBDataFile::CLOUD)
+                        : IDBFileSystem::getFs(IDBDataFile::BUFFERED))
 {
-    fCompressor = std::shared_ptr<compress::CompressInterface>(
-        new compress::CompressInterfaceSnappy());
+    fCompressor = compress::getCompressInterfaceByType(compressionType);
     COMPRESSED_CHUNK_SIZE =
         fCompressor->maxCompressedSize(UNCOMPRESSED_CHUNK_SIZE) + 64 + 3 +
         8 * 1024;

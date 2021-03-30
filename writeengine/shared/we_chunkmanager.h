@@ -162,7 +162,7 @@ class ChunkManager
 {
 public:
     // @brief constructor
-    EXPORT ChunkManager();
+    EXPORT ChunkManager(uint32_t compressionType = 2);
 
     // @brief destructor
     EXPORT virtual ~ChunkManager();

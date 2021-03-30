@@ -282,6 +282,9 @@ class CompressInterfaceSnappy : public CompressInterface
                              size_t* outLen) const override;
 };
 
+EXPORT std::unique_ptr<CompressInterface>
+getCompressInterfaceByType(uint32_t compressionType);
+
 #ifdef SKIP_IDB_COMPRESSION
 inline CompressInterface::CompressInterface(unsigned int /*numUserPaddingBytes*/) {}
 inline bool CompressInterface::isCompressionAvail(int c) const

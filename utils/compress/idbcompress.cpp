@@ -500,6 +500,14 @@ bool CompressInterfaceSnappy::getUncompressedSize(char* in, size_t inLen,
     return snappy::GetUncompressedLength(in, inLen, outLen);
 }
 
+std::unique_ptr<CompressInterface>
+getCompressInterfaceByType(uint32_t compressionType)
+{
+    // FIXME: How to handle type == 0?
+    return std::unique_ptr<CompressInterfaceSnappy>(
+        new CompressInterfaceSnappy());
+}
+
 #endif
 
 } // namespace compress
