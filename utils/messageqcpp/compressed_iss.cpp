@@ -76,8 +76,9 @@ CompressedInetStreamSocket::CompressedInetStreamSocket()
     else
         useCompression = false;
 
-    alg = std::shared_ptr<compress::CompressInterfaceSnappy>(
-        new compress::CompressInterfaceSnappy());
+    // FIXME: How to specify compression type? Use Snappy as default.
+    // Should we update a config file to specify network compression type?
+    alg.reset(new compress::CompressInterfaceSnappy());
 }
 
 Socket* CompressedInetStreamSocket::clone() const

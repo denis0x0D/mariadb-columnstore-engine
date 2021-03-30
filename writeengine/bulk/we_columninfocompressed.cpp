@@ -47,13 +47,11 @@ ColumnInfoCompressed::ColumnInfoCompressed(Log*             logger,
         int              idIn,
         const JobColumn& columnIn,
         DBRootExtentTracker* pDBRootExtTrk,
-        TableInfo*		pTableInfo,
-        uint32_t compressionType):
+        TableInfo*		pTableInfo) :
     //RBMetaWriter*    rbMetaWriter) :
     ColumnInfo(logger, idIn, columnIn, pDBRootExtTrk, pTableInfo),
     fRBMetaWriter(pTableInfo->rbMetaWriter())
 {
-    compressor.reset(compress::getCompressInterfaceByType(compressionType));
 }
 
 //------------------------------------------------------------------------------
@@ -131,12 +129,9 @@ int ColumnInfoCompressed::setupInitialColumnFile( HWM oldHwm, HWM hwm )
 
     fColBufferMgr = mgr;
 
-    // Is it possible to have compression type == 0 in `ColumnInfoCompressed`?
-    auto compressionType =
-        column.compressionType == 0 ? 2 : column.compressionType;
-    int abbrevFlag =
-        ( compressor->getBlockCount(hdr) ==
-          uint64_t(INITIAL_EXTENT_ROWS_TO_DISK * column.width / BYTE_PER_BLOCK) );
+    int abbrevFlag = (compress::CompressInterface::getBlockCount(hdr) ==
+                      uint64_t(INITIAL_EXTENT_ROWS_TO_DISK * column.width /
+                               BYTE_PER_BLOCK));
     setFileSize( hwm, abbrevFlag );
 
     // See if dealing with abbreviated extent that will need expanding.
@@ -349,7 +344,7 @@ int ColumnInfoCompressed::truncateDctnryStore(
             return rc;
         }
 
-        int rc1 = compressor->verifyHdr(controlHdr);
+        int rc1 = compress::CompressInterface::verifyHdr(controlHdr);
 
         if (rc1 != 0)
         {
@@ -375,7 +370,8 @@ int ColumnInfoCompressed::truncateDctnryStore(
         // actually grow the file (something we don't want to do), because we have
         // not yet reserved a full extent (on disk) for this dictionary store file.
         const int PSEUDO_COL_WIDTH = 8;
-        uint64_t numBlocks = compressor->getBlockCount( controlHdr );
+        uint64_t numBlocks =
+            compress::CompressInterface::getBlockCount(controlHdr);
 
         if ( numBlocks == uint64_t
                 (INITIAL_EXTENT_ROWS_TO_DISK * PSEUDO_COL_WIDTH / BYTE_PER_BLOCK) )
@@ -393,7 +389,7 @@ int ColumnInfoCompressed::truncateDctnryStore(
             return NO_ERROR;
         }
 
-        uint64_t hdrSize    = compressor->getHdrSize(controlHdr);
+        uint64_t hdrSize = compress::CompressInterface::getHdrSize(controlHdr);
         uint64_t ptrHdrSize = hdrSize - CompressInterface::HDR_BUF_LEN;
         char*    pointerHdr = new char[ptrHdrSize];
 
@@ -419,7 +415,8 @@ int ColumnInfoCompressed::truncateDctnryStore(
         }
 
         CompChunkPtrList chunkPtrs;
-        rc1 = compressor->getPtrList( pointerHdr, ptrHdrSize, chunkPtrs );
+        rc1 = compress::CompressInterface::getPtrList(pointerHdr, ptrHdrSize,
+                                                      chunkPtrs);
         delete[] pointerHdr;
 
         if (rc1 != 0)

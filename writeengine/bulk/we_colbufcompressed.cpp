@@ -92,7 +92,7 @@ int ColumnBufferCompressed::setDbFile(IDBDataFile* f, HWM startHwm, const char* 
     fFile        = f;
     fStartingHwm = startHwm;
 
-    if (fCompressor->getPtrList(hdrs, fChunkPtrs) != 0)
+    if (compress::CompressInterface::getPtrList(hdrs, fChunkPtrs) != 0)
     {
         return ERR_COMP_PARSE_HDRS;
     }
@@ -101,7 +101,8 @@ int ColumnBufferCompressed::setDbFile(IDBDataFile* f, HWM startHwm, const char* 
     // rollback), that fall after the HWM, then drop those trailing ptrs.
     unsigned int chunkIndex             = 0;
     unsigned int blockOffsetWithinChunk = 0;
-    fCompressor->locateBlock(fStartingHwm, chunkIndex, blockOffsetWithinChunk);
+    compress::CompressInterface::locateBlock(fStartingHwm, chunkIndex,
+                                             blockOffsetWithinChunk);
 
     if ((chunkIndex + 1) < fChunkPtrs.size())
     {
@@ -582,11 +583,11 @@ int ColumnBufferCompressed::saveCompressionHeaders( )
 {
     // Construct the header records
     char hdrBuf[CompressInterface::HDR_BUF_LEN * 2];
-    fCompressor->initHdr(hdrBuf, fColInfo->column.width,
-                         fColInfo->column.dataType,
-                         fColInfo->column.compressionType);
-    fCompressor->setBlockCount(hdrBuf,
-                               (fColInfo->getFileSize() / BYTE_PER_BLOCK) );
+    compress::CompressInterface::initHdr(hdrBuf, fColInfo->column.width,
+                                         fColInfo->column.dataType,
+                                         fColInfo->column.compressionType);
+    compress::CompressInterface::setBlockCount(
+        hdrBuf, (fColInfo->getFileSize() / BYTE_PER_BLOCK));
 
     std::vector<uint64_t> ptrs;
 
@@ -597,7 +598,7 @@ int ColumnBufferCompressed::saveCompressionHeaders( )
 
     unsigned lastIdx = fChunkPtrs.size() - 1;
     ptrs.push_back( fChunkPtrs[lastIdx].first + fChunkPtrs[lastIdx].second );
-    fCompressor->storePtrs( ptrs, hdrBuf );
+    compress::CompressInterface::storePtrs(ptrs, hdrBuf);
 
     // Write out the header records
     //char resp;
@@ -646,8 +647,8 @@ int ColumnBufferCompressed::initToBeCompressedBuffer(long long& startFileOffset)
     {
         if (fChunkPtrs.size() > 0)
         {
-            fCompressor->locateBlock(fStartingHwm,
-                                     chunkIndex, blockOffsetWithinChunk);
+            compress::CompressInterface::locateBlock(fStartingHwm, chunkIndex,
+                                                     blockOffsetWithinChunk);
 
             if (chunkIndex < fChunkPtrs.size())
                 startFileOffset  = fChunkPtrs[chunkIndex].first;

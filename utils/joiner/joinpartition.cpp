@@ -52,8 +52,7 @@ uint64_t uniqueNums = 0;
 
 JoinPartition::JoinPartition()
 {
-    compressor = std::shared_ptr<compress::CompressInterfaceSnappy>(
-        new compress::CompressInterfaceSnappy());
+    compressor.reset(new compress::CompressInterfaceSnappy());
 }
 
 /* This is the ctor used by THJS */
@@ -111,8 +110,7 @@ JoinPartition::JoinPartition(const RowGroup& lRG,
     // FIXME: Whether to specify the compression type in the config file?
     // We have to initialize a `compressor` anyway, even `useCompression` is
     // false.
-    compressor = std::shared_ptr<compress::CompressInterfaceSnappy>(
-        new compress::CompressInterfaceSnappy());
+    compressor.reset(new compress::CompressInterfaceSnappy());
 }
 
 /* Ctor used by JoinPartition on expansion, creates JP's in filemode */

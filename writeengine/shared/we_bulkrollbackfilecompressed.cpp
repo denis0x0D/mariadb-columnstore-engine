@@ -48,11 +48,9 @@ namespace WriteEngine
 //------------------------------------------------------------------------------
 // BulkRollbackFileCompressed constructor
 //------------------------------------------------------------------------------
-BulkRollbackFileCompressed::BulkRollbackFileCompressed(
-    BulkRollbackMgr* mgr, uint32_t compressionType)
-    : BulkRollbackFile(mgr)
+BulkRollbackFileCompressed::BulkRollbackFileCompressed(BulkRollbackMgr* mgr) :
+    BulkRollbackFile(mgr)
 {
-    fCompressor.reset(compress::getCompressInterfaceByType(compressionType));
 }
 
 //------------------------------------------------------------------------------
@@ -129,7 +127,8 @@ void BulkRollbackFileCompressed::truncateSegmentFile(
     unsigned int blockOffset      = fileSizeBlocks - 1;
     unsigned int chunkIndex       = 0;
     unsigned int blkOffsetInChunk = 0;
-    fCompressor->locateBlock(blockOffset, chunkIndex, blkOffsetInChunk);
+    compress::CompressInterface::locateBlock(blockOffset, chunkIndex,
+                                             blkOffsetInChunk);
 
     // Truncate the extra extents that are to be aborted
     if (chunkIndex < chunkPtrs.size())
@@ -147,7 +146,7 @@ void BulkRollbackFileCompressed::truncateSegmentFile(
                            logging::M0075, columnOID, msgText2.str() );
 
         // Drop off any trailing pointers (that point beyond the last block)
-        fCompressor->setBlockCount(hdrs, fileSizeBlocks);
+        compress::CompressInterface::setBlockCount(hdrs, fileSizeBlocks);
         std::vector<uint64_t> ptrs;
 
         for (unsigned i = 0; i <= chunkIndex; i++)
@@ -157,7 +156,7 @@ void BulkRollbackFileCompressed::truncateSegmentFile(
 
         ptrs.push_back( chunkPtrs[chunkIndex].first +
                         chunkPtrs[chunkIndex].second );
-        fCompressor->storePtrs(ptrs, hdrs);
+        compress::CompressInterface::storePtrs(ptrs, hdrs);
 
         rc = fDbFile.writeHeaders( pFile, hdrs );
 
@@ -277,7 +276,8 @@ void BulkRollbackFileCompressed::reInitTruncColumnExtent(
     unsigned int blockOffset      = startOffsetBlk - 1;
     unsigned int chunkIndex       = 0;
     unsigned int blkOffsetInChunk = 0;
-    fCompressor->locateBlock( blockOffset, chunkIndex, blkOffsetInChunk );
+    compress::CompressInterface::locateBlock(blockOffset, chunkIndex,
+                                             blkOffsetInChunk);
 
     if (chunkIndex < chunkPtrs.size())
     {
@@ -403,7 +403,8 @@ void BulkRollbackFileCompressed::reInitTruncColumnExtent(
         // Watch for the special case where we are restoring a db file as an
         // empty file (chunkindex=0 and restoredChunkLen=0); in this case we
         // just restore the first pointer (set to 8192).
-        fCompressor->setBlockCount( hdrs, (startOffsetBlk + nBlocks) );
+        compress::CompressInterface::setBlockCount(hdrs,
+                                                   (startOffsetBlk + nBlocks));
         std::vector<uint64_t> newPtrs;
 
         if ((chunkIndex > 0) || (restoredChunkLen > 0))
@@ -415,7 +416,7 @@ void BulkRollbackFileCompressed::reInitTruncColumnExtent(
         }
 
         newPtrs.push_back( chunkPtrs[chunkIndex].first + restoredChunkLen );
-        fCompressor->storePtrs( newPtrs, hdrs );
+        compress::CompressInterface::storePtrs(newPtrs, hdrs);
 
         rc = fDbFile.writeHeaders( pFile, hdrs );
 
@@ -484,7 +485,7 @@ int BulkRollbackFileCompressed::loadColumnHdrPtrs(
     }
 
     // Parse the header pointers
-    int rc1 = fCompressor->getPtrList( hdrs, chunkPtrs );
+    int rc1 = compress::CompressInterface::getPtrList(hdrs, chunkPtrs);
 
     if (rc1 != 0)
     {
@@ -574,7 +575,8 @@ void BulkRollbackFileCompressed::reInitTruncDctnryExtent(
     unsigned int blockOffset      = startOffsetBlk - 1;
     unsigned int chunkIndex       = 0;
     unsigned int blkOffsetInChunk = 0;
-    fCompressor->locateBlock( blockOffset, chunkIndex, blkOffsetInChunk );
+    compress::CompressInterface::locateBlock(blockOffset, chunkIndex,
+                                             blkOffsetInChunk);
 
     if (chunkIndex < chunkPtrs.size())
     {
@@ -688,7 +690,8 @@ void BulkRollbackFileCompressed::reInitTruncDctnryExtent(
         // Watch for the special case where we are restoring a db file as an
         // empty file (chunkindex=0 and restoredChunkLen=0); in this case we
         // just restore the first pointer (set to 8192).
-        fCompressor->setBlockCount( controlHdr, (startOffsetBlk + nBlocks) );
+        compress::CompressInterface::setBlockCount(controlHdr,
+                                                   (startOffsetBlk + nBlocks));
         std::vector<uint64_t> newPtrs;
 
         if ((chunkIndex > 0) || (restoredChunkLen > 0))
@@ -701,7 +704,8 @@ void BulkRollbackFileCompressed::reInitTruncDctnryExtent(
 
         newPtrs.push_back( chunkPtrs[chunkIndex].first + restoredChunkLen );
         char* pointerHdr = new char[ptrHdrSize];
-        fCompressor->storePtrs( newPtrs, pointerHdr, ptrHdrSize );
+        compress::CompressInterface::storePtrs(newPtrs, pointerHdr,
+                                               ptrHdrSize);
 
         rc = fDbFile.writeHeaders( pFile, controlHdr, pointerHdr, ptrHdrSize );
         delete[] pointerHdr;
@@ -773,7 +777,7 @@ int BulkRollbackFileCompressed::loadDctnryHdrPtrs(
         return rc;
     }
 
-    int rc1 = fCompressor->verifyHdr( controlHdr );
+    int rc1 = compress::CompressInterface::verifyHdr(controlHdr);
 
     if (rc1 != 0)
     {
@@ -788,7 +792,7 @@ int BulkRollbackFileCompressed::loadDctnryHdrPtrs(
         return rc;
     }
 
-    uint64_t hdrSize = fCompressor->getHdrSize(controlHdr);
+    uint64_t hdrSize = compress::CompressInterface::getHdrSize(controlHdr);
     ptrHdrSize       = hdrSize - CompressInterface::HDR_BUF_LEN;
     char* pointerHdr = new char[ptrHdrSize];
 
@@ -806,7 +810,8 @@ int BulkRollbackFileCompressed::loadDctnryHdrPtrs(
     }
 
     // Parse the header pointers
-    rc1 = fCompressor->getPtrList( pointerHdr, ptrHdrSize, chunkPtrs );
+    rc1 = compress::CompressInterface::getPtrList(pointerHdr, ptrHdrSize,
+                                                  chunkPtrs);
     delete[] pointerHdr;
 
     if (rc1 != 0)

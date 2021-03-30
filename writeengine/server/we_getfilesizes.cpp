@@ -96,7 +96,7 @@ size_t readFillBuffer(
     return totalBytesRead;
 }
 
-static off64_t getCompressedDataSize(string& fileName, uint32_t compressionType)
+static off64_t getCompressedDataSize(string& fileName)
 {
     off64_t dataSize = 0;
     IDBDataFile* pFile = 0;
@@ -119,8 +119,6 @@ static off64_t getCompressedDataSize(string& fileName, uint32_t compressionType)
         throw std::runtime_error(oss.str());
     }
 
-    std::unique_ptr<CompressInterface> decompressor(
-        compress::getCompressInterfaceByType(compressionType));
     //--------------------------------------------------------------------------
     // Read headers and extract compression pointers
     //--------------------------------------------------------------------------
@@ -134,7 +132,8 @@ static off64_t getCompressedDataSize(string& fileName, uint32_t compressionType)
         throw std::runtime_error(oss.str());
     }
 
-    int64_t ptrSecSize = decompressor->getHdrSize(hdr1) - CompressInterface::HDR_BUF_LEN;
+    int64_t ptrSecSize = compress::CompressInterface::getHdrSize(hdr1) -
+                         CompressInterface::HDR_BUF_LEN;
     char* hdr2 = new char[ptrSecSize];
     nBytes = readFillBuffer( pFile, hdr2, ptrSecSize);
 
@@ -146,7 +145,8 @@ static off64_t getCompressedDataSize(string& fileName, uint32_t compressionType)
     }
 
     CompChunkPtrList chunkPtrs;
-    int rc = decompressor->getPtrList(hdr2, ptrSecSize, chunkPtrs);
+    int rc =
+        compress::CompressInterface::getPtrList(hdr2, ptrSecSize, chunkPtrs);
     delete[] hdr2;
 
     if (rc != 0)
@@ -210,7 +210,7 @@ struct ColumnThread
                 {
                     try
                     {
-                        fileSize = getCompressedDataSize(aFile, fCompressionType);
+                        fileSize = getCompressedDataSize(aFile);
                     }
                     catch (std::exception& ex)
                     {

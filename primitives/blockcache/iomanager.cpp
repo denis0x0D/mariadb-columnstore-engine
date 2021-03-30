@@ -308,8 +308,7 @@ void waitForRetry(long count)
 
 
 //Must hold the FD cache lock!
-int updateptrs(char* ptr, FdCacheType_t::iterator fdit,
-               const std::unique_ptr<CompressInterface>& decompressor)
+static int updateptrs(char* ptr, FdCacheType_t::iterator fdit)
 {
     ssize_t i;
     uint32_t progress;
@@ -358,7 +357,8 @@ int updateptrs(char* ptr, FdCacheType_t::iterator fdit,
         fdit->second->cmpMTime = mtime;
 
     int gplRc = 0;
-    gplRc = decompressor->getPtrList(&ptr[4096], 4096, fdit->second->ptrList);
+    gplRc = compress::CompressInterface::getPtrList(&ptr[4096], 4096,
+                                                    fdit->second->ptrList);
 
     if (gplRc != 0)
         return -5; // go for a retry.
@@ -392,8 +392,8 @@ int updateptrs(char* ptr, FdCacheType_t::iterator fdit,
             return -8;
 
         CompChunkPtrList nextPtrList;
-        gplRc = decompressor->getPtrList(&nextHdrBufPtr[0], numHdrs * 4096,
-                                         nextPtrList);
+        gplRc = compress::CompressInterface::getPtrList(
+            &nextHdrBufPtr[0], numHdrs * 4096, nextPtrList);
 
         if (gplRc != 0)
             return -7; // go for a retry.
@@ -868,7 +868,7 @@ retryReadHeaders:
                         cur_mtime = fp_mtime;
 
                     if (decompRetryCount > 0 || retryReadHeadersCount > 0 || cur_mtime > fdit->second->cmpMTime)
-                        updatePtrsRc = updateptrs(&alignedbuff[0], fdit, decompressor);
+                        updatePtrsRc = updateptrs(&alignedbuff[0], fdit);
 
                     fdMapMutex.unlock();
 

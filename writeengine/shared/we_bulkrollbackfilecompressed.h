@@ -50,7 +50,7 @@ public:
     /** @brief BulkRollbackFile constructor
      * @param mgr The controlling BulkRollbackMgr object.
      */
-    BulkRollbackFileCompressed(BulkRollbackMgr* mgr, uint32_t compressionType = 2);
+    BulkRollbackFileCompressed(BulkRollbackMgr* mgr);
 
     /** @brief BulkRollbackFile destructor
      */
@@ -147,8 +147,6 @@ private:
                                 compress::CompChunkPtrList& chunkPtrs,
                                 uint64_t&   ptrHdrSize,
                                 std::string& errMsg ) const;
-
-    std::unique_ptr<compress::CompressInterface> fCompressor;
 };
 
 } //end of namespace

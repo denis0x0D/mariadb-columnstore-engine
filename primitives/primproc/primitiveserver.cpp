@@ -704,7 +704,8 @@ blockReadRetry:
                 if (i == 4096 * 3)
                 {
                     uint64_t numHdrs = 0; // extra headers
-                    dcrc = decompressor->getPtrList(&cmpHdrBuf[4096], 4096, ptrList);
+                    dcrc = compress::CompressInterface::getPtrList(
+                        &cmpHdrBuf[4096], 4096, ptrList);
 
                     if (dcrc == 0 && ptrList.size() > 0)
                         numHdrs = ptrList[0].first / 4096ULL - 2ULL;
@@ -725,7 +726,8 @@ blockReadRetry:
                         i = fp->pread( &nextHdrBufPtr[0], 4096 * 2, numHdrs * 4096 );
 
                         CompChunkPtrList nextPtrList;
-                        dcrc = decompressor->getPtrList(&nextHdrBufPtr[0], numHdrs * 4096, nextPtrList);
+                        dcrc = compress::CompressInterface::getPtrList(
+                            &nextHdrBufPtr[0], numHdrs * 4096, nextPtrList);
 
                         if (dcrc == 0)
                             ptrList.insert(ptrList.end(), nextPtrList.begin(), nextPtrList.end());
