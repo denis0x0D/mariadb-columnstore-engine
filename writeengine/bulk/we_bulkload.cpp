@@ -337,16 +337,12 @@ int BulkLoad::loadJobInfo(
         }
     }
 
-    // Validate that specified compression type is available
-    std::unique_ptr<compress::CompressInterface> compressor(
-        new compress::CompressInterfaceSnappy());
-
     for (unsigned kT = 0; kT < curJob.jobTableList.size(); kT++)
     {
         for (unsigned kC = 0; kC < curJob.jobTableList[kT].colList.size(); kC++)
         {
-            if ( !compressor->isCompressionAvail(
-                        curJob.jobTableList[kT].colList[kC].compressionType) )
+            if (!compress::CompressInterface::isCompressionAvail(
+                    curJob.jobTableList[kT].colList[kC].compressionType))
             {
                 std::ostringstream oss;
                 oss << "Specified compression type (" <<

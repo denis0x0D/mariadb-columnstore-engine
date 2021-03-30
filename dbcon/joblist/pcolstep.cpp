@@ -146,10 +146,7 @@ pColStep::pColStep(
     if (fOid < 1000)
         throw runtime_error("pColStep: invalid column");
 
-    std::unique_ptr<compress::CompressInterface> cmpif(
-        new compress::CompressInterfaceSnappy());
-
-    if (!cmpif->isCompressionAvail(fColType.compressionType))
+    if (!compress::CompressInterface::isCompressionAvail(fColType.compressionType))
     {
         ostringstream oss;
         oss << "Unsupported compression type " << fColType.compressionType;

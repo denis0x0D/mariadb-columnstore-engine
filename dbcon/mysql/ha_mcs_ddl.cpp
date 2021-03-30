@@ -771,8 +771,6 @@ int ProcessDDLStatement(string& ddlStatement, string& schema, const string& tabl
     parser.setDefaultSchema(schema);
     parser.setDefaultCharset(default_table_charset);
     int rc = 0;
-    std::unique_ptr<CompressInterface> idbCompress(
-        new CompressInterfaceSnappy());
     parser.Parse(ddlStatement.c_str());
 
     if (get_fe_conn_info_ptr() == NULL)
@@ -976,7 +974,9 @@ int ProcessDDLStatement(string& ddlStatement, string& schema, const string& tabl
 
                     if (compressionType == 1) compressionType = 2;
 
-                    if (( compressionType > 0 ) && !(idbCompress->isCompressionAvail( compressionType )))
+                    if ((compressionType > 0) &&
+                        !(compress::CompressInterface::isCompressionAvail(
+                            compressionType)))
                     {
                         rc = 1;
                         ci->alterTableState = cal_connection_info::NOT_ALTER;
@@ -1363,7 +1363,9 @@ int ProcessDDLStatement(string& ddlStatement, string& schema, const string& tabl
                             return rc;
                         }
 
-                        if (( compressionType > 0 ) && !(idbCompress->isCompressionAvail( compressionType )))
+                        if ((compressionType > 0) &&
+                            !(compress::CompressInterface::isCompressionAvail(
+                                compressionType)))
                         {
                             rc = 1;
                             thd->raise_error_printf(ER_INTERNAL_ERROR, (IDBErrorInfo::instance()->errorMsg(ERR_INVALID_COMPRESSION_TYPE)).c_str());
@@ -1708,7 +1710,9 @@ int ProcessDDLStatement(string& ddlStatement, string& schema, const string& tabl
                             return rc;
                         }
 
-                        if (( compressionType > 0 ) && !(idbCompress->isCompressionAvail( compressionType )))
+                        if ((compressionType > 0) &&
+                            !(compress::CompressInterface::isCompressionAvail(
+                                compressionType)))
                         {
                             rc = 1;
                             thd->raise_error_printf(ER_INTERNAL_ERROR, (IDBErrorInfo::instance()->errorMsg(ERR_INVALID_COMPRESSION_TYPE)).c_str());
@@ -1837,7 +1841,9 @@ int ProcessDDLStatement(string& ddlStatement, string& schema, const string& tabl
                             return rc;
                         }
 
-                        if (( compressionType > 0 ) && !(idbCompress->isCompressionAvail( compressionType )))
+                        if ((compressionType > 0) &&
+                            !(compress::CompressInterface::isCompressionAvail(
+                                compressionType)))
                         {
                             rc = 1;
                             thd->raise_error_printf(ER_INTERNAL_ERROR, (IDBErrorInfo::instance()->errorMsg(ERR_INVALID_COMPRESSION_TYPE)).c_str());
@@ -2350,9 +2356,8 @@ int ha_mcs_impl_create_(const char* name, TABLE* table_arg, HA_CREATE_INFO* crea
 
     if (compressiontype == 1) compressiontype = 2;
 
-    std::unique_ptr<CompressInterface> idbCompress(new CompressInterfaceSnappy());
-
-    if ( ( compressiontype > 0 ) && !(idbCompress->isCompressionAvail( compressiontype )) )
+    if ((compressiontype > 0) &&
+        !(compress::CompressInterface::isCompressionAvail(compressiontype)))
     {
         string emsg = IDBErrorInfo::instance()->errorMsg(ERR_INVALID_COMPRESSION_TYPE);
         setError(thd, ER_INTERNAL_ERROR, emsg);

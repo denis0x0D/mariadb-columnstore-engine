@@ -69,7 +69,7 @@ public:
     /**
      * see if the algo is available in this lib
      */
-    EXPORT bool isCompressionAvail(int compressionType = 0) const;
+    EXPORT static bool isCompressionAvail(int compressionType = 0);
 
     /**
     * Compresses specified "in" buffer of length "inLen" bytes.

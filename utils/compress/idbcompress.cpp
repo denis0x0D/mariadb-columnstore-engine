@@ -122,11 +122,11 @@ CompressInterface::CompressInterface(unsigned int numUserPaddingBytes) :
  * Maybe should have a new api, isDecompressionAvail() ? Any request to compress
  * using V1 will silently be changed to V2.
 */
-bool CompressInterface::isCompressionAvail(int compressionType) const
+/*static*/
+bool CompressInterface::isCompressionAvail(int compressionType)
 {
-    if ( (compressionType == 0) ||
-            (compressionType == 1) ||
-            (compressionType == 2) )
+    if ((compressionType == 0) || (compressionType == 1) ||
+        (compressionType == 2))
         return true;
 
     return false;
