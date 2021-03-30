@@ -50,7 +50,7 @@ public:
     /** @brief BulkRollbackFile constructor
      * @param mgr The controlling BulkRollbackMgr object.
      */
-    BulkRollbackFileCompressed(BulkRollbackMgr* mgr);
+    BulkRollbackFileCompressed(BulkRollbackMgr* mgr, uint32_t compressionType = 2);
 
     /** @brief BulkRollbackFile destructor
      */

@@ -47,11 +47,13 @@ ColumnInfoCompressed::ColumnInfoCompressed(Log*             logger,
         int              idIn,
         const JobColumn& columnIn,
         DBRootExtentTracker* pDBRootExtTrk,
-        TableInfo*		pTableInfo):
+        TableInfo*		pTableInfo,
+        uint32_t compressionType):
     //RBMetaWriter*    rbMetaWriter) :
     ColumnInfo(logger, idIn, columnIn, pDBRootExtTrk, pTableInfo),
     fRBMetaWriter(pTableInfo->rbMetaWriter())
 {
+    compressor.reset(compress::getCompressInterfaceByType(compressionType));
 }
 
 //------------------------------------------------------------------------------
@@ -129,8 +131,9 @@ int ColumnInfoCompressed::setupInitialColumnFile( HWM oldHwm, HWM hwm )
 
     fColBufferMgr = mgr;
 
-    std::unique_ptr<CompressInterface> compressor(
-        new CompressInterfaceSnappy());
+    // Is it possible to have compression type == 0 in `ColumnInfoCompressed`?
+    auto compressionType =
+        column.compressionType == 0 ? 2 : column.compressionType;
     int abbrevFlag =
         ( compressor->getBlockCount(hdr) ==
           uint64_t(INITIAL_EXTENT_ROWS_TO_DISK * column.width / BYTE_PER_BLOCK) );
@@ -346,8 +349,6 @@ int ColumnInfoCompressed::truncateDctnryStore(
             return rc;
         }
 
-        std::unique_ptr<CompressInterface> compressor(
-            new CompressInterfaceSnappy());
         int rc1 = compressor->verifyHdr(controlHdr);
 
         if (rc1 != 0)

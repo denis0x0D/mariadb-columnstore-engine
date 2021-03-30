@@ -96,7 +96,7 @@ size_t readFillBuffer(
     return totalBytesRead;
 }
 
-off64_t getCompressedDataSize(string& fileName)
+static off64_t getCompressedDataSize(string& fileName, uint32_t compressionType)
 {
     off64_t dataSize = 0;
     IDBDataFile* pFile = 0;
@@ -120,7 +120,7 @@ off64_t getCompressedDataSize(string& fileName)
     }
 
     std::unique_ptr<CompressInterface> decompressor(
-        new CompressInterfaceSnappy());
+        compress::getCompressInterfaceByType(compressionType));
     //--------------------------------------------------------------------------
     // Read headers and extract compression pointers
     //--------------------------------------------------------------------------
@@ -210,7 +210,7 @@ struct ColumnThread
                 {
                     try
                     {
-                        fileSize = getCompressedDataSize(aFile);
+                        fileSize = getCompressedDataSize(aFile, fCompressionType);
                     }
                     catch (std::exception& ex)
                     {

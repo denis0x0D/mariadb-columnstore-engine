@@ -48,11 +48,11 @@ namespace WriteEngine
 //------------------------------------------------------------------------------
 // BulkRollbackFileCompressed constructor
 //------------------------------------------------------------------------------
-BulkRollbackFileCompressed::BulkRollbackFileCompressed(BulkRollbackMgr* mgr) :
-    BulkRollbackFile(mgr)
+BulkRollbackFileCompressed::BulkRollbackFileCompressed(
+    BulkRollbackMgr* mgr, uint32_t compressionType)
+    : BulkRollbackFile(mgr)
 {
-    fCompressor = std::unique_ptr<CompressInterfaceSnappy>(
-        new CompressInterfaceSnappy());
+    fCompressor.reset(compress::getCompressInterfaceByType(compressionType));
 }
 
 //------------------------------------------------------------------------------

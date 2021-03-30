@@ -1723,7 +1723,8 @@ BulkRollbackFile* BulkRollbackMgr::makeFileRestorer(int compressionType)
         if (IDBPolicy::useHdfs())
             fileRestorer = new BulkRollbackFileCompressedHdfs(this);
         else
-            fileRestorer = new BulkRollbackFileCompressed(this);
+            fileRestorer =
+                new BulkRollbackFileCompressed(this, compressionType);
     }
     else
     {
