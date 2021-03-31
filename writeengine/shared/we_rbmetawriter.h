@@ -182,7 +182,8 @@ public:
         OID                dctnryOID,
         uint16_t           dbRoot,
         uint32_t           partition,
-        uint16_t           segment );
+        uint16_t           segment,
+        uint32_t           compressionType );
 
     /** @brief Delete the rollback meta files associated with this table
      * Warning: This function may throw a WeException.
@@ -248,7 +249,8 @@ private:
         uint16_t           dbRoot,
         uint32_t           partition,
         uint16_t           segment,
-        HWM                lastLocalHwm );
+        HWM                lastLocalHwm,
+        uint32_t           compressionType );
 
     // This function must be thread-safe since it is called directly by
     // backupDctnryHWMChunk().  Employed by non-hdfs.
@@ -258,7 +260,8 @@ private:
         uint16_t           dbRoot,
         uint32_t           partition,
         uint16_t           segment,
-        HWM                lastLocalHwm );
+        HWM                lastLocalHwm,
+        uint32_t           compressionType );
 
     // This function must be thread-safe since it is called directly by
     // backupDctnryHWMFile().   Employed by hdfs.

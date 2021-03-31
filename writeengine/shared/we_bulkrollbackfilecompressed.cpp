@@ -48,9 +48,11 @@ namespace WriteEngine
 //------------------------------------------------------------------------------
 // BulkRollbackFileCompressed constructor
 //------------------------------------------------------------------------------
-BulkRollbackFileCompressed::BulkRollbackFileCompressed(BulkRollbackMgr* mgr) :
-    BulkRollbackFile(mgr)
+BulkRollbackFileCompressed::BulkRollbackFileCompressed(
+    BulkRollbackMgr* mgr, uint32_t compressionType)
+    : BulkRollbackFile(mgr)
 {
+    compressor.reset(compress::getCompressInterfaceByType(compressionType));
 }
 
 //------------------------------------------------------------------------------
@@ -127,8 +129,7 @@ void BulkRollbackFileCompressed::truncateSegmentFile(
     unsigned int blockOffset      = fileSizeBlocks - 1;
     unsigned int chunkIndex       = 0;
     unsigned int blkOffsetInChunk = 0;
-    compress::CompressInterface::locateBlock(blockOffset, chunkIndex,
-                                             blkOffsetInChunk);
+    compressor->locateBlock(blockOffset, chunkIndex, blkOffsetInChunk);
 
     // Truncate the extra extents that are to be aborted
     if (chunkIndex < chunkPtrs.size())
@@ -276,8 +277,7 @@ void BulkRollbackFileCompressed::reInitTruncColumnExtent(
     unsigned int blockOffset      = startOffsetBlk - 1;
     unsigned int chunkIndex       = 0;
     unsigned int blkOffsetInChunk = 0;
-    compress::CompressInterface::locateBlock(blockOffset, chunkIndex,
-                                             blkOffsetInChunk);
+    compressor->locateBlock(blockOffset, chunkIndex, blkOffsetInChunk);
 
     if (chunkIndex < chunkPtrs.size())
     {
@@ -575,8 +575,7 @@ void BulkRollbackFileCompressed::reInitTruncDctnryExtent(
     unsigned int blockOffset      = startOffsetBlk - 1;
     unsigned int chunkIndex       = 0;
     unsigned int blkOffsetInChunk = 0;
-    compress::CompressInterface::locateBlock(blockOffset, chunkIndex,
-                                             blkOffsetInChunk);
+    compressor->locateBlock(blockOffset, chunkIndex, blkOffsetInChunk);
 
     if (chunkIndex < chunkPtrs.size())
     {

@@ -652,12 +652,15 @@ int FileOp::extendFile(
             char hdrsIn[ compress::CompressInterface::HDR_BUF_LEN * 2 ];
             RETURN_ON_ERROR( readHeaders(pFile, hdrsIn) );
 
+            std::unique_ptr<compress::CompressInterface> compressor(
+                compress::getCompressInterfaceByType(m_compressionType));
+
             unsigned int ptrCount =
                 compress::CompressInterface::getPtrCount(hdrsIn);
             unsigned int chunkIndex = 0;
             unsigned int blockOffsetWithinChunk = 0;
-            compress::CompressInterface::locateBlock((hwm - 1), chunkIndex,
-                                                     blockOffsetWithinChunk);
+            compressor->locateBlock((hwm - 1), chunkIndex,
+                                    blockOffsetWithinChunk);
 
             //std::ostringstream oss1;
             //oss1 << "Extending compressed column file"<<

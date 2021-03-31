@@ -424,7 +424,7 @@ uint64_t CompressInterface::getHdrSize(const void* hdrBuf)
 //------------------------------------------------------------------------------
 void CompressInterface::locateBlock(unsigned int block,
                                     unsigned int& chunkIndex,
-                                    unsigned int& blockOffsetWithinChunk)
+                                    unsigned int& blockOffsetWithinChunk) const
 {
     const uint64_t BUFLEN  = UNCOMPRESSED_INBUF_LEN;
 

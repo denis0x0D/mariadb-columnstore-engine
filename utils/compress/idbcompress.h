@@ -187,9 +187,8 @@ public:
     * Calculates the chunk, and the block offset within the chunk, for the
     * specified block number.
     */
-    EXPORT static void locateBlock(unsigned int block,
-                                   unsigned int& chunkIndex,
-                                   unsigned int& blockOffsetWithinChunk);
+    EXPORT void locateBlock(unsigned int block, unsigned int& chunkIndex,
+                            unsigned int& blockOffsetWithinChunk) const;
 
     /**
      * Pads the specified compressed chunk to the nearest compressed chunk
@@ -327,8 +326,11 @@ inline unsigned int CompressInterface::getPtrCount(const char*)
 }
 inline void CompressInterface::storePtrs(const std::vector<uint64_t>&, void*, int) {}
 inline void CompressInterface::storePtrs(const std::vector<uint64_t>&, void*) {}
-inline void CompressInterface::locateBlock(unsigned int block,
-        unsigned int& chunkIndex, unsigned int& blockOffsetWithinChunk) {}
+inline void
+CompressInterface::locateBlock(unsigned int block, unsigned int& chunkIndex,
+                               unsigned int& blockOffsetWithinChunk) const
+{
+}
 inline int CompressInterface::padCompressedChunks(unsigned char* buf, unsigned int& len, unsigned int maxLen) const
 {
     return -1;

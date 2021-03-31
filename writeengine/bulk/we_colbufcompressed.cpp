@@ -101,8 +101,7 @@ int ColumnBufferCompressed::setDbFile(IDBDataFile* f, HWM startHwm, const char* 
     // rollback), that fall after the HWM, then drop those trailing ptrs.
     unsigned int chunkIndex             = 0;
     unsigned int blockOffsetWithinChunk = 0;
-    compress::CompressInterface::locateBlock(fStartingHwm, chunkIndex,
-                                             blockOffsetWithinChunk);
+    fCompressor->locateBlock(fStartingHwm, chunkIndex, blockOffsetWithinChunk);
 
     if ((chunkIndex + 1) < fChunkPtrs.size())
     {
@@ -647,8 +646,8 @@ int ColumnBufferCompressed::initToBeCompressedBuffer(long long& startFileOffset)
     {
         if (fChunkPtrs.size() > 0)
         {
-            compress::CompressInterface::locateBlock(fStartingHwm, chunkIndex,
-                                                     blockOffsetWithinChunk);
+            fCompressor->locateBlock(fStartingHwm, chunkIndex,
+                                     blockOffsetWithinChunk);
 
             if (chunkIndex < fChunkPtrs.size())
                 startFileOffset  = fChunkPtrs[chunkIndex].first;

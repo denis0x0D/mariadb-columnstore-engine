@@ -234,7 +234,8 @@ int ColumnInfoCompressed::saveDctnryStoreHWMChunk(bool& needBackup)
                          column.dctnry.dctnryOid,
                          curCol.dataFile.fDbRoot,
                          curCol.dataFile.fPartition,
-                         curCol.dataFile.fSegment );
+                         curCol.dataFile.fSegment,
+                         column.compressionType );
     }
     catch (WeException& ex)
     {
