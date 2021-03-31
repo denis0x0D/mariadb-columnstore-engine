@@ -28,6 +28,7 @@ using namespace std;
 #include "logger.h"
 #include "snappy.h"
 #include "hasher.h"
+#include "lz4.h"
 
 #define IDBCOMP_DLLEXPORT
 #include "idbcompress.h"
@@ -122,14 +123,10 @@ CompressInterface::CompressInterface(unsigned int numUserPaddingBytes) :
  * Maybe should have a new api, isDecompressionAvail() ? Any request to compress
  * using V1 will silently be changed to V2.
 */
-/*static*/
 bool CompressInterface::isCompressionAvail(int compressionType)
 {
-    if ((compressionType == 0) || (compressionType == 1) ||
-        (compressionType == 2))
-        return true;
-
-    return false;
+    return ((compressionType == 0) || (compressionType == 1) ||
+            (compressionType == 2) || (compressionType == 3));
 }
 
 //------------------------------------------------------------------------------
@@ -466,6 +463,7 @@ int CompressInterface::padCompressedChunks(unsigned char* buf, size_t& len,
     return 0;
 }
 
+// Snappy
 CompressInterfaceSnappy::CompressInterfaceSnappy(uint32_t numUserPaddingBytes)
     : CompressInterface(numUserPaddingBytes)
 {
@@ -520,12 +518,81 @@ uint8_t CompressInterfaceSnappy::getChunkMagicNumber() const
     return CHUNK_MAGIC_SNAPPY;
 }
 
+// LZ4
+CompressInterfaceLZ4::CompressInterfaceLZ4(uint32_t numUserPaddingBytes)
+    : CompressInterface(numUserPaddingBytes)
+{
+}
+
+int32_t CompressInterfaceLZ4::compress(const char* in, size_t inLen, char* out,
+                                       size_t* outLen) const
+{
+    auto compressedLen = LZ4_compress_default(
+        in, reinterpret_cast<char*>(&out[HEADER_SIZE]), inLen, *outLen);
+
+    if (!compressedLen)
+    {
+        cerr << "LZ_compress_default failed. InLen: " << inLen
+             << ", outLen: " << *outLen << endl;
+        return ERR_COMPRESS;
+    }
+
+    return ERR_OK;
+}
+
+int32_t CompressInterfaceLZ4::uncompress(const char* in, size_t inLen,
+                                         char* out, size_t* outLen) const
+{
+    auto decompressedLen = LZ4_decompress_safe(
+        &in[HEADER_SIZE], reinterpret_cast<char*>(out), inLen, *outLen);
+
+    if (decompressedLen < 0)
+    {
+        cerr << "LZ_decompress_safe failed with error code " << decompressedLen
+             << endl;
+        cerr << "InLen: " << inLen << ", outLen: " << *outLen << endl;
+        return ERR_DECOMPRESS;
+    }
+
+    return ERR_OK;
+}
+
+size_t CompressInterfaceLZ4::maxCompressedSize(size_t uncompSize) const
+{
+    return (LZ4_COMPRESSBOUND(uncompSize) + HEADER_SIZE);
+}
+
+bool CompressInterfaceLZ4::getUncompressedSize(char* in, size_t inLen,
+                                               size_t* outLen) const
+{
+    // LZ4 does not have such function.
+    idbassert(false);
+    return false;
+}
+
+uint8_t CompressInterfaceLZ4::getChunkMagicNumber() const
+{
+    return CHUNK_MAGIC_LZ4;
+}
+
 CompressInterface* getCompressInterfaceByType(uint32_t compressionType,
                                               uint32_t numUserPaddingBytes)
 {
-    idbassert(compressionType > 0 && compressionType <= 2);
+    idbassert(compressionType > 0 && compressionType <= 3);
     // Only one compression type is available currently.
-    return new CompressInterfaceSnappy(numUserPaddingBytes);
+
+    if (compressionType == 1 || compressionType == 2)
+    {
+        return new CompressInterfaceSnappy(numUserPaddingBytes);
+    }
+    else if (compressionType == 3)
+    {
+        return new CompressInterfaceLZ4(numUserPaddingBytes);
+    }
+
+    // Unreachable.
+    idbassert(false);
+    return nullptr;
 }
 
 #endif

@@ -303,6 +303,43 @@ class CompressInterfaceSnappy : public CompressInterface
     const uint8_t CHUNK_MAGIC_SNAPPY = 0xfd;
 };
 
+class CompressInterfaceLZ4 : public CompressInterface
+{
+  public:
+    EXPORT CompressInterfaceLZ4(uint32_t numUserPaddingBytes = 0);
+    EXPORT ~CompressInterfaceLZ4() = default;
+    /**
+     * Compress the given block using LZ4 compression API.
+     */
+    EXPORT int32_t compress(const char* in, size_t inLen, char* out,
+                            size_t* outLen) const override;
+    /**
+     * Uncompress the given block using LZ4 compression API.
+     */
+    EXPORT int32_t uncompress(const char* in, size_t inLen, char* out,
+                              size_t* outLen) const override;
+    /**
+     * Get max compressed size for the given `uncompSize` value using LZ4
+     * compression API.
+     */
+    EXPORT size_t maxCompressedSize(size_t uncompSize) const override;
+
+    /**
+     * Get uncompressed size for the given block using LZ4
+     * compression API.
+     */
+    EXPORT
+    bool getUncompressedSize(char* in, size_t inLen,
+                             size_t* outLen) const override;
+
+  protected:
+    uint8_t getChunkMagicNumber() const override;
+
+  private:
+    const uint8_t CHUNK_MAGIC_LZ4 = 0xfc;
+};
+
+
 // Returns a pointer to the appropriate compression interface based on
 // `compressionType`. `compressionType` must be greater than 0.
 // Note: caller is responsible for memory deallocation.
