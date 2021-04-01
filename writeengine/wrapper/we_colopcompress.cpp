@@ -121,9 +121,9 @@ int ColumnOpCompress0::saveBlock(IDBDataFile* pFile, const unsigned char* writeB
  * Constructor
  */
 
-ColumnOpCompress1::ColumnOpCompress1(Log* logger)
+ColumnOpCompress1::ColumnOpCompress1(Log* logger, uint32_t compressionType)
 {
-    m_compressionType = 1;
+    m_compressionType = compressionType;
     // FIXME: compression type == 2?
     m_chunkManager = new ChunkManager(m_compressionType);
 

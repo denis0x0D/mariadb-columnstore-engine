@@ -97,7 +97,7 @@ public:
     /**
     * @brief Constructor
     */
-    EXPORT ColumnOpCompress1(Log* logger = 0);
+    EXPORT ColumnOpCompress1(Log* logger = 0, uint32_t compressionType = 1);
 
     /**
     * @brief Default Destructor
