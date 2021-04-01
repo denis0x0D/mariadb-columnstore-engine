@@ -52,7 +52,8 @@ BulkRollbackFileCompressed::BulkRollbackFileCompressed(
     BulkRollbackMgr* mgr, uint32_t compressionType)
     : BulkRollbackFile(mgr)
 {
-    fCompressor.reset(compress::getCompressInterfaceByType(compressionType));
+    fCompressorPool = {std::shared_ptr<compress::CompressInterface>(
+        new compress::CompressInterfaceSnappy())};
 }
 
 //------------------------------------------------------------------------------
@@ -129,6 +130,18 @@ void BulkRollbackFileCompressed::truncateSegmentFile(
     unsigned int blockOffset      = fileSizeBlocks - 1;
     unsigned int chunkIndex       = 0;
     unsigned int blkOffsetInChunk = 0;
+
+    auto fCompressor = getCompressorByType(
+        compress::CompressInterface::getCompressionType(hdrs));
+    if (!fCompressor)
+    {
+        std::ostringstream oss;
+        oss << "Error, wrong compression type for segment file"
+            << ": OID-" << columnOID << "; DbRoot-" << dbRoot << "; partition-"
+            << partNum << "; segment-" << segNum << ";";
+        throw WeException(oss.str(), ERR_COMP_WRONG_COMP_TYPE);
+    }
+
     fCompressor->locateBlock(blockOffset, chunkIndex, blkOffsetInChunk);
 
     // Truncate the extra extents that are to be aborted
@@ -277,6 +290,18 @@ void BulkRollbackFileCompressed::reInitTruncColumnExtent(
     unsigned int blockOffset      = startOffsetBlk - 1;
     unsigned int chunkIndex       = 0;
     unsigned int blkOffsetInChunk = 0;
+
+    auto fCompressor = getCompressorByType(
+        compress::CompressInterface::getCompressionType(hdrs));
+    if (!fCompressor)
+    {
+        std::ostringstream oss;
+        oss << "Error, wrong compression type for segment file"
+            << ": OID-" << columnOID << "; DbRoot-" << dbRoot << "; partition-"
+            << partNum << "; segment-" << segNum << ";";
+        throw WeException(oss.str(), ERR_COMP_WRONG_COMP_TYPE);
+    }
+
     fCompressor->locateBlock(blockOffset, chunkIndex, blkOffsetInChunk);
 
     if (chunkIndex < chunkPtrs.size())
@@ -575,6 +600,18 @@ void BulkRollbackFileCompressed::reInitTruncDctnryExtent(
     unsigned int blockOffset      = startOffsetBlk - 1;
     unsigned int chunkIndex       = 0;
     unsigned int blkOffsetInChunk = 0;
+
+    auto fCompressor = getCompressorByType(
+        compress::CompressInterface::getCompressionType(controlHdr));
+    if (!fCompressor)
+    {
+        std::ostringstream oss;
+        oss << "Error, wrong compression type for segment file"
+            << ": OID-" << dStoreOID << "; DbRoot-" << dbRoot << "; partition-"
+            << partNum << "; segment-" << segNum << ";";
+        throw WeException(oss.str(), ERR_COMP_WRONG_COMP_TYPE);
+    }
+
     fCompressor->locateBlock(blockOffset, chunkIndex, blkOffsetInChunk);
 
     if (chunkIndex < chunkPtrs.size())

@@ -148,7 +148,19 @@ private:
                                 uint64_t&   ptrHdrSize,
                                 std::string& errMsg ) const;
 
-    std::unique_ptr<compress::CompressInterface> fCompressor;
+    std::shared_ptr<compress::CompressInterface>
+    getCompressorByType(uint32_t compressionType)
+    {
+        switch (compressionType)
+        {
+        case 1:
+        case 2:
+            return fCompressorPool.front();
+        }
+        return nullptr;
+    }
+
+    std::vector<std::shared_ptr<compress::CompressInterface>> fCompressorPool;
 };
 
 } //end of namespace
