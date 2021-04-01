@@ -53,7 +53,7 @@ public:
 
     /** @brief default Constructor
      */
-    ColumnBufferCompressed( ColumnInfo* pColInfo, Log* logger);
+    ColumnBufferCompressed( ColumnInfo* pColInfo, Log* logger, uint32_t compressionType = 2 );
 
     /** @brief default Destructor
      */
@@ -107,8 +107,7 @@ private:
     // should always be 4MB, unless
     // working with abbrev extent.
     size_t               fNumBytes;             // num Bytes in comp buffer
-    compress::IDBCompressInterface*
-    fCompressor;           // data compression object
+    compress::CompressInterface* fCompressor;   // data compression object
     compress::CompChunkPtrList
     fChunkPtrs;            // col file header information
     bool                 fPreLoadHWMChunk;      // preload 1st HWM chunk only
