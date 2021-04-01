@@ -75,6 +75,10 @@ CompressedInetStreamSocket::CompressedInetStreamSocket()
         useCompression = true;
     else
         useCompression = false;
+
+    // FIXME: How to specify compression type? Use Snappy as default.
+    // Should we update a config file to specify network compression type?
+    alg.reset(new compress::CompressInterfaceSnappy());
 }
 
 Socket* CompressedInetStreamSocket::clone() const
@@ -94,13 +98,15 @@ const SBS CompressedInetStreamSocket::read(const struct timespec* timeout, bool*
     if (readBS->length() == 0 || fMagicBuffer == BYTESTREAM_MAGIC)
         return readBS;
 
-    err = alg.getUncompressedSize((char*) readBS->buf(), readBS->length(), &uncompressedSize);
+    err = alg->getUncompressedSize((char*) readBS->buf(), readBS->length(),
+                                   &uncompressedSize);
 
     if (!err)
         return SBS(new ByteStream(0));
 
     ret.reset(new ByteStream(uncompressedSize));
-    alg.uncompress((char*) readBS->buf(), readBS->length(), (char*) ret->getInputPtr());
+    alg->uncompress((char*) readBS->buf(), readBS->length(),
+                   (char*) ret->getInputPtr(), &uncompressedSize);
     ret->advanceInputPtr(uncompressedSize);
 
     return ret;
@@ -108,14 +114,14 @@ const SBS CompressedInetStreamSocket::read(const struct timespec* timeout, bool*
 
 void CompressedInetStreamSocket::write(const ByteStream& msg, Stats* stats)
 {
-    size_t outLen = 0;
-    uint32_t len = msg.length();
+    size_t len = msg.length();
+    size_t outLen = len;
 
     if (useCompression && (len > 512))
     {
-        ByteStream smsg(alg.maxCompressedSize(len));
+        ByteStream smsg(alg->maxCompressedSize(len));
 
-        alg.compress((char*) msg.buf(), len, (char*) smsg.getInputPtr(), &outLen);
+        alg->compress((char*) msg.buf(), len, (char*) smsg.getInputPtr(), &outLen);
         smsg.advanceInputPtr(outLen);
 
         if (outLen < len)

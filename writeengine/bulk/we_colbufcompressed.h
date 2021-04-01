@@ -107,8 +107,9 @@ private:
     // should always be 4MB, unless
     // working with abbrev extent.
     size_t               fNumBytes;             // num Bytes in comp buffer
-    compress::IDBCompressInterface*
-    fCompressor;           // data compression object
+    std::unordered_map<uint32_t,
+                       std::shared_ptr<compress::CompressInterface>>
+        fCompressorPool; // data compression object pool
     compress::CompChunkPtrList
     fChunkPtrs;            // col file header information
     bool                 fPreLoadHWMChunk;      // preload 1st HWM chunk only
