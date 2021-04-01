@@ -55,18 +55,17 @@ namespace WriteEngine
 // Constructor
 //------------------------------------------------------------------------------
 ColumnBufferCompressed::ColumnBufferCompressed( ColumnInfo* pColInfo,
-        Log* logger, uint32_t compressionType) :
+        Log* logger ) :
     ColumnBuffer(pColInfo, logger),
     fToBeCompressedBuffer(0),
     fToBeCompressedCapacity(0),
     fNumBytes(0),
-    fCompressor(0),
     fPreLoadHWMChunk(true),
     fFlushedStartHwmChunk(false)
 {
     fUserPaddingBytes = Config::getNumCompressedPadBlks() * BYTE_PER_BLOCK;
-    fCompressor = compress::getCompressInterfaceByType(compressionType,
-                                                       fUserPaddingBytes);
+    fCompressorPool = {std::shared_ptr<CompressInterface>(
+        new CompressInterfaceSnappy(fUserPaddingBytes))};
 }
 
 //------------------------------------------------------------------------------
@@ -80,7 +79,6 @@ ColumnBufferCompressed::~ColumnBufferCompressed()
     fToBeCompressedBuffer   = 0;
     fToBeCompressedCapacity = 0;
     fNumBytes               = 0;
-    delete fCompressor;
 }
 
 //------------------------------------------------------------------------------
@@ -101,6 +99,13 @@ int ColumnBufferCompressed::setDbFile(IDBDataFile* f, HWM startHwm, const char* 
     // rollback), that fall after the HWM, then drop those trailing ptrs.
     unsigned int chunkIndex             = 0;
     unsigned int blockOffsetWithinChunk = 0;
+
+    auto fCompressor = getCompressorByType(fColInfo->column.compressionType);
+    if (!fCompressor)
+    {
+        return ERR_COMP_WRONG_COMP_TYPE;
+    }
+
     fCompressor->locateBlock(fStartingHwm, chunkIndex, blockOffsetWithinChunk);
 
     if ((chunkIndex + 1) < fChunkPtrs.size())
@@ -376,6 +381,12 @@ int ColumnBufferCompressed::writeToFile(int startOffset, int writeSize,
 //------------------------------------------------------------------------------
 int ColumnBufferCompressed::compressAndFlush( bool bFinishingFile )
 {
+    auto fCompressor = getCompressorByType(fColInfo->column.compressionType);
+    if (!fCompressor)
+    {
+        return ERR_COMP_WRONG_COMP_TYPE;
+    }
+
     const int OUTPUT_BUFFER_SIZE =
         fCompressor->maxCompressedSize(fToBeCompressedCapacity) +
         fUserPaddingBytes;
@@ -388,10 +399,8 @@ int ColumnBufferCompressed::compressAndFlush( bool bFinishingFile )
 #endif
 
     int rc = fCompressor->compressBlock(
-                 reinterpret_cast<char*>(fToBeCompressedBuffer),
-                 fToBeCompressedCapacity,
-                 compressedOutBuf,
-                 outputLen );
+        reinterpret_cast<char*>(fToBeCompressedBuffer),
+        fToBeCompressedCapacity, compressedOutBuf, outputLen);
 
     if (rc != 0)
     {
@@ -642,6 +651,12 @@ int ColumnBufferCompressed::initToBeCompressedBuffer(long long& startFileOffset)
     unsigned int blockOffsetWithinChunk = 0;
     bool         bSkipStartingBlks      = false;
 
+    auto fCompressor = getCompressorByType(fColInfo->column.compressionType);
+    if (!fCompressor)
+    {
+        return ERR_COMP_WRONG_COMP_TYPE;
+    }
+
     if (fPreLoadHWMChunk)
     {
         if (fChunkPtrs.size() > 0)
@@ -783,4 +798,15 @@ int ColumnBufferCompressed::initToBeCompressedBuffer(long long& startFileOffset)
     return NO_ERROR;
 }
 
+std::shared_ptr<compress::CompressInterface>
+ColumnBufferCompressed::getCompressorByType(uint32_t compressionType)
+{
+    switch (compressionType)
+    {
+    case 1:
+    case 2:
+        return fCompressorPool.front();
+    }
+    return nullptr;
+}
 }

@@ -53,7 +53,7 @@ public:
 
     /** @brief default Constructor
      */
-    ColumnBufferCompressed( ColumnInfo* pColInfo, Log* logger, uint32_t compressionType = 2 );
+    ColumnBufferCompressed( ColumnInfo* pColInfo, Log* logger );
 
     /** @brief default Destructor
      */
@@ -102,12 +102,17 @@ private:
     // Initialize the to-be-compressed buffer
     int saveCompressionHeaders(); // Saves compression headers to the db file
 
+    // Returs a compressor depends on compression type.
+    std::shared_ptr<compress::CompressInterface>
+    getCompressorByType(uint32_t compressionType);
+
     unsigned char*       fToBeCompressedBuffer; // data waiting to be compressed
     size_t               fToBeCompressedCapacity;//size of comp buffer;
     // should always be 4MB, unless
     // working with abbrev extent.
     size_t               fNumBytes;             // num Bytes in comp buffer
-    compress::CompressInterface* fCompressor;   // data compression object
+    std::vector<std::shared_ptr<compress::CompressInterface>>
+        fCompressorPool; // data compression object pool
     compress::CompChunkPtrList
     fChunkPtrs;            // col file header information
     bool                 fPreLoadHWMChunk;      // preload 1st HWM chunk only

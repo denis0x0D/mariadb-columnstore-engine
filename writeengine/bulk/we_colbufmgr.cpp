@@ -62,7 +62,7 @@ ColumnBufferManager::ColumnBufferManager(ColumnInfo* pColInfo,
     fColInfo(pColInfo), fLog(logger)
 {
     if (compressionType)
-        fCBuf = new ColumnBufferCompressed(pColInfo, logger, compressionType);
+        fCBuf = new ColumnBufferCompressed(pColInfo, logger);
     else
         fCBuf = new ColumnBuffer(pColInfo, logger);
 }
