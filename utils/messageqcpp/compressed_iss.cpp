@@ -105,8 +105,14 @@ const SBS CompressedInetStreamSocket::read(const struct timespec* timeout, bool*
         return SBS(new ByteStream(0));
 
     ret.reset(new ByteStream(uncompressedSize));
-    alg->uncompress((char*) readBS->buf(), readBS->length(),
-                   (char*) ret->getInputPtr(), &uncompressedSize);
+    auto rc = alg->uncompress((char*) readBS->buf(), readBS->length(),
+                              (char*) ret->getInputPtr(), &uncompressedSize);
+
+    if (rc != 0)
+    {
+        std::cerr << "uncompress failed  " << std::endl;
+        return SBS(new ByteStream(0));
+    }
     ret->advanceInputPtr(uncompressedSize);
 
     return ret;
@@ -117,20 +123,12 @@ void CompressedInetStreamSocket::write(const ByteStream& msg, Stats* stats)
     size_t len = msg.length();
     size_t outLen = len;
 
-    if (useCompression && (len > 512))
-    {
-        ByteStream smsg(alg->maxCompressedSize(len));
+    ByteStream smsg(alg->maxCompressedSize(len));
 
-        alg->compress((char*) msg.buf(), len, (char*) smsg.getInputPtr(), &outLen);
-        smsg.advanceInputPtr(outLen);
+    alg->compress((char*) msg.buf(), len, (char*) smsg.getInputPtr(), &outLen);
+    smsg.advanceInputPtr(outLen);
 
-        if (outLen < len)
-            do_write(smsg, COMPRESSED_BYTESTREAM_MAGIC, stats);
-        else
-            InetStreamSocket::write(msg, stats);
-    }
-    else
-        InetStreamSocket::write(msg, stats);
+    do_write(smsg, COMPRESSED_BYTESTREAM_MAGIC, stats);
 }
 
 void CompressedInetStreamSocket::write(SBS msg, Stats* stats)
