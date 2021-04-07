@@ -98,14 +98,24 @@ const SBS CompressedInetStreamSocket::read(const struct timespec* timeout, bool*
     if (readBS->length() == 0 || fMagicBuffer == BYTESTREAM_MAGIC)
         return readBS;
 
-    err = alg->getUncompressedSize((char*) readBS->buf(), readBS->length(),
-                                   &uncompressedSize);
+    /*
+    err = alg->getUncompressedSize((char*) readBS->buf() + 4,
+                                   readBS->length() - 4, &uncompressedSize);
 
     if (!err)
+    {
+        std::cerr << "[compress socket] failed getUncompressedSize "
+                  << std::endl;
         return SBS(new ByteStream(0));
+    }
+    */
+
+    uint32_t data = *(uint32_t*) readBS->buf();
+    std::cout << "[uncomrpess socket] written data : " << data << std::endl;
+    uncompressedSize = data;
 
     ret.reset(new ByteStream(uncompressedSize));
-    auto rc = alg->uncompress((char*) readBS->buf(), readBS->length(),
+    auto rc = alg->uncompress((char*) readBS->buf() + 4, readBS->length() - 4,
                               (char*) ret->getInputPtr(), &uncompressedSize);
     std::cout << "[uncompress socket] uncompressedLen " << uncompressedSize
               << std::endl;
@@ -123,14 +133,17 @@ const SBS CompressedInetStreamSocket::read(const struct timespec* timeout, bool*
 void CompressedInetStreamSocket::write(const ByteStream& msg, Stats* stats)
 {
     size_t len = msg.length();
-    size_t outLen = len;
 
-    ByteStream smsg(alg->maxCompressedSize(len));
+    size_t outLen = alg->maxCompressedSize(len) + 4;
+    ByteStream smsg(outLen);
 
-    alg->compress((char*) msg.buf(), len, (char*) smsg.getInputPtr(), &outLen);
+    alg->compress((char*) msg.buf(), len, (char*) smsg.getInputPtr() + 4,
+                  &outLen);
+
+    *(uint32_t*) smsg.getInputPtr() = len;
     std::cout << "[compress socket] input len : " << len << std::endl;
     std::cout << "[compress socket] compressed len : " << outLen << std::endl;
-    smsg.advanceInputPtr(outLen);
+    smsg.advanceInputPtr(outLen + 4);
 
     do_write(smsg, COMPRESSED_BYTESTREAM_MAGIC, stats);
 }
