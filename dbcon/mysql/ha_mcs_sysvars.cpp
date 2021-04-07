@@ -45,7 +45,7 @@ static MYSQL_THDVAR_ENUM(
     "LZ4 segment files are LZ4 compressed;",
     NULL, // check
     NULL, // update
-    1, //default
+    3, //default
     &mcs_compression_type_names_lib); // values lib
 
 // fe_conn_info pointer
