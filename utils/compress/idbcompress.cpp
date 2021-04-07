@@ -529,6 +529,7 @@ int CompressInterface::padCompressedChunks(unsigned char* buf, size_t& len,
     return 0;
 }
 
+#define DEBUG_COMPRESSION
 // Snappy
 CompressInterfaceSnappy::CompressInterfaceSnappy(uint32_t numUserPaddingBytes)
     : CompressInterface(numUserPaddingBytes)
@@ -600,6 +601,8 @@ CompressInterfaceLZ4::CompressInterfaceLZ4(uint32_t numUserPaddingBytes)
     : CompressInterface(numUserPaddingBytes)
 {
 }
+
+#define DEBUG_COMPRESSION
 
 int32_t CompressInterfaceLZ4::compress(const char* in, size_t inLen, char* out,
                                        size_t* outLen) const
