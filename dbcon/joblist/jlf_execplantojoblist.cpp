@@ -1055,6 +1055,7 @@ const JobStepVector doFilterExpression(const SimpleColumn* sc1, const SimpleColu
     return jsv;
 }
 
+// Do join
 const JobStepVector doJoin(
     SimpleColumn* sc1, SimpleColumn* sc2, JobInfo& jobInfo, const SOP& sop, SimpleFilter* sf)
 {
@@ -2034,6 +2035,7 @@ const JobStepVector doSimpleFilter(SimpleFilter* sf, JobInfo& jobInfo)
             throw runtime_error("Anti join is not currently supported");
 
         // Do a simple column join
+        cout << "do a simple join column " << endl;
         JobStepVector join = doJoin(sc1, sc2, jobInfo, sop, sf);
         // set cardinality for the hashjoin step. hj result card <= larger input card
         uint32_t card = 0;
