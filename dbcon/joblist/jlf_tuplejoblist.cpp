@@ -2123,6 +2123,8 @@ string joinTypeToString(const JoinType& joinType)
 SP_JoinInfo joinToLargeTable(uint32_t large, TableInfoMap& tableInfoMap,
                              JobInfo& jobInfo, vector<uint32_t>& joinOrder)
 {
+
+    cout << "joinToLargeTable " << endl;
     vector<SP_JoinInfo> smallSides;
     tableInfoMap[large].fVisited = true;
     tableInfoMap[large].fJoinedTables.insert(large);
@@ -2154,6 +2156,42 @@ SP_JoinInfo joinToLargeTable(uint32_t large, TableInfoMap& tableInfoMap,
         BatchPrimitive* bps = dynamic_cast<BatchPrimitive*>(spjs.get());
         SubAdapterStep* tsas = dynamic_cast<SubAdapterStep*>(spjs.get());
         TupleHashJoinStep* thjs = dynamic_cast<TupleHashJoinStep*>(spjs.get());
+
+        if (thjs)
+        {
+            cout << "TupleHashJoin step != null " << endl;
+            if (thjs->column1())
+            {
+                cout << "columnt1 " << thjs->column1()->toString() << endl;
+            }
+            if (thjs->column2())
+            {
+                cout << "columnt2 " << thjs->column2()->toString() << endl;
+            }
+        }
+        else
+        {
+            cout << "tuple hash join == nullptr " << endl;
+        }
+
+        if (bps)
+        {
+            cout << "BatchPrimitie != nullptr " << endl;
+        }
+        else
+        {
+            cout << "BatchPrimitive == nullptr " << endl;
+        }
+
+        if (tsas)
+        {
+            cout << "SubAdapter != nullptr " << endl;
+        }
+        else
+        {
+            cout << "SubAdapter == nullptr " << endl;
+        }
+
 
         // @bug6158, try to put BPS on large side if possible
         if (tsas && smallSides.size() == 1)
@@ -2251,8 +2289,10 @@ SP_JoinInfo joinToLargeTable(uint32_t large, TableInfoMap& tableInfoMap,
             smallKeyIndices.push_back(smallIndices);
             largeKeyIndices.push_back(largeIndices);
 
-            if (jobInfo.trace)
+//            if (jobInfo.trace)
             {
+
+                cout << "TRACE BEGIN " << endl;
                 // small side column
                 ostringstream smallKey, smallIndex;
                 string alias1 = jobInfo.keyInfo->keyName[getTableKey(jobInfo, keys1.front())];
@@ -2264,6 +2304,7 @@ SP_JoinInfo joinToLargeTable(uint32_t large, TableInfoMap& tableInfoMap,
                     CalpontSystemCatalog::TableColName tcn1 = jobInfo.csc->colName(oid1);
                     smallKey << "(" << tcn1.column << ":" << oid1 << ":" << *k1 << ")";
                     smallIndex << " " << getKeyIndex(*k1,  info->fRowGroup);
+                    cout << "col name " << jobInfo.csc->colName(oid1) << endl;
                 }
 
                 // large side column
@@ -2277,6 +2318,7 @@ SP_JoinInfo joinToLargeTable(uint32_t large, TableInfoMap& tableInfoMap,
                     CalpontSystemCatalog::TableColName tcn2 = jobInfo.csc->colName(oid2);
                     largeKey << "(" << tcn2.column << ":" << oid2 << ":" << *k2 << ")";
                     largeIndex << " " << getKeyIndex(*k2, largeSideRG);
+                    cout << "col name " << jobInfo.csc->colName(oid2) << endl;
                 }
 
                 ostringstream oss;
@@ -2288,6 +2330,7 @@ SP_JoinInfo joinToLargeTable(uint32_t large, TableInfoMap& tableInfoMap,
                     << largeIndex.str() << endl;
                 oss << "small side RG" << endl << info->fRowGroup.toString() << endl;
                 traces.push_back(oss.str());
+                cout << "TRACE END " << endl;
             }
         }
 
@@ -2311,9 +2354,25 @@ SP_JoinInfo joinToLargeTable(uint32_t large, TableInfoMap& tableInfoMap,
             thjs->schema2(tableInfoMap[large].fSchema);
             thjs->setLargeSideBPS(bps);
             thjs->joinId(lastJoinId);
-
+            cout << "Schemas " << endl;
+            cout << smallSides[0]->fSchema << endl;
+            cout << tableInfoMap[large].fSchema << endl;
+            cout << "Schemas end " << endl;
+ 
             if (dynamic_cast<TupleBPS*>(bps) != NULL)
+            {
+                cout << "dynamic_cast<TupleBPS*>(bps) != NULL) " << endl;
                 bps->incWaitToRunStepCnt();
+            }
+
+            if (thjs->column1())
+            {
+                cout << "thjs->columnt1() != nullptr " << endl;
+            }
+            else
+            {
+                cout << "thjs->columnt1() == nullptr " << endl;
+            }
 
             SJSTEP spjs(thjs);
 
@@ -2369,6 +2428,34 @@ SP_JoinInfo joinToLargeTable(uint32_t large, TableInfoMap& tableInfoMap,
             cout << "RowGroup join result: " << endl << rg.toString() << endl << endl;
         }
 
+        if (false)
+        {
+            cout << "create filter " << endl;
+            auto* opEq = new Operator("=");
+            SOP sp(opEq);
+            auto* sc1 = new SimpleColumn("temp", "t2", "a");
+            auto* sc2 = new SimpleColumn("temp", "t3", "a");
+            sc1->inputIndex(3);
+            sc2->inputIndex(5);
+
+            SimpleFilter* sf = new SimpleFilter(sp, sc1, sc2);
+
+            cout << "filter created " << sf->toString() << endl;
+            auto* parseT = new ParseTree(sf);
+            boost::shared_ptr<ParseTree> sppt(parseT);
+            thjs->addFcnExpGroup2(sppt);
+
+            constructJoinedRowGroup(rg, link, prevLarge, root, tableSet,
+                                    tableInfoMap, jobInfo);
+
+            if (thjs->hasFcnExpGroup2())
+                thjs->setFE23Output(rg);
+            else
+                thjs->setOutputRowGroup(rg);
+
+            tableInfoMap[large].fRowGroup = rg;
+        }
+
         // check if any cross-table expressions can be evaluated after the join
         JobStepVector readyExpSteps;
         JobStepVector& expSteps = jobInfo.crossTableExpressions;
@@ -2377,6 +2464,7 @@ SP_JoinInfo joinToLargeTable(uint32_t large, TableInfoMap& tableInfoMap,
         while (eit != expSteps.end())
         {
             ExpressionStep* exp = dynamic_cast<ExpressionStep*>(eit->get());
+            std::cout << "expression " << exp->toString() << endl;
 
             if (exp == NULL)
                 throw runtime_error("Not an expression.");
@@ -2388,6 +2476,7 @@ SP_JoinInfo joinToLargeTable(uint32_t large, TableInfoMap& tableInfoMap,
             }
 
             const vector<uint32_t>& tables = exp->tableKeys();
+            cout << "exp table key size " << tables.size() << endl;
             uint64_t i = 0;
 
             for (; i < tables.size(); i++)
@@ -2399,6 +2488,7 @@ SP_JoinInfo joinToLargeTable(uint32_t large, TableInfoMap& tableInfoMap,
             // all tables for this expression are joined
             if (tables.size() ==  i)
             {
+                cout << "erase " << endl;
                 readyExpSteps.push_back(*eit);
                 eit = expSteps.erase(eit);
             }
@@ -2442,6 +2532,7 @@ SP_JoinInfo joinToLargeTable(uint32_t large, TableInfoMap& tableInfoMap,
 
             if (correlateTables.size() > 0)
             {
+                cout << "correlate tables " << endl;
                 // separate additional compare for each table pair
                 JobStepVector::iterator eit = readyExpSteps.begin();
 
@@ -2477,6 +2568,8 @@ SP_JoinInfo joinToLargeTable(uint32_t large, TableInfoMap& tableInfoMap,
                     e->updateInputIndex(keyToIndexMap, jobInfo);
                     ParseTree* pt = correlateCompare[j->first];
 
+                    cout << "Filter 0 " << e->expressionFilter()->toString()
+                         << endl;
                     if (pt == NULL)
                     {
                         // first expression
@@ -2507,6 +2600,7 @@ SP_JoinInfo joinToLargeTable(uint32_t large, TableInfoMap& tableInfoMap,
                     if (pt != NULL)
                     {
                         boost::shared_ptr<ParseTree> sppt(pt);
+                        cout << "add join filter  " << endl;
                         thjs->addJoinFilter(sppt, dcf + k->second);
                     }
 
@@ -2516,9 +2610,26 @@ SP_JoinInfo joinToLargeTable(uint32_t large, TableInfoMap& tableInfoMap,
                 thjs->setJoinFilterInputRG(rg);
             }
 
+            /*
+            cout << "create filter " << endl;
+            auto* opEq = new Operator("=");
+            SOP sp(opEq);
+            SimpleFilter* sf =
+                new SimpleFilter(sp, new SimpleColumn("temp", "t2", "a"),
+                                 new SimpleColumn("temp", "t3", "a"));
+
+            cout << "filter created " << sf->toString() << endl;
+            auto* parseT = new ParseTree(sf);
+            boost::shared_ptr<ParseTree> sppt(parseT);
+            thjs->addFcnExpGroup2(sppt);
+            */
+
             // normal expression if any
             if (readyExpSteps.size() > 0)
             {
+
+                cout << "readyExpSteps " << endl;
+                cout << "normal expression " << endl;
                 // add the expression steps in where clause can be solved by this join to bps
                 ParseTree* pt = NULL;
                 JobStepVector::iterator eit = readyExpSteps.begin();
@@ -2527,7 +2638,10 @@ SP_JoinInfo joinToLargeTable(uint32_t large, TableInfoMap& tableInfoMap,
                 {
                     // map the input column index
                     ExpressionStep* e = dynamic_cast<ExpressionStep*>(eit->get());
+                    cout << "exp " << e->toString() << endl;
                     e->updateInputIndex(keyToIndexMap, jobInfo);
+                    cout << "Filter 1 " << e->expressionFilter()->toString()
+                         << endl;
 
                     if (pt == NULL)
                     {
@@ -2547,6 +2661,7 @@ SP_JoinInfo joinToLargeTable(uint32_t large, TableInfoMap& tableInfoMap,
                     }
                 }
 
+                cout << "addFncExpGrop2 " << endl;
                 boost::shared_ptr<ParseTree> sppt(pt);
                 thjs->addFcnExpGroup2(sppt);
             }
@@ -2666,6 +2781,8 @@ inline void updateJoinSides(uint32_t small, uint32_t large, map<uint32_t, SP_Joi
 void joinTablesInOrder(uint32_t largest, JobStepVector& joinSteps, TableInfoMap& tableInfoMap,
                        JobInfo& jobInfo, vector<uint32_t>& joinOrder)
 {
+
+    cout << "joinTableInOrder " << endl;
     // populate the tableInfo for join
     map<uint32_t, SP_JoinInfo> joinInfoMap;          // <table, JoinInfo>
 
