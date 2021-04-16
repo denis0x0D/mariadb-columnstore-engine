@@ -71,6 +71,7 @@ private:
 
 inline bool FuncExpWrapper::evaluateFilter(uint32_t num, rowgroup::Row* r)
 {
+    cout << "evaluateFilter " << endl;
     return fe->evaluate(*r, filters[num].get());
 }
 

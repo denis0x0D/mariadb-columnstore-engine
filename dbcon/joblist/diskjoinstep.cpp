@@ -57,6 +57,7 @@ DiskJoinStep::DiskJoinStep(TupleHashJoinStep* t, int djsIndex, int joinIndex, bo
 
     if (fe)
     {
+        cout << "DiskJoinStep::AddJoinFilter " << endl;
         joinFERG = thjs->joinFilterRG;
         SjoinFEMapping = makeMapping(smallRG, joinFERG);
         LjoinFEMapping = makeMapping(largeRG, joinFERG);

@@ -642,6 +642,7 @@ void TupleBPS::setBPP(JobStep* jobStep)
             }
             else
             {
+                cout << "Filter step 645 " << endl;
                 FilterStep* pfsp = dynamic_cast<FilterStep*>(jobStep);
 
                 if (pfsp)
@@ -1486,6 +1487,7 @@ bool TupleBPS::compareRange(uint8_t COP, int64_t min, int64_t max, int64_t val) 
 bool TupleBPS::processSingleFilterString_ranged(int8_t BOP, int8_t colWidth, int64_t min, int64_t max, const uint8_t* filterString,
         uint32_t filterCount) const
 {
+    cout << "TupleBPS::processSingleFilterString_ranged( " << endl;
     uint j;
     bool ret = true;
 
@@ -1605,6 +1607,7 @@ bool TupleBPS::processSingleFilterString(int8_t BOP, int8_t colWidth, T val, con
 template<typename T>
 bool TupleBPS::processOneFilterType(int8_t colWidth, T value, uint32_t type) const
 {
+    cout << "processOneFilterType " << endl;
     const vector<SCommand>& filters = fBPP->getFilterSteps();
     uint i;
     bool ret = true;
@@ -1641,6 +1644,8 @@ bool TupleBPS::processOneFilterType(int8_t colWidth, T value, uint32_t type) con
 
 bool TupleBPS::processLBIDFilter(const EMEntry& emEntry) const
 {
+
+    cout << " TupleBPS::processLBIDFilter " << endl;
     const vector<SCommand>& filters = fBPP->getFilterSteps();
     uint i;
     bool ret = true;
@@ -1680,6 +1685,7 @@ bool TupleBPS::processLBIDFilter(const EMEntry& emEntry) const
 
 bool TupleBPS::processPseudoColFilters(uint32_t extentIndex, boost::shared_ptr<map<int, int> > dbRootPMMap) const
 {
+    cout << "processPseudoColFilters " << endl;
     if (!hasPCFilter)
         return true;
 
@@ -1964,19 +1970,20 @@ void TupleBPS::receiveMultiPrimitiveMessages(uint32_t threadID)
 
     try
     {
-        if (doJoin || fe2)
+        if (false) // if (doJoin || fe2 )
         {
             local_outputRG.initRow(&postJoinRow);
         }
 
-        if (fe2)
+        if (fe2 )
         {
             local_fe2Output = fe2Output;
             local_fe2Output.initRow(&local_fe2OutRow);
             local_fe2Data.reinit(fe2Output);
             local_fe2Output.setData(&local_fe2Data);
             // local_fe2OutRow = fe2OutRow;
-            local_fe2 = *fe2;
+            cout << "set local_fe2 " << endl;
+//            local_fe2 = *fe2;
         }
 
         if (doJoin)
@@ -2247,7 +2254,8 @@ void TupleBPS::receiveMultiPrimitiveMessages(uint32_t threadID)
                                         {
                                             smallSideRows[j].setPointer(joinerOutput[j][z]);
                                             applyMapping(fergMappings[j], smallSideRows[j], &joinFERow);
-
+                                             
+                                            cout << "evaluate filter " << endl;
                                             if (!tjoiners[j]->evaluateFilter(joinFERow, threadID))
                                                 matchCount--;
                                             else
@@ -2348,7 +2356,8 @@ void TupleBPS::receiveMultiPrimitiveMessages(uint32_t threadID)
                     }
 
                     /* Execute UM F & E group 2 on rgDatav */
-                    if (fe2 && !runFEonPM && rgDatav.size() > 0 && !cancelled())
+                    if (fe2 && !runFEonPM && rgDatav.size() > 0 &&
+                        !cancelled())
                     {
                         processFE2(local_outputRG, local_fe2Output, postJoinRow, local_fe2OutRow, &rgDatav, &local_fe2);
                         rgDataVecToDl(rgDatav, local_fe2Output, dlp);
@@ -2857,10 +2866,11 @@ void TupleBPS::setJoinedResultRG(const rowgroup::RowGroup& rg)
 }
 
 /* probably worthwhile to make some of these class vars */
-void TupleBPS::generateJoinResultSet(const vector<vector<Row::Pointer> >& joinerOutput,
-                                     Row& baseRow, const vector<shared_array<int> >& mappings, const uint32_t depth,
-                                     RowGroup& outputRG, RGData& rgData, vector<RGData>* outputData, const scoped_array<Row>& smallRows,
-                                     Row& joinedRow)
+void TupleBPS::generateJoinResultSet(
+    const vector<vector<Row::Pointer>>& joinerOutput, Row& baseRow,
+    const vector<shared_array<int>>& mappings, const uint32_t depth,
+    RowGroup& outputRG, RGData& rgData, vector<RGData>* outputData,
+    const scoped_array<Row>& smallRows, Row& joinedRow)
 {
     uint32_t i;
     Row& smallRow = smallRows[depth];
@@ -3011,7 +3021,10 @@ void TupleBPS::setFE1Input(const RowGroup& feInput)
 void TupleBPS::setFcnExpGroup2(const boost::shared_ptr<funcexp::FuncExpWrapper>& fe,
                                const rowgroup::RowGroup& rg, bool runFE2onPM)
 {
+    cout << "TupleBPS::setFcnExpGroup2 " << endl;
     fe2 = fe;
+    //    fe2.reset(new funcexp::FuncExpWrapper());
+
     fe2Output = rg;
     checkDupOutputColumns(rg);
     fe2Mapping = makeMapping(outputRowGroup, fe2Output);
@@ -3057,6 +3070,7 @@ void TupleBPS::processFE2_oneRG(RowGroup& input, RowGroup& output, Row& inRow,
 
     for (i = 0; i < input.getRowCount(); i++, inRow.nextRow())
     {
+        cout << "TupleBPS::processFE2_oneRG( " << endl;
         ret = local_fe->evaluate(&inRow);
 
         if (ret)
@@ -3072,6 +3086,7 @@ void TupleBPS::processFE2_oneRG(RowGroup& input, RowGroup& output, Row& inRow,
 void TupleBPS::processFE2(RowGroup& input, RowGroup& output, Row& inRow, Row& outRow,
                           vector<RGData>* rgData, funcexp::FuncExpWrapper* local_fe)
 {
+
     vector<RGData> results;
     RGData result;
     uint32_t i, j;
@@ -3096,6 +3111,7 @@ void TupleBPS::processFE2(RowGroup& input, RowGroup& output, Row& inRow, Row& ou
 
         for (j = 0; j < input.getRowCount(); j++, inRow.nextRow())
         {
+            cout << "processFE2 " << endl;
             ret = local_fe->evaluate(&inRow);
 
             if (ret)

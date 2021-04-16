@@ -2343,6 +2343,7 @@ SP_JoinInfo joinToLargeTable(uint32_t large, TableInfoMap& tableInfoMap,
 
         if (bps || tsas)
         {
+            cout << "Create TupleHashJoinStep " << endl;
             thjs = new TupleHashJoinStep(jobInfo);
             thjs->tableOid1(smallSides[0]->fTableOid);
             thjs->tableOid2(tableInfoMap[large].fTableOid);
@@ -2363,15 +2364,6 @@ SP_JoinInfo joinToLargeTable(uint32_t large, TableInfoMap& tableInfoMap,
             {
                 cout << "dynamic_cast<TupleBPS*>(bps) != NULL) " << endl;
                 bps->incWaitToRunStepCnt();
-            }
-
-            if (thjs->column1())
-            {
-                cout << "thjs->columnt1() != nullptr " << endl;
-            }
-            else
-            {
-                cout << "thjs->columnt1() == nullptr " << endl;
             }
 
             SJSTEP spjs(thjs);
@@ -2399,6 +2391,7 @@ SP_JoinInfo joinToLargeTable(uint32_t large, TableInfoMap& tableInfoMap,
         }
         else
         {
+            cout << "Else create hashJoinStep " << endl;
             JobStepAssociation inJsa = thjs->inputAssociation();
 
             if (inJsa.outSize() < 2)
@@ -2426,31 +2419,6 @@ SP_JoinInfo joinToLargeTable(uint32_t large, TableInfoMap& tableInfoMap,
                 cout << *t;
 
             cout << "RowGroup join result: " << endl << rg.toString() << endl << endl;
-        }
-
-        {
-            cout << "create filter " << endl;
-            auto* opEq = new Operator("=");
-            SOP sp(opEq);
-            SimpleFilter* sf =
-                new SimpleFilter(sp, new SimpleColumn("temp", "t2", "a"),
-                                 new SimpleColumn("temp", "t3", "a"));
-
-            cout << "filter created " << sf->toString() << endl;
-            auto* parseT = new ParseTree(sf);
-            boost::shared_ptr<ParseTree> sppt(parseT);
-            thjs->addFcnExpGroup2(sppt);
-
-            constructJoinedRowGroup(rg, link, prevLarge, root, tableSet,
-                                    tableInfoMap, jobInfo);
-
-            if (thjs->hasFcnExpGroup2())
-                thjs->setFE23Output(rg);
-            else
-                thjs->setOutputRowGroup(rg);
-
-            tableInfoMap[large].fRowGroup = rg;
-
         }
 
         // check if any cross-table expressions can be evaluated after the join
@@ -2485,7 +2453,7 @@ SP_JoinInfo joinToLargeTable(uint32_t large, TableInfoMap& tableInfoMap,
             // all tables for this expression are joined
             if (tables.size() ==  i)
             {
-                cout << "erase " << endl;
+                cout << "erase and push back" << endl;
                 readyExpSteps.push_back(*eit);
                 eit = expSteps.erase(eit);
             }
@@ -2501,6 +2469,7 @@ SP_JoinInfo joinToLargeTable(uint32_t large, TableInfoMap& tableInfoMap,
                                  jobInfo.outerJoinExpressions.begin(),
                                  jobInfo.outerJoinExpressions.end());
 
+
         // check additional compares for semi-join
         if (readyExpSteps.size() > 0)
         {
@@ -2513,6 +2482,7 @@ SP_JoinInfo joinToLargeTable(uint32_t large, TableInfoMap& tableInfoMap,
             map<uint32_t, int> correlateTables;          // index in thjs
             map<uint32_t, ParseTree*> correlateCompare;  // expression
 
+            /*
             for (size_t i = 0; i != smallSides.size(); i++)
             {
                 if ((jointypes[i] & SEMI) || (jointypes[i] & ANTI) || (jointypes[i] & SCALAR))
@@ -2527,7 +2497,7 @@ SP_JoinInfo joinToLargeTable(uint32_t large, TableInfoMap& tableInfoMap,
                 }
             }
 
-            if (correlateTables.size() > 0)
+            if (false && correlateTables.size() > 0)
             {
                 cout << "correlate tables " << endl;
                 // separate additional compare for each table pair
@@ -2606,20 +2576,7 @@ SP_JoinInfo joinToLargeTable(uint32_t large, TableInfoMap& tableInfoMap,
 
                 thjs->setJoinFilterInputRG(rg);
             }
-
-            /*
-            cout << "create filter " << endl;
-            auto* opEq = new Operator("=");
-            SOP sp(opEq);
-            SimpleFilter* sf =
-                new SimpleFilter(sp, new SimpleColumn("temp", "t2", "a"),
-                                 new SimpleColumn("temp", "t3", "a"));
-
-            cout << "filter created " << sf->toString() << endl;
-            auto* parseT = new ParseTree(sf);
-            boost::shared_ptr<ParseTree> sppt(parseT);
-            thjs->addFcnExpGroup2(sppt);
-            */
+        */
 
             // normal expression if any
             if (readyExpSteps.size() > 0)
@@ -2629,7 +2586,21 @@ SP_JoinInfo joinToLargeTable(uint32_t large, TableInfoMap& tableInfoMap,
                 cout << "normal expression " << endl;
                 // add the expression steps in where clause can be solved by this join to bps
                 ParseTree* pt = NULL;
+
                 JobStepVector::iterator eit = readyExpSteps.begin();
+
+                cout << "create filter " << endl;
+                auto* opEq = new Operator("<");
+                auto* sc1 = new SimpleColumn("cs", "t2", "c");
+                sc1->tableAlias("t2");
+                auto* sc2 = new SimpleColumn("cs", "t3", "c");
+                sc2->tableAlias("t3");
+                sc1->inputIndex(3);
+                sc2->inputIndex(5);
+
+                SOP sp(opEq);
+                SimpleFilter* sf = new SimpleFilter(sp, sc1, sc2);
+                auto* defPt = new ParseTree(sf);
 
                 for (; eit != readyExpSteps.end(); eit++)
                 {
@@ -2637,8 +2608,9 @@ SP_JoinInfo joinToLargeTable(uint32_t large, TableInfoMap& tableInfoMap,
                     ExpressionStep* e = dynamic_cast<ExpressionStep*>(eit->get());
                     cout << "exp " << e->toString() << endl;
                     e->updateInputIndex(keyToIndexMap, jobInfo);
-                    cout << "Filter 1 " << e->expressionFilter()->toString()
-                         << endl;
+                    cout << "Original filter  "
+                         << e->expressionFilter()->toString() << endl;
+                    cout << "Constructed filter " << sf->toString() << endl;
 
                     if (pt == NULL)
                     {
@@ -2657,14 +2629,15 @@ SP_JoinInfo joinToLargeTable(uint32_t large, TableInfoMap& tableInfoMap,
                         pt->right(right);
                     }
                 }
-
                 cout << "addFncExpGrop2 " << endl;
                 boost::shared_ptr<ParseTree> sppt(pt);
                 thjs->addFcnExpGroup2(sppt);
             }
 
+            cout << "readyExp size " << readyExpSteps.size() << endl;
+
             // update the fColsInExp2 and construct the output RG
-            updateExp2Cols(readyExpSteps, tableInfoMap, jobInfo);
+            //updateExp2Cols(readyExpSteps, tableInfoMap, jobInfo);
             constructJoinedRowGroup(rg, link, prevLarge, root, tableSet, tableInfoMap, jobInfo);
 
             if (thjs->hasFcnExpGroup2())
@@ -2674,14 +2647,41 @@ SP_JoinInfo joinToLargeTable(uint32_t large, TableInfoMap& tableInfoMap,
 
             tableInfoMap[large].fRowGroup = rg;
 
-            if (jobInfo.trace)
             {
-                cout << "RowGroup of " << tableInfoMap[large].fAlias << " after EXP G2: " << endl
-                     << rg.toString() << endl << endl;
+                cout << "RowGroup of " << tableInfoMap[large].fAlias
+                     << " after EXP G2: " << endl
+                     << rg.toString() << endl
+                     << endl;
             }
         }
-    }
+        else if (0)
+        {
 
+                cout << "create filter " << endl;
+                auto* opEq = new Operator("<");
+                auto* sc1 = new SimpleColumn("cs", "t2", "c");
+                auto* sc2 = new SimpleColumn("cs", "t3", "c");
+                sc1->inputIndex(3);
+                sc2->inputIndex(5);
+
+                SOP sp(opEq);
+                SimpleFilter* sf = new SimpleFilter(sp, sc1, sc2);
+
+                cout << "filter created " << sf->toString() << endl;
+                auto* parseT = new ParseTree(sf);
+                boost::shared_ptr<ParseTree> sppt(parseT);
+                thjs->addFcnExpGroup2(sppt);
+
+                // update the fColsInExp2 and construct the output RG
+                updateExp2Cols(readyExpSteps, tableInfoMap, jobInfo);
+                constructJoinedRowGroup(rg, link, prevLarge, root, tableSet,
+                                        tableInfoMap, jobInfo);
+
+                thjs->setFE23Output(rg);
+                tableInfoMap[large].fRowGroup = rg;
+                cout << rg.toString() << endl;
+        }
+    }
 
     // Prepare the current table info to join with its large side.
     SP_JoinInfo joinInfo(new JoinInfo);
@@ -2705,6 +2705,7 @@ SP_JoinInfo joinToLargeTable(uint32_t large, TableInfoMap& tableInfoMap,
 
     joinOrder.push_back(large);
 
+    cout << "Create joinInfo for table id " << large << endl;
     return joinInfo;
 }
 

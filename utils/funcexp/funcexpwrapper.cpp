@@ -113,7 +113,10 @@ void FuncExpWrapper::deserialize(ByteStream& bs)
 
 bool FuncExpWrapper::evaluate(Row* r)
 {
+    cout << "FuncExpWrapper::evaluate " << endl;
     uint32_t i;
+
+    cout << "Filter size " << filters.size() << endl;
 
     for (i = 0; i < filters.size(); i++)
         if (!fe->evaluate(*r, filters[i].get()))

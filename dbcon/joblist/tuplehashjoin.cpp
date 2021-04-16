@@ -146,6 +146,8 @@ TupleHashJoinStep::~TupleHashJoinStep()
 
 void TupleHashJoinStep::run()
 {
+
+    cout << "TupleHasJoinStep::run() " << endl;
     uint32_t i;
 
     boost::mutex::scoped_lock lk(jlLock);
@@ -157,7 +159,9 @@ void TupleHashJoinStep::run()
 
     deliverMutex.lock();
 
-// 	cout << "TupleHashJoinStep::run(): fOutputJobStepAssociation.outSize = " << fOutputJobStepAssociation.outSize() << ", fDelivery = " << boolalpha << fDelivery << endl;
+    // 	cout << "TupleHashJoinStep::run(): fOutputJobStepAssociation.outSize =
+    // " << fOutputJobStepAssociation.outSize() << ", fDelivery = " <<
+    // boolalpha << fDelivery << endl;
     idbassert((fOutputJobStepAssociation.outSize() == 1 && !fDelivery) ||
               (fOutputJobStepAssociation.outSize() == 0 && fDelivery));
     idbassert(fInputJobStepAssociation.outSize() >= 2);
@@ -616,6 +620,8 @@ void TupleHashJoinStep::djsReaderFcn(int index)
 
 void TupleHashJoinStep::hjRunner()
 {
+
+    cout << "hjRunner " << endl;
     uint32_t i;
     std::vector<uint64_t> smallRunners; // thread handles from thread pool
 
@@ -762,8 +768,11 @@ void TupleHashJoinStep::hjRunner()
             abort();
         }
 
-        if (fe2)
+        if (fe2 && false)
+        {
+            cout << "!!fe2Mapping " << endl;
             fe2Mapping = makeMapping(outputRG, fe2Output);
+        }
 
         bool relay = false, reader = false;
 
@@ -921,6 +930,7 @@ void TupleHashJoinStep::hjRunner()
         through a joblist. */
         if (fe2 && !djs)
         {
+            cout << "933 " << endl;
             /* Can't do a small outer join when the PM sends back joined rows */
             runFE2onPM = true;
 
@@ -992,7 +1002,7 @@ uint32_t TupleHashJoinStep::nextBand(messageqcpp::ByteStream& bs)
 
     RowGroup* deliveredRG;
 
-    if (fe2)
+    if (fe2 && false)
         deliveredRG = &fe2Output;
     else
         deliveredRG = &outputRG;
@@ -1308,6 +1318,8 @@ void TupleHashJoinStep::setJoinFilterInputRG(const rowgroup::RowGroup& rg)
 
 void TupleHashJoinStep::startJoinThreads()
 {
+    cout << "TupleHashJoinStep::startJoinThreads() " << endl;
+
     uint32_t i;
     uint32_t smallSideCount = smallDLs.size();
     bool more = true;
@@ -1354,7 +1366,7 @@ void TupleHashJoinStep::startJoinThreads()
         fergMappings[smallSideCount] = makeMapping(largeRG, joinFilterRG);
     }
 
-    if (fe2)
+    if (fe2 && false)
         fe2Mapping = makeMapping(outputRG, fe2Output);
 
     smallNullMemory.reset(new scoped_array<uint8_t>[smallSideCount]);
@@ -1371,7 +1383,7 @@ void TupleHashJoinStep::startJoinThreads()
     for (i = 0; i < smallSideCount; i++)
         joiners[i]->setThreadCount(joinThreadCount);
 
-    makeDupList(fe2 ? fe2Output : outputRG);
+    makeDupList(fe2 && false ? fe2Output : outputRG);
 
     /* Start join runners */
     joinRunners.reserve(joinThreadCount);
@@ -1428,7 +1440,7 @@ void TupleHashJoinStep::finishSmallOuterJoin()
     l_outputRG.initRow(&joinedBaseRow);
     l_outputRG.getRow(0, &joinedBaseRow);
 
-    if (fe2)
+    if (fe2 && false)
     {
         l_outputRG.initRow(&fe2InRow);
         fe2Output.initRow(&fe2OutRow);
@@ -1453,7 +1465,7 @@ void TupleHashJoinStep::finishSmallOuterJoin()
 
         if (l_outputRG.getRowCount() == 8192)
         {
-            if (fe2)
+            if (fe2 && false)
             {
                 vector<RGData> rgDatav;
                 rgDatav.push_back(joinedData);
@@ -1474,7 +1486,7 @@ void TupleHashJoinStep::finishSmallOuterJoin()
 
     if (l_outputRG.getRowCount() > 0)
     {
-        if (fe2)
+        if (fe2 && false)
         {
             vector<RGData> rgDatav;
             rgDatav.push_back(joinedData);
@@ -1490,6 +1502,7 @@ void TupleHashJoinStep::finishSmallOuterJoin()
 
 void TupleHashJoinStep::joinRunnerFcn(uint32_t threadID)
 {
+    cout << "joinRunnerFcn " << endl;
     RowGroup local_inputRG, local_outputRG, local_joinFERG;
     uint32_t smallSideCount = smallDLs.size();
     vector<RGData> inputData, joinedRowData;
@@ -1525,7 +1538,7 @@ void TupleHashJoinStep::joinRunnerFcn(uint32_t threadID)
         joinFERow.setData(joinFERowData.get());
     }
 
-    if (fe2)
+    if (fe2 && false)
     {
         local_fe2RG = fe2Output;
         local_outputRG.initRow(&fe2InRow);
@@ -1553,7 +1566,7 @@ void TupleHashJoinStep::joinRunnerFcn(uint32_t threadID)
                       joinFERow, joinedRow, baseRow, joinMatches, smallRowTemplates);
         }
 
-        if (fe2)
+        if (fe2 && false)
             processFE2(local_outputRG, local_fe2RG, fe2InRow, fe2OutRow, &joinedRowData, &local_fe);
 
         processDupList(threadID, (fe2 ? local_fe2RG : local_outputRG), &joinedRowData);
@@ -1603,6 +1616,8 @@ void TupleHashJoinStep::processDupList(uint32_t threadID, RowGroup& rg,
 void TupleHashJoinStep::processFE2(RowGroup& input, RowGroup& output, Row& inRow, Row& outRow,
                                    vector<RGData>* rgData, funcexp::FuncExpWrapper* local_fe)
 {
+
+    cout << "TupleHashJoinStep::processFE2!!!!!!!!1 " << endl;
     vector<RGData> results;
     RGData result;
     uint32_t i, j;
@@ -1701,6 +1716,7 @@ void TupleHashJoinStep::joinOneRG(uint32_t threadID, vector<RGData>* out,
                                  )
 {
 
+    cout << "join one rg " << endl;
     /* Disk-join support.
        These dissociate the fcn from THJS's members & allow this fcn to be called from DiskJoinStep
     */
@@ -1734,6 +1750,7 @@ void TupleHashJoinStep::joinOneRG(uint32_t threadID, vector<RGData>* out,
 
         for (j = 0; j < smallSideCount; j++)
         {
+            cout << "match " << endl;
             (*tjoiners)[j]->match(largeSideRow, k, threadID, &joinMatches[j]);
             /* Debugging code to print the matches
             	Row r;
@@ -1748,7 +1765,7 @@ void TupleHashJoinStep::joinOneRG(uint32_t threadID, vector<RGData>* out,
 
             if ((*tjoiners)[j]->hasFEFilter() && matchCount > 0)
             {
-                //cout << "doing FE filter" << endl;
+                cout << "doing FE filter" << endl;
                 vector<Row::Pointer> newJoinMatches;
                 applyMapping((*feMappings)[smallSideCount], largeSideRow, &joinFERow);
 

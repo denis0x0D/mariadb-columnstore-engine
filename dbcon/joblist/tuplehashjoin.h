@@ -516,11 +516,14 @@ private:
     };
     void joinRunnerFcn(uint32_t index);
     void startJoinThreads();
-    void generateJoinResultSet(const std::vector<std::vector<rowgroup::Row::Pointer> >& joinerOutput,
-                               rowgroup::Row& baseRow, const boost::shared_array<boost::shared_array<int> >& mappings,
-                               const uint32_t depth, rowgroup::RowGroup& outputRG, rowgroup::RGData& rgData,
-                               std::vector<rowgroup::RGData>* outputData,
-                               const boost::shared_array<rowgroup::Row>& smallRows, rowgroup::Row& joinedRow);
+    void generateJoinResultSet(
+        const std::vector<std::vector<rowgroup::Row::Pointer>>& joinerOutput,
+        rowgroup::Row& baseRow,
+        const boost::shared_array<boost::shared_array<int>>& mappings,
+        const uint32_t depth, rowgroup::RowGroup& outputRG,
+        rowgroup::RGData& rgData, std::vector<rowgroup::RGData>* outputData,
+        const boost::shared_array<rowgroup::Row>& smallRows,
+        rowgroup::Row& joinedRow);
     void grabSomeWork(std::vector<rowgroup::RGData>* work);
     void sendResult(const std::vector<rowgroup::RGData>& res);
     void processFE2(rowgroup::RowGroup& input, rowgroup::RowGroup& output, rowgroup::Row& inRow,

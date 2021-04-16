@@ -277,7 +277,7 @@ public:
   public:
     ColDataType colDataType;
     TypeHolderStd()
-     :colDataType(MEDINT)
+     :colDataType(BIGINT)
     { }
     const class TypeHandler *typeHandler() const;
     boost::any getNullValueForType() const;

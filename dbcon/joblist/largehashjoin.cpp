@@ -539,6 +539,8 @@ void LargeHashJoin::errorLogging(const string& msg) const
 
 void LargeHashJoin::doHashJoin()
 {
+
+    cout < < < "LargeHashJoin::doHasJoin () " << endl;
     string val;
 
     idbassert(fInputJobStepAssociation.outSize() >= 2);
@@ -625,7 +627,9 @@ void LargeHashJoin::doHashJoin()
             BDLWrapper< ElementType > setA(Ap);
             BDLWrapper< ElementType > setB(Bp);
 
-            hj = new HashJoin<ElementType>(setA, setB, resultA, resultB, fJoinType, &dlTimes, fOutputJobStepAssociation.statusPtr(), sessionId(), &die);
+            hj = new HashJoin<ElementType>(
+                setA, setB, resultA, resultB, fJoinType, &dlTimes,
+                fOutputJobStepAssociation.statusPtr(), sessionId(), &die);
 
             if (fTableOID2 >= 3000)
             {

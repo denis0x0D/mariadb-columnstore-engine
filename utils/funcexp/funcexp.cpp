@@ -246,6 +246,7 @@ FuncExp::FuncExp()
 
 Func* FuncExp::getFunctor(std::string& funcName)
 {
+    cout << "getFunctor " << endl;
     FuncMap::iterator iter = fFuncMap.find(funcName);
 
     if (iter == fFuncMap.end())
@@ -256,6 +257,8 @@ Func* FuncExp::getFunctor(std::string& funcName)
 
 void FuncExp::evaluate(rowgroup::Row& row, std::vector<execplan::SRCP>& expression)
 {
+
+    cout << "FuncExp:: evaluate " << endl;
     bool isNull;
 
     for (uint32_t i = 0; i < expression.size(); i++)

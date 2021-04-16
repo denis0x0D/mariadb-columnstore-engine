@@ -1921,7 +1921,7 @@ SJLP makeJobList_(
 
         struct timeval stTime;
 
-        if (jobInfo.trace)
+        if (false)
         {
             ostringstream oss;
             oss << endl;

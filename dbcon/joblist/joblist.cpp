@@ -155,6 +155,7 @@ JobList::~JobList()
 
 int JobList::doQuery()
 {
+    cout << "job list do query " << endl;
     // Don't start the steps if there is no PrimProc connection.
     if (fPmsConfigured < 1 || fPmsConnected < fPmsConfigured)
         return 0;
@@ -220,9 +221,11 @@ int JobList::doQuery()
     JobStepVector::iterator end  = fQuery.end();
 
     // Start the query running
+    cout << "query running " << endl;
     while (iter != end)
     {
         js = iter->get();
+        cout << js->toString() << endl;
 
         if (!js->delayedRun())
         {
@@ -236,8 +239,12 @@ int JobList::doQuery()
     end = fProject.end();
 
     // Fire up the projection steps
+    cout << "projects step running " << endl;
     while (iter != end)
     {
+        js = iter->get();
+        cout << js->toString() << endl;
+
         if (!iter->get()->delayedRun())
         {
             iter->get()->run();
@@ -245,6 +252,7 @@ int JobList::doQuery()
 
         ++iter;
     }
+    cout << "done steps running " << endl;
 
     fIsRunning = true;
     rc = 0;

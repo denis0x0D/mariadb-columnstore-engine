@@ -162,6 +162,7 @@ void BatchPrimitiveProcessorJL::addFilterStep(const pDictionaryStep& step)
 
 void BatchPrimitiveProcessorJL::addFilterStep(const FilterStep& step)
 {
+    cout << "Add filter step " << endl;
     SCommand cc;
 
     tableOID = step.tableOid();

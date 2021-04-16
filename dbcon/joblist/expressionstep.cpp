@@ -495,12 +495,12 @@ void ExpressionStep::populateColumnInfo(AggregateColumn* ac, JobInfo& jobInfo)
 
 void ExpressionStep::updateInputIndex(map<uint32_t, uint32_t>& indexMap, const JobInfo& jobInfo)
 {
+
     // expression is handled as function join already
     if (fDoJoin)
         return;
 
-    if (jobInfo.trace)
-        cout << "Input indices of Expression:" << (int64_t) fExpressionId << endl;
+    cout << "Input indices of Expression:" << (int64_t) fExpressionId << endl;
 
     for (vector<ReturnedColumn*>::iterator it = fColumns.begin(); it != fColumns.end(); ++it)
     {
@@ -525,21 +525,23 @@ void ExpressionStep::updateInputIndex(map<uint32_t, uint32_t>& indexMap, const J
             {
                 ct = sc->colType();
 
-//XXX use this before connector sets colType in sc correctly.
-//    type of pseudo column is set by connector
+                // XXX use this before connector sets colType in sc correctly.
+                //    type of pseudo column is set by connector
                 if (dynamic_cast<PseudoColumn*>(sc) == NULL)
                 {
                     ct = jobInfo.csc->colType(oid);
                     ct.charsetNumber =sc->colType().charsetNumber;
                 }
 
-//X
+                // X
                 dictOid = joblist::isDictCol(ct);
 
                 if (dictOid > 0)
                     key = jobInfo.keyInfo->dictKeyMap[key];
             }
 
+            cout << "UpdateInputIndex set key " << key << " input index "
+                 << indexMap[key] << endl;
             sc->inputIndex(indexMap[key]);
 
             if (jobInfo.trace)
@@ -558,8 +560,12 @@ void ExpressionStep::updateInputIndex(map<uint32_t, uint32_t>& indexMap, const J
     }
 
     // if substutes exist, update the original column
-    for (map<SimpleColumn*, ReturnedColumn*>::iterator k = fSubMap.begin(); k != fSubMap.end(); k++)
+    for (map<SimpleColumn*, ReturnedColumn*>::iterator k = fSubMap.begin();
+         k != fSubMap.end(); k++)
+    {
+        cout << "Update original column 566 line " << endl;
         k->second->inputIndex(k->first->inputIndex());
+    }
 }
 
 

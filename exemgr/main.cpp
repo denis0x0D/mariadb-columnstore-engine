@@ -784,6 +784,7 @@ new_plan:
                         std::string emsg("NOERROR");
                         messageqcpp::ByteStream emsgBs;
                         messageqcpp::ByteStream::quadbyte tflg = 0;
+                        std::cout << "make job list " << endl;
                         jl = joblist::JobListFactory::makeJobList(&csep, fRm, true, true);
                         // assign query stats
                         jl->queryStats(fStats);
@@ -849,6 +850,7 @@ new_plan:
                 else
                 {
                     usingTuples = false;
+                    cout << "make job list 2 " << endl;
                     jl = joblist::JobListFactory::makeJobList(&csep, fRm, false, true);
 
                     if (jl->status() == 0)
@@ -1012,6 +1014,7 @@ new_plan:
                     if (tableOID == 100)
                         msgHandler.start();
 
+                    cout << "line 1017 " << endl;
                     //...Loop serializing table bands projected for the tableOID
                     for (;;)
                     {
@@ -1019,6 +1022,7 @@ new_plan:
 
                         rowCount = jl->projectTable(tableOID, bs);
 
+                        cout << 1025 << endl;
                         msgHandler.stop();
 
                         if (jl->status())
@@ -1031,6 +1035,7 @@ new_plan:
                                 bs << errInfo->errorMsg(jl->status());
                         }
 
+                        cout << 1038 << endl;
                         try // @bug2244: try/catch around fIos.write() calls projecting rows
                         {
                             if (csep.traceFlags() & execplan::CalpontSelectExecutionPlan::TRACE_NO_ROWS3)
@@ -1089,6 +1094,7 @@ new_plan:
                             throw std::runtime_error( errMsg.str() );
                         }
 
+                        cout << "1097 " << endl;
                         totalRowCount += rowCount;
                         totalBytesSent += bs.length();
 
@@ -1111,9 +1117,10 @@ new_plan:
                     } // End of loop to project and serialize table bands for a table
                 } // End of loop to process tables
 
+                cout << "line 1117 " << endl;
                 // @bug 828
-                if (csep.traceOn())
-                    jl->graph(csep.sessionID());
+                //if (csep.traceOn())
+                jl->graph(csep.sessionID());
 
                 if (needDbProfEndStatementMsg)
                 {
