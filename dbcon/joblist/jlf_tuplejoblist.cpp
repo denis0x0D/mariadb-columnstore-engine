@@ -2428,33 +2428,7 @@ SP_JoinInfo joinToLargeTable(uint32_t large, TableInfoMap& tableInfoMap,
             cout << "RowGroup join result: " << endl << rg.toString() << endl << endl;
         }
 
-        if (false)
-        {
-            cout << "create filter " << endl;
-            auto* opEq = new Operator("=");
-            SOP sp(opEq);
-            auto* sc1 = new SimpleColumn("temp", "t2", "a");
-            auto* sc2 = new SimpleColumn("temp", "t3", "a");
-            sc1->inputIndex(3);
-            sc2->inputIndex(5);
-
-            SimpleFilter* sf = new SimpleFilter(sp, sc1, sc2);
-
-            cout << "filter created " << sf->toString() << endl;
-            auto* parseT = new ParseTree(sf);
-            boost::shared_ptr<ParseTree> sppt(parseT);
-            thjs->addFcnExpGroup2(sppt);
-
-            constructJoinedRowGroup(rg, link, prevLarge, root, tableSet,
-                                    tableInfoMap, jobInfo);
-
-            if (thjs->hasFcnExpGroup2())
-                thjs->setFE23Output(rg);
-            else
-                thjs->setOutputRowGroup(rg);
-
-            tableInfoMap[large].fRowGroup = rg;
-        }
+        
 
         // check if any cross-table expressions can be evaluated after the join
         JobStepVector readyExpSteps;
@@ -2610,20 +2584,6 @@ SP_JoinInfo joinToLargeTable(uint32_t large, TableInfoMap& tableInfoMap,
                 thjs->setJoinFilterInputRG(rg);
             }
 
-            /*
-            cout << "create filter " << endl;
-            auto* opEq = new Operator("=");
-            SOP sp(opEq);
-            SimpleFilter* sf =
-                new SimpleFilter(sp, new SimpleColumn("temp", "t2", "a"),
-                                 new SimpleColumn("temp", "t3", "a"));
-
-            cout << "filter created " << sf->toString() << endl;
-            auto* parseT = new ParseTree(sf);
-            boost::shared_ptr<ParseTree> sppt(parseT);
-            thjs->addFcnExpGroup2(sppt);
-            */
-
             // normal expression if any
             if (readyExpSteps.size() > 0)
             {
@@ -2634,20 +2594,33 @@ SP_JoinInfo joinToLargeTable(uint32_t large, TableInfoMap& tableInfoMap,
                 ParseTree* pt = NULL;
                 JobStepVector::iterator eit = readyExpSteps.begin();
 
+                auto* opEq = new PredicateOperator("=");
+                SOP sp(opEq);
+                auto* sc1 = new SimpleColumn("cs", "t2", "c");
+                auto* sc2 = new SimpleColumn("cs", "t3", "c");
+                sc1->inputIndex(3);
+                sc2->inputIndex(5);
+
+                SimpleFilter* sf = new SimpleFilter(sp, sc1, sc2);
+
+                cout << " created filter " << sf->toString() << endl;
+                auto* parseT = new ParseTree(sf);
+                //boost::shared_ptr<ParseTree> sppt(parseT);
+
+
                 for (; eit != readyExpSteps.end(); eit++)
                 {
                     // map the input column index
                     ExpressionStep* e = dynamic_cast<ExpressionStep*>(eit->get());
-                    cout << "exp " << e->toString() << endl;
                     e->updateInputIndex(keyToIndexMap, jobInfo);
-                    cout << "Filter 1 " << e->expressionFilter()->toString()
-                         << endl;
+                    cout << "original filter "
+                         << e->expressionFilter()->toString() << endl;
 
                     if (pt == NULL)
                     {
                         // first expression
                         pt = new ParseTree;
-                        pt->copyTree(*(e->expressionFilter()));
+                        pt->copyTree(*parseT); /**(e->expressionFilter()));*/
                     }
                     else
                     {
@@ -2677,14 +2650,12 @@ SP_JoinInfo joinToLargeTable(uint32_t large, TableInfoMap& tableInfoMap,
 
             tableInfoMap[large].fRowGroup = rg;
 
-            if (jobInfo.trace)
             {
                 cout << "RowGroup of " << tableInfoMap[large].fAlias << " after EXP G2: " << endl
                      << rg.toString() << endl << endl;
             }
         }
     }
-
 
     // Prepare the current table info to join with its large side.
     SP_JoinInfo joinInfo(new JoinInfo);

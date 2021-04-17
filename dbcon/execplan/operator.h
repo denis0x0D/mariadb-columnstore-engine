@@ -218,6 +218,7 @@ public:
     using TreeNode::getBoolVal;
     virtual bool getBoolVal(rowgroup::Row& row, bool& isNull, ParseTree* lop, ParseTree* rop)
     {
+        cout << "TreeNode::getBoolVal" << endl;
         return fResult.boolVal;
     }
     virtual bool getBoolVal(rowgroup::Row& row, bool& isNull, ReturnedColumn* lop, ReturnedColumn* rop)

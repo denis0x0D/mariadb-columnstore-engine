@@ -94,6 +94,7 @@ int Row::write(messageqcpp::ByteStream& bytestream)
 
 const DMLColumn* Row::get_ColumnAt( unsigned int index ) const
 {
+    std::cout << "Row::get_ColumnAt index " << index << std::endl;
     const DMLColumn* columnPtr = 0;
 
     if ( index < fColumnList.size() )

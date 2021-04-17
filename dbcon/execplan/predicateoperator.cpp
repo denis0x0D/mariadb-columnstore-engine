@@ -383,6 +383,7 @@ inline bool PredicateOperator::strTrimCompare(const std::string& op1, const std:
 
 bool PredicateOperator::getBoolVal(rowgroup::Row& row, bool& isNull, ReturnedColumn* lop, ReturnedColumn* rop)
 {
+    cout << "PredicateOperator::getBoolVal " << endl;
     // like operator. both sides are string.
     if (fOp == OP_LIKE || fOp == OP_NOTLIKE)
     {
@@ -406,6 +407,7 @@ bool PredicateOperator::getBoolVal(rowgroup::Row& row, bool& isNull, ReturnedCol
         case execplan::CalpontSystemCatalog::TINYINT:
         case execplan::CalpontSystemCatalog::SMALLINT:
         {
+            cout << "INTS" << endl;
             if (fOp == OP_ISNULL)
             {
                 lop->getIntVal(row, isNull);
@@ -426,11 +428,14 @@ bool PredicateOperator::getBoolVal(rowgroup::Row& row, bool& isNull, ReturnedCol
                 return false;
 
             int64_t val1 = lop->getIntVal(row, isNull);
+            cout << "left int val " << val1 << endl;
 
             if (isNull)
                 return false;
 
-            return numericCompare(val1,  rop->getIntVal(row, isNull)) && !isNull;
+            auto r = numericCompare(val1,  rop->getIntVal(row, isNull)) && !isNull;
+            cout << "numerciCompare result " << r << endl;
+            return r;
         }
 
         case execplan::CalpontSystemCatalog::UBIGINT:

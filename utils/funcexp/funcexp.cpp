@@ -258,6 +258,12 @@ void FuncExp::evaluate(rowgroup::Row& row, std::vector<execplan::SRCP>& expressi
 {
     bool isNull;
 
+    cout << "void FuncExp::evaluate(rowgroup::Row& row, "
+            "std::vector<execplan::SRCP>& expression) "
+         << endl;
+
+    cout << "expression.size " << expression.size() << endl;
+
     for (uint32_t i = 0; i < expression.size(); i++)
     {
         isNull = false;

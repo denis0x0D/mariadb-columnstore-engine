@@ -108,6 +108,7 @@ private:
 
 inline bool FuncExp::evaluate( rowgroup::Row& row, execplan::ParseTree* filters )
 {
+    cout << "FuncExp::evaluate( " << endl;
     bool isNull = false;
     return (filters->getBoolVal(row, isNull));
 }

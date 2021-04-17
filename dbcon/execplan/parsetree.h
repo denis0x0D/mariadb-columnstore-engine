@@ -270,6 +270,7 @@ public:
 
     inline bool getBoolVal(rowgroup::Row& row, bool& isNull)
     {
+        cout << "parseTree::getBoolVal" << endl;
         if (fLeft && fRight)
             return (reinterpret_cast<Operator*>(fData))->getBoolVal(row, isNull, fLeft, fRight);
         else

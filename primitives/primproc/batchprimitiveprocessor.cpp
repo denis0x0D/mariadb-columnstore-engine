@@ -1680,14 +1680,25 @@ void BatchPrimitiveProcessor::execute()
                         fe2Output.getRow(0, &fe2Out);
                         fe2Input->getRow(0, &fe2In);
 
-                        for (j = 0; j < joinedRG.getRowCount(); j++, fe2In.nextRow())
+                        cout << "joinedRG rowCount " << joinedRG.getRowCount()
+                             << endl;
+                        for (j = 0; j < joinedRG.getRowCount();
+                             j++, fe2In.nextRow())
+                        {
                             if (fe2->evaluate(&fe2In))
                             {
+                                cout << "evaluate not fails index " << j
+                                     << endl;
                                 applyMapping(fe2Mapping, fe2In, &fe2Out);
                                 fe2Out.setRid(fe2In.getRelRid());
                                 fe2Output.incRowCount();
                                 fe2Out.nextRow();
                             }
+                            else
+                            {
+                                cout << "evaluate fails index " << j << endl;
+                            }
+                        }
                     }
 
                     RowGroup& nextRG = (fe2 ? fe2Output : joinedRG);

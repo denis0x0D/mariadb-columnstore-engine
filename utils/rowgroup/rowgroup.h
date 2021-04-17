@@ -771,6 +771,7 @@ inline uint64_t Row::getUintField(uint32_t colIndex) const
 template<int len>
 inline int64_t Row::getIntField(uint32_t colIndex) const
 {
+    cout << "RowGroup getIntField " << endl;
     /* I think the compiler will optimize away the switch stmt */
     switch (len)
     {

@@ -540,6 +540,8 @@ void ExpressionStep::updateInputIndex(map<uint32_t, uint32_t>& indexMap, const J
                     key = jobInfo.keyInfo->dictKeyMap[key];
             }
 
+            cout << "input index key: " << key << " index: " << indexMap[key]
+                 << endl;
             sc->inputIndex(indexMap[key]);
 
             if (jobInfo.trace)

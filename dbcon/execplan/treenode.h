@@ -259,6 +259,7 @@ public:
     }
     virtual int64_t getIntVal(rowgroup::Row& row, bool& isNull)
     {
+        cout << "TreeNode::getIntVal " << endl;
         return fResult.intVal;
     }
     virtual uint64_t getUintVal(rowgroup::Row& row, bool& isNull)

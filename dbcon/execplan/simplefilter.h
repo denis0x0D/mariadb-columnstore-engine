@@ -262,7 +262,10 @@ private:
 
 inline bool SimpleFilter::getBoolVal(rowgroup::Row& row, bool& isNull)
 {
-    return (reinterpret_cast<PredicateOperator*>(fOp.get())->getBoolVal(row, isNull, fLhs, fRhs));
+    cout << "SimpleFilter::getBoolVal " << endl;
+    auto r = (reinterpret_cast<PredicateOperator*>(fOp.get())->getBoolVal(row, isNull, fLhs, fRhs));
+    cout << "SimpleFilter::getBoolVal result " << r << endl;
+    return r;
 }
 
 inline int64_t SimpleFilter::getIntVal(rowgroup::Row& row, bool& isNull)

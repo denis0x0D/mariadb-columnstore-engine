@@ -299,6 +299,7 @@ public:
 
     virtual int64_t getIntVal(rowgroup::Row& row, bool& isNull)
     {
+        cout << "SimpleColumn::GetIntVal " << endl;
         evaluate(row, isNull);
         return TreeNode::getIntVal();
     }
