@@ -285,6 +285,7 @@ void constructJoinedRowGroup(RowGroup& rg, set<uint32_t>& tableSet, TableInfoMap
                 // not joined
                 vector<uint32_t>& joinKeys = jobInfo.tableJoinMap[make_pair(*i, *j)].fLeftKeys;
 
+                // Join keys here.
                 for (vector<uint32_t>::iterator k = joinKeys.begin(); k != joinKeys.end(); k++)
                 {
                     if (find(keys.begin(), keys.end(), *k) == keys.end())
@@ -2297,13 +2298,17 @@ SP_JoinInfo joinToLargeTable(uint32_t large, TableInfoMap& tableInfoMap,
                 ostringstream smallKey, smallIndex;
                 string alias1 = jobInfo.keyInfo->keyName[getTableKey(jobInfo, keys1.front())];
                 smallKey << alias1 << "-";
+                cout << "key1 size " << keys1.size() << endl;
+                cout << "key2 size " << keys2.size() << endl;
 
                 for (k1 = keys1.begin(); k1 != keys1.end(); ++k1)
                 {
                     CalpontSystemCatalog::OID oid1 = jobInfo.keyInfo->tupleKeyVec[*k1].fId;
                     CalpontSystemCatalog::TableColName tcn1 = jobInfo.csc->colName(oid1);
-                    smallKey << "(" << tcn1.column << ":" << oid1 << ":" << *k1 << ")";
-                    smallIndex << " " << getKeyIndex(*k1,  info->fRowGroup);
+                    cout << "(" << tcn1.column << ":" << oid1 << ":" << *k1
+                         << ")" << endl;
+                    cout << " key index " << getKeyIndex(*k1, info->fRowGroup)
+                         << endl;
                     cout << "col name " << jobInfo.csc->colName(oid1) << endl;
                 }
 
@@ -2316,8 +2321,10 @@ SP_JoinInfo joinToLargeTable(uint32_t large, TableInfoMap& tableInfoMap,
                 {
                     CalpontSystemCatalog::OID oid2 = jobInfo.keyInfo->tupleKeyVec[*k2].fId;
                     CalpontSystemCatalog::TableColName tcn2 = jobInfo.csc->colName(oid2);
-                    largeKey << "(" << tcn2.column << ":" << oid2 << ":" << *k2 << ")";
-                    largeIndex << " " << getKeyIndex(*k2, largeSideRG);
+                    cout << "(" << tcn2.column << ":" << oid2 << ":" << *k2
+                         << ")";
+                    cout << " key index: " << getKeyIndex(*k2, largeSideRG)
+                         << endl;
                     cout << "col name " << jobInfo.csc->colName(oid2) << endl;
                 }
 
@@ -2640,8 +2647,8 @@ SP_JoinInfo joinToLargeTable(uint32_t large, TableInfoMap& tableInfoMap,
             }
 
             // update the fColsInExp2 and construct the output RG
-            updateExp2Cols(readyExpSteps, tableInfoMap, jobInfo);
-            constructJoinedRowGroup(rg, link, prevLarge, root, tableSet, tableInfoMap, jobInfo);
+            //updateExp2Cols(readyExpSteps, tableInfoMap, jobInfo);
+            //constructJoinedRowGroup(rg, link, prevLarge, root, tableSet, tableInfoMap, jobInfo);
 
             if (thjs->hasFcnExpGroup2())
                 thjs->setFE23Output(rg);
@@ -2675,6 +2682,26 @@ SP_JoinInfo joinToLargeTable(uint32_t large, TableInfoMap& tableInfoMap,
             throw runtime_error("Join step not found.");
 
         joinInfo->fJoinData = mit->second;
+    }
+
+    cout << "print table join map " << endl;
+    for (auto& e : jobInfo.tableJoinMap)
+    {
+        cout << "tables: " << e.first.first << " -> " << e.first.second
+             << endl;
+        cout << "left keys: " << endl;
+        for (auto key : e.second.fLeftKeys)
+        {
+            cout << key << ", ";
+        }
+        cout << endl;
+
+        cout << "right keys: " << endl;
+        for (auto key : e.second.fRightKeys)
+        {
+            cout << key << ", ";
+        }
+        cout << endl;
     }
 
     joinOrder.push_back(large);
