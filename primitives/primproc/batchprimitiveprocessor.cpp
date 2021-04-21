@@ -219,6 +219,7 @@ BatchPrimitiveProcessor::~BatchPrimitiveProcessor()
 
 void BatchPrimitiveProcessor::initBPP(ByteStream& bs)
 {
+    cout << "initBPP " << endl;
     uint32_t i;
     uint8_t tmp8;
     uint16_t tmp16;
@@ -571,11 +572,14 @@ void BatchPrimitiveProcessor::resetBPP(ByteStream& bs, const SP_UM_MUTEX& w,
 // the lock for each shared table and inserts them there.
 void BatchPrimitiveProcessor::addToJoiner(ByteStream& bs)
 {
-/*  to get wall-time of hash table construction
-    idbassert(processorThreads != 0);
-    if (firstCallTime.is_not_a_date_time())
-        firstCallTime = boost::posix_time::microsec_clock::universal_time();
-*/
+
+    cout << "addToJoiner " << endl;
+    /*  to get wall-time of hash table construction
+        idbassert(processorThreads != 0);
+        if (firstCallTime.is_not_a_date_time())
+            firstCallTime =
+       boost::posix_time::microsec_clock::universal_time();
+    */
 
     uint32_t count, i, joinerNum, tlIndex, startPos, bucket;
 #pragma pack(push,1)
@@ -604,6 +608,7 @@ void BatchPrimitiveProcessor::addToJoiner(ByteStream& bs)
         // properly-named functions for clarity.
         if (typelessJoin[joinerNum])
         {
+            cout << "typlessJoin " << endl;
             utils::VLArray<vector<pair<TypelessData, uint32_t> > > tmpBuckets(processorThreads);
             TypelessData tlLargeKey;
             uint8_t nullFlag;
@@ -663,6 +668,7 @@ void BatchPrimitiveProcessor::addToJoiner(ByteStream& bs)
         }
         else
         {
+            cout << "not typless joins " << endl;
             boost::shared_array<boost::shared_ptr<TJoiner> > tJoiner = tJoiners[joinerNum];
             uint64_t nullValue = joinNullValues[joinerNum];
             bool &l_doMatchNulls = doMatchNulls[joinerNum];
@@ -685,7 +691,9 @@ void BatchPrimitiveProcessor::addToJoiner(ByteStream& bs)
 
                 bool done = false, didSomeWork;
                 //uint loopCounter = 0, noWorkCounter = 0;
-                // this loop moves the elements from each vector into its corresponding hash table.
+                cout << "this loop moves the elements from each vector into "
+                        "its corresponding hash table. "
+                     << endl;
                 while (!done)
                 {
                     //++loopCounter;
@@ -721,7 +729,9 @@ void BatchPrimitiveProcessor::addToJoiner(ByteStream& bs)
             }
             else
             {
-                // this first loop hashes incoming values into vectors that parallel the hash tables.
+                cout << "this first loop hashes incoming values into vectors "
+                        "that parallel the hash tables. "
+                     << endl;
                 for (i = 0; i < count; ++i)
                 {
                     bucket = bucketPicker((char *) &arr[i].key, 8, bpSeed) & ptMask;
@@ -813,6 +823,7 @@ void BatchPrimitiveProcessor::doneSendingJoinerData()
 
 int BatchPrimitiveProcessor::endOfJoiner()
 {
+    cout << "end of joiner " << endl;
     /* Wait for all joiner elements to be added */
     uint32_t i;
     size_t currentSize;
@@ -871,6 +882,7 @@ int BatchPrimitiveProcessor::endOfJoiner()
 
 void BatchPrimitiveProcessor::initProcessor()
 {
+    cout << "initProcessor " << endl;
     uint32_t i, j;
 
     if (gotAbsRids || needStrValues || hasRowGroup)
@@ -1118,6 +1130,8 @@ void BatchPrimitiveProcessor::initProcessor()
 /* This version does a join on projected rows */
 void BatchPrimitiveProcessor::executeTupleJoin()
 {
+    cout << "BatchPrimitiveProcessor::executeTupleJoin() " << endl;
+
     uint32_t newRowCount = 0, i, j;
     vector<uint32_t> matches;
     uint64_t largeKey;
@@ -1156,7 +1170,7 @@ void BatchPrimitiveProcessor::executeTupleJoin()
 
             if (LIKELY(!typelessJoin[j]))
             {
-                //cout << "not typeless join\n";
+                cout << "not typeless join\n";
                 bool isNull;
                 uint32_t colIndex = largeSideKeyColumns[j];
 
@@ -1176,8 +1190,11 @@ void BatchPrimitiveProcessor::executeTupleJoin()
                  *    - if it's an anti-join and the key is either in the small side or it's NULL
                  */
 
-                if (((!found || isNull) && !(joinTypes[j] & (LARGEOUTER | ANTI))) ||
-                        ((joinTypes[j] & ANTI) && !joinerIsEmpty && ((isNull && (joinTypes[j] & MATCHNULLS)) || (found && !isNull))))
+                if (((!found || isNull) &&
+                     !(joinTypes[j] & (LARGEOUTER | ANTI))) ||
+                    ((joinTypes[j] & ANTI) && !joinerIsEmpty &&
+                     ((isNull && (joinTypes[j] & MATCHNULLS)) ||
+                      (found && !isNull))))
                 {
                     //cout << " - not in the result set\n";
                     break;
@@ -1188,7 +1205,7 @@ void BatchPrimitiveProcessor::executeTupleJoin()
             }
             else
             {
-                //cout << " typeless join\n";
+                cout << " typeless join\n";
                 // the null values are not sent by UM in typeless case.  null -> !found
                 tlLargeKey = makeTypelessKey(oldRow, tlLargeSideKeyColumns[j], tlKeyLengths[j],
                                              &tmpKeyAllocators[j]);
@@ -1235,6 +1252,8 @@ void BatchPrimitiveProcessor::executeTupleJoin()
 
         if (j == joinerCount)
         {
+
+            cout << "j == joinerCount " << endl;
             for (j = 0; j < joinerCount; j++)
             {
                 uint32_t matchCount;
@@ -2681,6 +2700,9 @@ void BatchPrimitiveProcessor::initGJRG()
 inline void BatchPrimitiveProcessor::getJoinResults(const Row& r, uint32_t jIndex, vector<uint32_t>& v)
 {
     uint bucket;
+    cout << "BatchPrimitiveProcessor::getJoinResults(const Row& r, uint32_t "
+            "jIndex, vector<uint32_t>& v) "
+         << endl;
 
     if (!typelessJoin[jIndex])
     {

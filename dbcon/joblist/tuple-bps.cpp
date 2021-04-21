@@ -109,6 +109,7 @@ struct TupleBPSPrimitive
     {
         try
         {
+            cout << "TuplePBSPrimitive " << endl;
             utils::setThreadName("BPSPrimitive");
             fBatchPrimitiveStep->sendPrimitiveMessages();
         }
@@ -925,6 +926,8 @@ void TupleBPS::serializeJoiner(uint32_t conn)
 
 void TupleBPS::prepCasualPartitioning()
 {
+    cout << "void TupleBPS::prepCasualPartitioning() " << endl;
+
     uint32_t i;
     int64_t min, max, seq;
     int128_t bigMin, bigMax;
@@ -1128,6 +1131,8 @@ void TupleBPS::reloadExtentLists()
 
 void TupleBPS::run()
 {
+
+    cout << "TypleBPS::run() " << endl;
     uint32_t i;
     boost::mutex::scoped_lock lk(jlLock);
     uint32_t retryCounter = 0;
@@ -1207,7 +1212,10 @@ void TupleBPS::run()
         BPPIsAllocated = true;
 
         if (doJoin && tjoiners[0]->inPM())
+        {
+            cout << "serilize joiner " << endl;
             serializeJoiner();
+        }
 
         prepCasualPartitioning();
         startPrimitiveThread();

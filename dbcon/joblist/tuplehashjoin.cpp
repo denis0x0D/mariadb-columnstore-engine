@@ -146,6 +146,9 @@ TupleHashJoinStep::~TupleHashJoinStep()
 
 void TupleHashJoinStep::run()
 {
+
+    cout << "void TupleHashJoinStep::run() " << endl;
+
     uint32_t i;
 
     boost::mutex::scoped_lock lk(jlLock);
@@ -168,7 +171,7 @@ void TupleHashJoinStep::run()
 
     for (i = 0; i < fInputJobStepAssociation.outSize(); i++)
     {
-        cout << "job step accos number " << i << endl;
+        cout << "job step associataiont number " << i << endl;
         if (i != largeSideIndex)
         {
             smallDLs.push_back(fInputJobStepAssociation.outAt(i)->rowGroupDL());
@@ -186,7 +189,9 @@ void TupleHashJoinStep::run()
     }
 
     joiners.resize(smallDLs.size());
+    cout << "start invoke HJRunner " << endl;
     mainRunner = jobstepThreadPool.invoke(HJRunner(this));
+    cout << "end invoke HJRunner " << endl;
 }
 
 void TupleHashJoinStep::join()
@@ -258,6 +263,7 @@ void TupleHashJoinStep::trackMem(uint index)
 
 void TupleHashJoinStep::startSmallRunners(uint index)
 {
+    cout << "startSmallRunners " << endl;
     utils::setThreadName("HJSStartSmall");
     string extendedInfo;
     JoinType jt;
@@ -266,6 +272,7 @@ void TupleHashJoinStep::startSmallRunners(uint index)
     jt = joinTypes[index];
     extendedInfo += toString();
 
+    cout << "tupleJoiner " << endl;
     if (typelessJoin[index])
     {
         joiner.reset(new TupleJoiner(smallRGs[index], largeRG, smallSideKeys[index],
@@ -304,7 +311,9 @@ void TupleHashJoinStep::startSmallRunners(uint index)
     // vector of rows.  The rest will be started when converted to UM mode.
     if (joiner->inUM())
         for (int i = 0; i < numCores; i++)
-            jobs[i] = jobstepThreadPool.invoke([this, i, index, &jobs] { this->smallRunnerFcn(index, i, jobs); });
+            jobs[i] = jobstepThreadPool.invoke([this, i, index, &jobs] {
+                this->smallRunnerFcn(index, i, jobs);
+            });
     else
         jobs[0] = jobstepThreadPool.invoke([this, index, &jobs] { this->smallRunnerFcn(index, 0, jobs); });
 
@@ -618,6 +627,7 @@ void TupleHashJoinStep::djsReaderFcn(int index)
 
 void TupleHashJoinStep::hjRunner()
 {
+    cout << "hjRunner " << endl;
     uint32_t i;
     std::vector<uint64_t> smallRunners; // thread handles from thread pool
 

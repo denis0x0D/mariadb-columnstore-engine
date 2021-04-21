@@ -1000,6 +1000,10 @@ string BatchPrimitiveProcessorJL::toString() const
 
 void BatchPrimitiveProcessorJL::createBPP(ByteStream& bs) const
 {
+
+    cout << "void BatchPrimitiveProcessorJL::createBPP(ByteStream& bs) const "
+         << endl;
+
     ISMPacketHeader ism;
     uint32_t i;
     uint16_t flags = 0;
@@ -1401,7 +1405,7 @@ bool BatchPrimitiveProcessorJL::nextTupleJoinerMsg(ByteStream& bs)
     if (!moreMsgs)
     {
         /* last message */
-// 		cout << "sending last joiner msg\n";
+        cout << "sending last joiner msg\n";
         ism.Command = BATCH_PRIMITIVE_END_JOINER;
         bs.load((uint8_t*) &ism, sizeof(ism));
         bs << (messageqcpp::ByteStream::quadbyte)sessionID;

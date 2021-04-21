@@ -55,6 +55,7 @@ TupleJoiner::TupleJoiner(
 {
     uint i;
 
+    cout << "TupleJoiner " << endl;
     getBucketCount();
     m_bucketLocks.reset(new boost::mutex[bucketCount]);
 
@@ -143,6 +144,8 @@ TupleJoiner::TupleJoiner(
         bSignedUnsignedJoin = true;
 
     nullValueForJoinColumn = smallNullRow.getSignedNullValue(smallJoinColumn);
+
+    cout << "Tuple joiners end" << endl;
 }
 
 TupleJoiner::TupleJoiner(
@@ -160,6 +163,7 @@ TupleJoiner::TupleJoiner(
 {
     uint i;
 
+    cout << "TupleJoiner " << endl;
     getBucketCount();
 
     _pool.reset(new boost::shared_ptr<PoolAllocator>[bucketCount]);
@@ -493,9 +497,15 @@ void TupleJoiner::insert(Row& r, bool zeroTheRid)
                 smallKey = (int64_t) r.getUintField(smallKeyColumns[0]);
             uint bucket = bucketPicker((char *) &smallKey, sizeof(smallKey), bpSeed) & bucketMask;
             if (UNLIKELY(smallKey == nullValueForJoinColumn))
+            {
+                cout << "Null value for join column " << endl;
                 sth[bucket]->insert(pair<int64_t, Row::Pointer>(getJoinNullValue(), r.getPointer()));
+            }
             else
-                sth[bucket]->insert(pair<int64_t, Row::Pointer>(smallKey, r.getPointer()));
+            {
+                sth[bucket]->insert(
+                    pair<int64_t, Row::Pointer>(smallKey, r.getPointer()));
+            }
         }
     }
     else
@@ -606,6 +616,7 @@ void TupleJoiner::match(rowgroup::Row& largeSideRow, uint32_t largeRowIndex, uin
         }
         else
         {
+            cout << "match " << endl;
             int64_t largeKey = largeSideRow.getIntField(largeKeyColumns[0]);
             uint bucket = bucketPicker((char *) &largeKey, sizeof(largeKey), bpSeed) & bucketMask;
             auto range = sth[bucket]->equal_range(largeKey);
@@ -700,6 +711,7 @@ void TupleJoiner::match(rowgroup::Row& largeSideRow, uint32_t largeRowIndex, uin
 void TupleJoiner::doneInserting()
 {
 
+    cout << "doneInserting " << endl;
     // a minor textual cleanup
 #ifdef TJ_DEBUG
 #define CHECKSIZE \

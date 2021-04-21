@@ -3329,8 +3329,8 @@ void joinTablesInOrder(uint32_t largest, JobStepVector& joinSteps, TableInfoMap&
             // normal expression if any
             if (readyExpSteps.size() > 0)
             {
-                cout << "readyExpSteps " << endl;
-                cout << "normal expression " << endl;
+                cout << "has filter " << endl;
+                cout << "!!!! normal expression " << endl;
                 // add the expression steps in where clause can be solved by this join to bps
                 ParseTree* pt = NULL;
                 JobStepVector::iterator eit = readyExpSteps.begin();
@@ -3389,6 +3389,10 @@ void joinTablesInOrder(uint32_t largest, JobStepVector& joinSteps, TableInfoMap&
                     boost::shared_ptr<ParseTree> sppt(pt);
                     thjs->addFcnExpGroup2(sppt);
                 }
+            }
+            else
+            {
+                cout << "no filters " << endl;
             }
 
             // update the fColsInExp2 and construct the output RG

@@ -1911,6 +1911,7 @@ SJLP makeJobList_(
         JobStepVector projectSteps;
         DeliveredTableMap deliverySteps;
 
+        cout << "makeJobSteps " << endl;
         if (csep->unionVec().size() == 0)
             makeJobSteps(csep, jobInfo, querySteps, projectSteps, deliverySteps);
         else

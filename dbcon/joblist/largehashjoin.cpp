@@ -128,12 +128,15 @@ const uint64_t ZDL_VEC_SIZE = 4096;
 struct HJRunner
 {
     HJRunner(LargeHashJoin* p) : joiner(p)
-    {}
+    {
+        cout << "HJRunner constructor " << endl;
+    }
     LargeHashJoin* joiner;
     void operator()()
     {
         try
         {
+            cout << "HJRunner::doHasJoin " << endl;
             joiner->doHashJoin();
         }
         catch (std::exception& e)
@@ -540,6 +543,7 @@ void LargeHashJoin::errorLogging(const string& msg) const
 
 void LargeHashJoin::doHashJoin()
 {
+    cout << "largeHashJoin::doHashJoin " << endl;
     string val;
 
     idbassert(fInputJobStepAssociation.outSize() >= 2);
@@ -569,6 +573,7 @@ void LargeHashJoin::doHashJoin()
     else
     {
 
+        cout << "preparing join " << endl;
         string currentAction("preparing join");
 
         try
@@ -693,6 +698,7 @@ void LargeHashJoin::doHashJoin()
 
     } // (fInputJobStepAssociation.status() == 0)
 
+    cout << "finished join " << endl;
     if (fTableOID2 >= 3000)
     {
         time_t finTime = time(0);

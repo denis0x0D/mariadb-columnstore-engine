@@ -448,7 +448,10 @@ private:
 
     struct HJRunner
     {
-        HJRunner(TupleHashJoinStep* hj) : HJ(hj) { }
+        HJRunner(TupleHashJoinStep* hj) : HJ(hj)
+        {
+            cout << "HJRunner " << endl;
+        }
         void operator()()
         {
             utils::setThreadName("HJSBigSide");

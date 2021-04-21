@@ -1435,6 +1435,7 @@ struct BPPHandler
 
     void createBPP(ByteStream& bs)
     {
+        cout << "createBPP Prim Server" << endl;
         uint32_t i;
         uint32_t key, initMsgsLeft;
         SBPP bpp;
