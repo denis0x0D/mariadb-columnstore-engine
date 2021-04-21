@@ -162,11 +162,13 @@ void TupleHashJoinStep::run()
               (fOutputJobStepAssociation.outSize() == 0 && fDelivery));
     idbassert(fInputJobStepAssociation.outSize() >= 2);
 
+    cout << "tuple hash join::run() " << endl;
     largeDL = fInputJobStepAssociation.outAt(largeSideIndex)->rowGroupDL();
     largeIt = largeDL->getIterator();
 
     for (i = 0; i < fInputJobStepAssociation.outSize(); i++)
     {
+        cout << "job step accos number " << i << endl;
         if (i != largeSideIndex)
         {
             smallDLs.push_back(fInputJobStepAssociation.outAt(i)->rowGroupDL());

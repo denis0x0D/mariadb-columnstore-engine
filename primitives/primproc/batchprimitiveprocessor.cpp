@@ -1375,6 +1375,9 @@ void BatchPrimitiveProcessor::execute(StopWatch* stopwatch)
 void BatchPrimitiveProcessor::execute()
 #endif
 {
+
+    cout << "void BatchPrimitiveProcessor::execute() " << endl;
+
     uint32_t i, j;
 
     try

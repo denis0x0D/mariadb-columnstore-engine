@@ -178,6 +178,7 @@ DataListImpl<container_t, element_t>& DataListImpl<container_t, element_t>::oper
 template<typename container_t, typename element_t>
 uint64_t DataListImpl<container_t, element_t>::getIterator()
 {
+    cout << "getIteratro():numConsumers " << numConsumers << endl;
     if (itIndex >= numConsumers)
     {
         std::ostringstream oss;

@@ -184,6 +184,7 @@ struct StringHJRunner
 template<typename e_t>
 void* HashJoinByBucket_thr(void* arg)
 {
+    cout << "HashJoinByBucker " << endl;
     typename HashJoin<e_t>::thrParams_t* params = (typename HashJoin<e_t>::thrParams_t*)arg;
     HashJoin<e_t>* hjPtr = params->hjptr;
     const uint32_t thrIdx = params->thrIdx;
@@ -625,7 +626,9 @@ void LargeHashJoin::doHashJoin()
             BDLWrapper< ElementType > setA(Ap);
             BDLWrapper< ElementType > setB(Bp);
 
-            hj = new HashJoin<ElementType>(setA, setB, resultA, resultB, fJoinType, &dlTimes, fOutputJobStepAssociation.statusPtr(), sessionId(), &die);
+            hj = new HashJoin<ElementType>(
+                setA, setB, resultA, resultB, fJoinType, &dlTimes,
+                fOutputJobStepAssociation.statusPtr(), sessionId(), &die);
 
             if (fTableOID2 >= 3000)
             {
@@ -643,6 +646,8 @@ void LargeHashJoin::doHashJoin()
                 dlTimes.setFirstReadTime();
                 dlTimes.setEndOfInputTime( dlTimes.FirstReadTime() );
             }
+
+            cout << "perform join " << endl;
 
             hj->performJoin(numThreads);
 
@@ -688,7 +693,7 @@ void LargeHashJoin::doHashJoin()
 
     } // (fInputJobStepAssociation.status() == 0)
 
-    if (fTableOID2 >= 3000 && traceOn())
+    if (fTableOID2 >= 3000)
     {
         time_t finTime = time(0);
         char finTimeString[50];

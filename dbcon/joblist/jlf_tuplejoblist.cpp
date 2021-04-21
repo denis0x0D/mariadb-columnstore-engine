@@ -2815,6 +2815,7 @@ void joinTablesInOrder(uint32_t largest, JobStepVector& joinSteps, TableInfoMap&
         thjs = dynamic_cast<TupleHashJoinStep*>(spjs.get());
         TupleBPS* tbps = dynamic_cast<TupleBPS*>(spjs.get());
 
+        cout << "set priority for i " << *i << endl;
         if (*i == largest)
             joinStepMap[*i] = make_pair(spjs, 2);
         else if (tbps || thjs)
@@ -2829,6 +2830,8 @@ void joinTablesInOrder(uint32_t largest, JobStepVector& joinSteps, TableInfoMap&
     vector<JoinOrderData> joins;
     getJoinOrder(joins, joinSteps, jobInfo);
 
+    cout << "joins sorted " << endl;
+    //    jobInfo.trace = true;
     // join the steps
     int64_t lastJoinId = -1;
     uint32_t large = (uint32_t) - 1;
@@ -2839,8 +2842,12 @@ void joinTablesInOrder(uint32_t largest, JobStepVector& joinSteps, TableInfoMap&
     uint32_t lastJoin = joins.size() - 1;
     bool isSemijoin = true;
 
+    cout << "join size: " << joins.size() << endl;
+
     for (uint64_t js = 0; js < joins.size(); js++)
     {
+
+        cout << "join number: " << js << endl;
         set<uint32_t> smallSideTid;
 
         if (joins[js].fJoinId != 0)
@@ -3322,10 +3329,24 @@ void joinTablesInOrder(uint32_t largest, JobStepVector& joinSteps, TableInfoMap&
             // normal expression if any
             if (readyExpSteps.size() > 0)
             {
+                cout << "readyExpSteps " << endl;
+                cout << "normal expression " << endl;
                 // add the expression steps in where clause can be solved by this join to bps
                 ParseTree* pt = NULL;
                 JobStepVector::iterator eit = readyExpSteps.begin();
 
+                auto* opEq = new PredicateOperator("=");
+                SOP sp(opEq);
+                auto* sc1 = new SimpleColumn("cs", "t2", "c");
+                auto* sc2 = new SimpleColumn("cs", "t3", "c");
+                sc1->inputIndex(3);
+                sc2->inputIndex(5);
+
+                SimpleFilter* sf = new SimpleFilter(sp, sc1, sc2);
+
+                cout << " created filter " << sf->toString() << endl;
+                auto* parseT = new ParseTree(sf);
+ 
                 for (; eit != readyExpSteps.end(); eit++)
                 {
                     // map the input column index
@@ -3349,7 +3370,7 @@ void joinTablesInOrder(uint32_t largest, JobStepVector& joinSteps, TableInfoMap&
                     {
                         // first expression
                         pt = new ParseTree;
-                        pt->copyTree(*(e->expressionFilter()));
+                        pt->copyTree(*parseT); /**(e->expressionFilter())); */
                     }
                     else
                     {
@@ -3436,6 +3457,7 @@ void joinTablesInOrder(uint32_t largest, JobStepVector& joinSteps, TableInfoMap&
         for (uint64_t i = 0; i < h; i++)
             std::swap(joinOrder[i], joinOrder[e - i]);
     }
+    cout << "end join tables in order " << endl;
 }
 
 
@@ -4083,7 +4105,7 @@ void associateTupleJobSteps(JobStepVector& querySteps, JobStepVector& projectSte
     deliverySteps.clear();
 
     // Check if the tables and joins can be used to construct a spanning tree.
-    spanningTreeCheck(tableInfoMap, joinSteps, jobInfo);
+    //    spanningTreeCheck(tableInfoMap, joinSteps, jobInfo);
 
     // 1. combine job steps for each table
     TableInfoMap::iterator mit;

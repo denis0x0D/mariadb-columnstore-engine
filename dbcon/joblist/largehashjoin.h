@@ -342,7 +342,8 @@ HashJoin<element_t>::~HashJoin()
 template <typename element_t>
 int HashJoin<element_t>::performThreadedJoin(const uint32_t numThreads)
 {
-    //boost::thread thrArr[numThreads];
+    cout << "perform join " << endl;
+    // boost::thread thrArr[numThreads];
     boost::scoped_array<boost::thread> thrArr(new boost::thread[numThreads]);
     //typename HashJoin<element_t>::thrParams_t params[numThreads];
     boost::scoped_array<typename HashJoin<element_t>::thrParams_t> params(new typename HashJoin<element_t>::thrParams_t[numThreads]);
