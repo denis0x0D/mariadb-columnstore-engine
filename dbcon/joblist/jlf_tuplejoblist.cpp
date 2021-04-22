@@ -1607,8 +1607,126 @@ bool addFunctionJoin(vector<uint32_t>& joinedTables, JobStepVector& joinSteps,
     return added;
 }
 
+void collectEdges(std::map<uint32_t, JoinTableNode>& joinGraph, const JobInfo& jobInfo,
+                  TableInfoMap& tableInfoMap, uint32_t currentTable, uint32_t prevTable,
+                  JoinEdges& joinEdges)
+{
+    // Mark as visited.
+    joinGraph[currentTable].fVisited = true;
 
-void spanningTreeCheck(TableInfoMap& tableInfoMap, JobStepVector joinSteps, JobInfo& jobInfo)
+    // For each sub node.
+    for (auto sub : joinGraph[currentTable].fAdjacentList)
+    {
+        // If visited and not a back edge consider as a cycle.
+        if (joinGraph[sub].fVisited && prevTable != sub)
+        {
+            const auto edgeForward = make_pair(currentTable, sub);
+            const auto edgeBackward = make_pair(sub, currentTable);
+
+            // If not present add the edge.
+            if (!joinEdges.count(edgeForward) && !joinEdges.count(edgeBackward))
+            {
+                joinEdges.insert(edgeForward);
+
+                auto tableInfoIt = jobInfo.tableJoinMap.find(edgeForward);
+
+                auto& firstExp2 = tableInfoMap[edgeForward.first].fColsInExp2;
+                firstExp2.insert(firstExp2.end(), tableInfoIt->second.fLeftKeys.begin(),
+                                 tableInfoIt->second.fLeftKeys.end());
+                auto& secondExp2 = tableInfoMap[edgeForward.second].fColsInExp2;
+                secondExp2.insert(secondExp2.end(), tableInfoIt->second.fRightKeys.begin(),
+                                  tableInfoIt->second.fRightKeys.end());
+            }
+
+            if (jobInfo.trace)
+            {
+                cout << "Edge: " << currentTable << " -> " << sub << " creates a loop " << endl;
+                auto it = jobInfo.tableJoinMap.find(edgeForward);
+
+                cout << "Left keys: " << endl;
+                for (auto key : it->second.fLeftKeys)
+                {
+                    cout << "Key: " << key
+                         << " column oid: " << jobInfo.keyInfo->tupleKeyVec[key].fId << endl;
+                }
+
+                cout << "Right keys: " << endl;
+                for (auto key : it->second.fRightKeys)
+                {
+                    cout << "Key: " << key
+                         << " column oid: " << jobInfo.keyInfo->tupleKeyVec[key].fId << endl;
+                }
+            }
+        }
+        // If not visited - go there.
+        else if (joinGraph[sub].fVisited == false)
+        {
+            if (jobInfo.trace)
+            {
+                cout << currentTable << " -> " << sub << endl;
+            }
+            collectEdges(joinGraph, jobInfo, tableInfoMap, sub, currentTable, joinEdges);
+        }
+    }
+}
+
+void removeFromList(uint32_t tableId, std::vector<uint32_t>& adjList)
+{
+    auto tableIdIt = std::find(adjList.begin(), adjList.end(), tableId);
+    if (tableIdIt != adjList.end())
+        adjList.erase(tableIdIt);
+}
+
+void breakCycles(TableInfoMap& infoMap, const JobInfo& jobInfo, JoinEdges& joinEdges)
+{
+    for (auto& edge : joinEdges)
+    {
+        if (jobInfo.trace)
+        {
+            cout << "Remove " << edge.first << " from adjlist of " << edge.second << endl;
+            cout << "Remove " << edge.second << " from adjlist of " << edge.first << endl;
+        }
+
+        removeFromList(edge.first, infoMap[edge.second].fAdjacentList);
+        removeFromList(edge.second, infoMap[edge.first].fAdjacentList);
+    }
+}
+
+void initJoinGraph(const TableInfoMap& infoMap, std::map<uint32_t, JoinTableNode>& joinGraph)
+{
+    for (const auto& infoPair : infoMap)
+    {
+        JoinTableNode joinTableNode;
+        // Copy adjacent list.
+        joinTableNode.fAdjacentList = infoPair.second.fAdjacentList;
+        joinGraph[infoPair.first] = joinTableNode;
+    }
+}
+
+void collectEdgesAndBreakCycles(TableInfoMap& infoMap, const JobInfo& jobInfo, JoinEdges& joinEdges)
+{
+    std::map<uint32_t, JoinTableNode> joinGraph;
+    initJoinGraph(infoMap, joinGraph);
+
+    collectEdges(joinGraph, jobInfo, infoMap,
+                 /*currentTable=*/joinGraph.begin()->first,
+                 /*prevTable=*/-1, joinEdges);
+
+    if (jobInfo.trace)
+    {
+        cout << "Collected edges:" << endl;
+        for (auto& edge : joinEdges)
+        {
+            cout << edge.first << " -> " << edge.second << endl;
+        }
+    }
+
+    // Finally break the cycles by removing collected edges from the graph.
+    breakCycles(infoMap, jobInfo, joinEdges);
+}
+
+void spanningTreeCheck(TableInfoMap& tableInfoMap, JobStepVector joinSteps,
+                       JobInfo& jobInfo, JoinEdges& joinEdges)
 {
     bool spanningTree = true;
     unsigned errcode = 0;
@@ -1863,11 +1981,20 @@ void spanningTreeCheck(TableInfoMap& tableInfoMap, JobStepVector joinSteps, JobI
 
         }
 
-        // 2. no cycles
+        // 2. Cycles.
         if (spanningTree && (nodeSet.size() - pathSet.size() / 2 != 1))
         {
-            errcode = ERR_CIRCULAR_JOIN;
-            spanningTree = false;
+            // 2.1. Inner.
+            if (jobInfo.outerOnTable.size() == 0)
+            {
+                collectEdgesAndBreakCycles(tableInfoMap, jobInfo, joinEdges);
+            }
+            // 2.2. Outer.
+            else
+            {
+                errcode = ERR_CIRCULAR_JOIN;
+                spanningTree = false;
+            }
         }
     }
 
@@ -1877,7 +2004,6 @@ void spanningTreeCheck(TableInfoMap& tableInfoMap, JobStepVector joinSteps, JobI
         throw IDBExcept(IDBErrorInfo::instance()->errorMsg(errcode, args), errcode);
     }
 }
-
 
 void outjoinPredicateAdjust(TableInfoMap& tableInfoMap, JobInfo& jobInfo)
 {
@@ -2120,9 +2246,184 @@ string joinTypeToString(const JoinType& joinType)
     return ret;
 }
 
+using PostJoinFilterKeys =
+    std::vector<std::pair<std::pair<uint32_t, uint32_t>, std::vector<uint32_t>>>;
+
+void matchEdgesInRowGroup(const JobInfo& jobInfo, const RowGroup& rg, JoinEdges& joinEdges,
+                          PostJoinFilterKeys& postJoinFilterKeys)
+{
+    if (jobInfo.trace)
+    {
+        cout << "\nTrying to match the RowGroup to apply a post join "
+                "filter\n";
+    }
+
+    std::vector<pair<uint32_t, uint32_t>> takenEdges;
+    for (const auto& edge : joinEdges)
+    {
+        auto it = jobInfo.tableJoinMap.find(edge);
+        std::vector<uint32_t> currentKeys;
+        // Combine keys.
+        currentKeys = it->second.fLeftKeys;
+        currentKeys.insert(currentKeys.end(), it->second.fRightKeys.begin(),
+                           it->second.fRightKeys.end());
+
+        // Rowgroup keys.
+        const auto& rgKeys = rg.getKeys();
+        uint32_t keyIndex = 0;
+        uint32_t keySize = currentKeys.size();
+
+        // Search for keys in result rowgroup.
+        while (keyIndex < keySize)
+        {
+            auto keyIt = std::find(rgKeys.begin(), rgKeys.end(), currentKeys[keyIndex]);
+            // We have to match all keys.
+            if (keyIt == rgKeys.end())
+                break;
+
+            ++keyIndex;
+        }
+
+        if (jobInfo.trace)
+        {
+            if (keyIndex == keySize)
+                cout << "\nRowGroup matched\n";
+            else
+                cout << "\nRowGroup not matched\n";
+
+            cout << rg.toString() << endl;
+            cout << "For the following keys:\n";
+            for (auto key : currentKeys)
+                cout << key << " ";
+            cout << endl;
+        }
+
+        // All keys matched in current Rowgroup.
+        if (keyIndex == keySize)
+        {
+            // Add macthed keys.
+            postJoinFilterKeys.push_back(make_pair(edge, currentKeys));
+            takenEdges.push_back(edge);
+        }
+    }
+
+    // Erase taken edges.
+    for (const auto& edge : takenEdges)
+    {
+        auto it = joinEdges.find(edge);
+        joinEdges.erase(it);
+    }
+}
+
+void createPostJoinFilters(const JobInfo& jobInfo, TableInfoMap& tableInfoMap,
+                           const PostJoinFilterKeys& postJoinFilterKeys,
+                           const std::map<uint32_t, uint32_t>& keyToIndexMap,
+                           std::vector<SimpleFilter*>& postJoinFilters)
+{
+    for (const auto& p : postJoinFilterKeys)
+    {
+        const auto& edge = p.first;
+        const auto& keys = p.second;
+
+        if (jobInfo.trace)
+            cout << "\nRestore a cycle as a post join filter\n";
+
+        uint32_t leftKeyIndex = 0;
+        uint32_t rightKeyIndex = keys.size() / 2;
+        // Left end is where right starts.
+        const uint32_t leftSize = rightKeyIndex;
+
+        while (leftKeyIndex < leftSize)
+        {
+            // Keys.
+            auto leftKey = keys[leftKeyIndex];
+            auto rightKey = keys[rightKeyIndex];
+
+            // Column oids.
+            auto leftOid = jobInfo.keyInfo->tupleKeyVec[leftKey].fId;
+            auto rightOid = jobInfo.keyInfo->tupleKeyVec[rightKey].fId;
+
+            // Column types.
+            auto leftType = jobInfo.keyInfo->colType[keys[leftKeyIndex]];
+            auto rightType = jobInfo.keyInfo->colType[keys[rightKeyIndex]];
+
+            CalpontSystemCatalog::TableColName leftTableColName;
+            CalpontSystemCatalog::TableColName rightTableColName;
+
+            // Check for the dict.
+            if (joblist::isDictCol(leftType) && joblist::isDictCol(rightType))
+            {
+                leftTableColName = jobInfo.csc->dictColName(leftOid);
+                rightTableColName = jobInfo.csc->dictColName(rightOid);
+            }
+            else
+            {
+                leftTableColName = jobInfo.csc->colName(leftOid);
+                rightTableColName = jobInfo.csc->colName(rightOid);
+            }
+
+            // Create columns.
+            auto* leftColumn = new SimpleColumn(leftTableColName.schema, leftTableColName.table,
+                                                leftTableColName.column);
+
+            auto* rightColumn = new SimpleColumn(rightTableColName.schema, rightTableColName.table,
+                                                 rightTableColName.column);
+
+            // Set column indices in the result Rowgroup.
+            auto leftIndexIt = keyToIndexMap.find(leftKey);
+            if (leftIndexIt != keyToIndexMap.end())
+            {
+                leftColumn->inputIndex(leftIndexIt->second);
+            }
+            else
+            {
+                std::cerr << "Cannot find key: " << leftKey << " in the IndexMap " << std::endl;
+                throw logic_error("Post join filter: Cannot find key in the index map");
+            }
+
+            auto rightIndexIt = keyToIndexMap.find(rightKey);
+            if (rightIndexIt != keyToIndexMap.end())
+            {
+                rightColumn->inputIndex(rightIndexIt->second);
+            }
+            else
+            {
+                std::cerr << "Cannot find key: " << rightKey << " in the IndexMap " << std::endl;
+                throw logic_error("Post join filter: Cannot find key in the index map");
+            }
+
+            // Create an eq operator.
+            SOP eqPredicateOperator(new PredicateOperator("="));
+
+            // Set a type.
+            eqPredicateOperator->setOpType(leftColumn->resultType(), rightColumn->resultType());
+
+            // Create a post join filter.
+            SimpleFilter* joinFilter =
+                new SimpleFilter(eqPredicateOperator, leftColumn, rightColumn);
+
+            postJoinFilters.push_back(joinFilter);
+
+            // Erase keys from fColsInExp2.
+            auto& firstExp2 = tableInfoMap[edge.first].fColsInExp2;
+            auto keyItInExp2 = std::find(firstExp2.begin(), firstExp2.end(), leftKey);
+            if (keyItInExp2 != firstExp2.end())
+                firstExp2.erase(keyItInExp2);
+
+            auto& secondExp2 = tableInfoMap[edge.second].fColsInExp2;
+            keyItInExp2 = std::find(secondExp2.begin(), secondExp2.end(), rightKey);
+            if (keyItInExp2 != secondExp2.end())
+                secondExp2.erase(keyItInExp2);
+
+            ++leftKeyIndex;
+            ++rightKeyIndex;
+        }
+    }
+}
 
 SP_JoinInfo joinToLargeTable(uint32_t large, TableInfoMap& tableInfoMap,
-                             JobInfo& jobInfo, vector<uint32_t>& joinOrder)
+                             JobInfo& jobInfo, vector<uint32_t>& joinOrder,
+                             JoinEdges& joinEdges)
 {
     vector<SP_JoinInfo> smallSides;
     tableInfoMap[large].fVisited = true;
@@ -2140,7 +2441,8 @@ SP_JoinInfo joinToLargeTable(uint32_t large, TableInfoMap& tableInfoMap,
         if (tableInfoMap[*i].fVisited == false)
         {
             cId = *i;
-            smallSides.push_back(joinToLargeTable(*i, tableInfoMap, jobInfo, joinOrder));
+            smallSides.push_back(joinToLargeTable(*i, tableInfoMap, jobInfo,
+                                                  joinOrder, joinEdges));
 
             tableSet.insert(tableInfoMap[*i].fJoinedTables.begin(),
                             tableInfoMap[*i].fJoinedTables.end());
@@ -2415,33 +2717,39 @@ SP_JoinInfo joinToLargeTable(uint32_t large, TableInfoMap& tableInfoMap,
                                  jobInfo.outerJoinExpressions.begin(),
                                  jobInfo.outerJoinExpressions.end());
 
-        // check additional compares for semi-join
-        if (readyExpSteps.size() > 0)
+        PostJoinFilterKeys postJoinFilterKeys;
+        if (joinEdges.size())
+            matchEdgesInRowGroup(jobInfo, rg, joinEdges, postJoinFilterKeys);
+
+        // check additional compares for semi-join.
+        if (readyExpSteps.size() > 0 || postJoinFilterKeys.size() > 0)
         {
-            map<uint32_t, uint32_t> keyToIndexMap; // map keys to the indices in the RG
-
-            for (uint64_t i = 0; i < rg.getKeys().size(); ++i)
-                keyToIndexMap.insert(make_pair(rg.getKeys()[i], i));
-
             // tables have additional comparisons
-            map<uint32_t, int> correlateTables;          // index in thjs
-            map<uint32_t, ParseTree*> correlateCompare;  // expression
+            map<uint32_t, int> correlateTables;         // index in thjs
+            map<uint32_t, ParseTree*> correlateCompare; // expression
+            // map keys to the indices in the RG
+            map<uint32_t, uint32_t> keyToIndexMap;
 
-            for (size_t i = 0; i != smallSides.size(); i++)
+            const auto& rowGroupKeys = rg.getKeys();
+            for (uint64_t i = 0, e = rowGroupKeys.size(); i < e; ++i)
+                keyToIndexMap.insert(make_pair(rowGroupKeys[i], i));
+
+            if (readyExpSteps.size() > 0)
             {
-                if ((jointypes[i] & SEMI) || (jointypes[i] & ANTI) || (jointypes[i] & SCALAR))
+                for (size_t i = 0; i != smallSides.size(); i++)
                 {
-                    uint32_t  tid = getTableKey(jobInfo,
-                                                smallSides[i]->fTableOid,
-                                                smallSides[i]->fAlias,
-                                                smallSides[i]->fSchema,
-                                                smallSides[i]->fView);
-                    correlateTables[tid] = i;
-                    correlateCompare[tid] = NULL;
+                    if ((jointypes[i] & SEMI) || (jointypes[i] & ANTI) || (jointypes[i] & SCALAR))
+                    {
+                        uint32_t tid =
+                            getTableKey(jobInfo, smallSides[i]->fTableOid, smallSides[i]->fAlias,
+                                        smallSides[i]->fSchema, smallSides[i]->fView);
+                        correlateTables[tid] = i;
+                        correlateCompare[tid] = NULL;
+                    }
                 }
             }
 
-            if (correlateTables.size() > 0)
+            if (readyExpSteps.size() > 0 && correlateTables.size() > 0)
             {
                 // separate additional compare for each table pair
                 JobStepVector::iterator eit = readyExpSteps.begin();
@@ -2517,11 +2825,39 @@ SP_JoinInfo joinToLargeTable(uint32_t large, TableInfoMap& tableInfoMap,
                 thjs->setJoinFilterInputRG(rg);
             }
 
-            // normal expression if any
-            if (readyExpSteps.size() > 0)
+            // normal expression if any.
+            if (readyExpSteps.size() > 0 || postJoinFilterKeys.size() > 0)
             {
                 // add the expression steps in where clause can be solved by this join to bps
                 ParseTree* pt = NULL;
+
+                std::vector<SimpleFilter*> postJoinFilters;
+                createPostJoinFilters(jobInfo, tableInfoMap, postJoinFilterKeys, keyToIndexMap,
+                                      postJoinFilters);
+
+                if (jobInfo.trace)
+                {
+                    cout << "Filters created " << endl;
+                    for (auto* filter : postJoinFilters)
+                        cout << filter->toString() << endl;
+                }
+
+                for (auto* joinFilter : postJoinFilters)
+                {
+                    if (pt == nullptr)
+                    {
+                        pt = new ParseTree(joinFilter);
+                    }
+                    else
+                    {
+                        ParseTree* left = pt;
+                        ParseTree* right = new ParseTree(joinFilter);
+                        pt = new ParseTree(new LogicOperator("and"));
+                        pt->left(left);
+                        pt->right(right);
+                    }
+                }
+
                 JobStepVector::iterator eit = readyExpSteps.begin();
 
                 for (; eit != readyExpSteps.end(); eit++)
@@ -2548,8 +2884,11 @@ SP_JoinInfo joinToLargeTable(uint32_t large, TableInfoMap& tableInfoMap,
                     }
                 }
 
-                boost::shared_ptr<ParseTree> sppt(pt);
-                thjs->addFcnExpGroup2(sppt);
+                if (pt)
+                {
+                    boost::shared_ptr<ParseTree> sppt(pt);
+                    thjs->addFcnExpGroup2(sppt);
+                }
             }
 
             // update the fColsInExp2 and construct the output RG
@@ -2664,8 +3003,9 @@ inline void updateJoinSides(uint32_t small, uint32_t large, map<uint32_t, SP_Joi
 
 // For OUTER JOIN bug @2422/2633/3437/3759, join table based on join order.
 // The largest table will be always the streaming table, other tables are always on small side.
-void joinTablesInOrder(uint32_t largest, JobStepVector& joinSteps, TableInfoMap& tableInfoMap,
-                       JobInfo& jobInfo, vector<uint32_t>& joinOrder)
+void joinTablesInOrder(uint32_t largest, JobStepVector& joinSteps,
+                       TableInfoMap& tableInfoMap, JobInfo& jobInfo,
+                       vector<uint32_t>& joinOrder, JoinEdges& joinEdges)
 {
     // populate the tableInfo for join
     map<uint32_t, SP_JoinInfo> joinInfoMap;          // <table, JoinInfo>
@@ -3108,8 +3448,9 @@ void joinTablesInOrder(uint32_t largest, JobStepVector& joinSteps, TableInfoMap&
         {
             map<uint32_t, uint32_t> keyToIndexMap; // map keys to the indices in the RG
 
-            for (uint64_t i = 0; i < rg.getKeys().size(); ++i)
-                keyToIndexMap.insert(make_pair(rg.getKeys()[i], i));
+            const auto& rowGroupKeys = rg.getKeys();
+            for (uint64_t i = 0, e = rowGroupKeys.size(); i < e; ++i)
+                keyToIndexMap.insert(make_pair(rowGroupKeys[i], i));
 
             // tables have additional comparisons
             map<uint32_t, int> correlateTables;          // index in thjs
@@ -3324,16 +3665,20 @@ void joinTablesInOrder(uint32_t largest, JobStepVector& joinSteps, TableInfoMap&
     }
 }
 
-
-inline void joinTables(JobStepVector& joinSteps, TableInfoMap& tableInfoMap, JobInfo& jobInfo,
-                       vector<uint32_t>& joinOrder, const bool overrideLargeSideEstimate)
+inline void joinTables(JobStepVector& joinSteps, TableInfoMap& tableInfoMap,
+                       JobInfo& jobInfo, vector<uint32_t>& joinOrder,
+                       JoinEdges& joinEdges,
+                       const bool overrideLargeSideEstimate)
 {
-    uint32_t largestTable = getLargestTable(jobInfo, tableInfoMap, overrideLargeSideEstimate);
+    uint32_t largestTable =
+        getLargestTable(jobInfo, tableInfoMap, overrideLargeSideEstimate);
 
     if (jobInfo.outerOnTable.size() == 0)
-        joinToLargeTable(largestTable, tableInfoMap, jobInfo, joinOrder);
+        joinToLargeTable(largestTable, tableInfoMap, jobInfo, joinOrder,
+                         joinEdges);
     else
-        joinTablesInOrder(largestTable, joinSteps, tableInfoMap, jobInfo, joinOrder);
+        joinTablesInOrder(largestTable, joinSteps, tableInfoMap, jobInfo,
+                          joinOrder, joinEdges);
 }
 
 
@@ -3346,8 +3691,6 @@ void makeNoTableJobStep(JobStepVector& querySteps, JobStepVector& projectSteps,
     querySteps.push_back(TupleConstantStep::addConstantStep(jobInfo));
     deliverySteps[CNX_VTABLE_ID] = querySteps.back();
 }
-
-
 }
 
 
@@ -3968,8 +4311,9 @@ void associateTupleJobSteps(JobStepVector& querySteps, JobStepVector& projectSte
     projectSteps.clear();
     deliverySteps.clear();
 
+    JoinEdges joinEdges;
     // Check if the tables and joins can be used to construct a spanning tree.
-    spanningTreeCheck(tableInfoMap, joinSteps, jobInfo);
+    spanningTreeCheck(tableInfoMap, joinSteps, jobInfo, joinEdges);
 
     // 1. combine job steps for each table
     TableInfoMap::iterator mit;
@@ -3980,7 +4324,8 @@ void associateTupleJobSteps(JobStepVector& querySteps, JobStepVector& projectSte
 
     // 2. join the combined steps together to form the spanning tree
     vector<uint32_t> joinOrder;
-    joinTables(joinSteps, tableInfoMap, jobInfo, joinOrder, overrideLargeSideEstimate);
+    joinTables(joinSteps, tableInfoMap, jobInfo, joinOrder, joinEdges,
+               overrideLargeSideEstimate);
 
     // 3. put the steps together
     for (vector<uint32_t>::iterator i = joinOrder.begin(); i != joinOrder.end(); ++i)
