@@ -1606,8 +1606,121 @@ bool addFunctionJoin(vector<uint32_t>& joinedTables, JobStepVector& joinSteps,
     return added;
 }
 
+void collectCycles(TableInfoMap& infoMap, const JobInfo& jobInfo,
+                   uint32_t currentTable, uint32_t prevTable,
+                   set<pair<uint32_t, uint32_t>>& collectedCycles)
+{
+    infoMap[currentTable].fVisited = true;
 
-void spanningTreeCheck(TableInfoMap& tableInfoMap, JobStepVector joinSteps, JobInfo& jobInfo)
+    for (auto sub : infoMap[currentTable].fAdjacentList)
+    {
+        if (infoMap[sub].fVisited && prevTable != sub)
+        {
+            collectedCycles.insert(make_pair(currentTable, sub));
+            //       collectedCycles.insert(make_pair(sub, currentTable));
+
+            if (jobInfo.trace)
+            {
+                cout << "cycle: " << currentTable << " -> " << sub << endl;
+                auto it =
+                    jobInfo.tableJoinMap.find(make_pair(currentTable, sub));
+
+                cout << "left keys: " << endl;
+                for (auto key : it->second.fLeftKeys)
+                {
+                    cout << "key: " << key << " column oid: "
+                         << jobInfo.keyInfo->tupleKeyVec[key].fId << endl;
+                }
+                cout << endl;
+
+                cout << "right keys: " << endl;
+                for (auto key : it->second.fRightKeys)
+                {
+                    cout << "key: " << key << " column oid: "
+                         << jobInfo.keyInfo->tupleKeyVec[key].fId << endl;
+                }
+                cout << endl;
+            }
+        }
+        else if (infoMap[sub].fVisited == false)
+        {
+            if (jobInfo.trace)
+            {
+                cout << currentTable << " -> " << sub << endl;
+            }
+            collectCycles(infoMap, jobInfo, sub, currentTable,
+                          collectedCycles);
+        }
+    }
+}
+
+void removeFromList(uint32_t tableId, vector<uint32_t>& adjList)
+{
+    auto tableIdIt = std::find(adjList.begin(), adjList.end(), tableId);
+
+    if (tableIdIt != adjList.end())
+    {
+        adjList.erase(tableIdIt);
+    }
+}
+
+void brakeCycles(TableInfoMap& infoMap, const JobInfo& jobInfo,
+                 set<pair<uint32_t, uint32_t>>& collectedCycles)
+{
+    for (auto& cyclePair : collectedCycles)
+    {
+        if (jobInfo.trace)
+        {
+            cout << "remove " << cyclePair.first << " from adjlist of "
+                 << cyclePair.second << endl;
+        }
+        removeFromList(cyclePair.first,
+                       infoMap[cyclePair.second].fAdjacentList);
+        if (jobInfo.trace)
+        {
+            cout << "remove " << cyclePair.second << " from adjlist of "
+                 << cyclePair.first << endl;
+        }
+        removeFromList(cyclePair.second,
+                       infoMap[cyclePair.first].fAdjacentList);
+    }
+}
+
+void collectAndBrakeCycles(TableInfoMap& infoMap, const JobInfo& jobInfo,
+                           uint32_t rootTable)
+{
+    set<pair<uint32_t, uint32_t>> collectedCycles;
+    // FIXME: Copy of `TableInfoMap` is a huge memory consumption, just use
+    // more smaller struct.
+    auto copyInfoMap = infoMap;
+    collectCycles(copyInfoMap, jobInfo, rootTable, /*prev table*/ -1,
+                  collectedCycles);
+
+    if (jobInfo.trace)
+    {
+        cout << "collected cycles:  " << endl;
+        for (auto& p : collectedCycles)
+        {
+            cout << p.first << " -> " << p.second << endl;
+        }
+    }
+
+    brakeCycles(infoMap, jobInfo, collectedCycles);
+
+    if (jobInfo.trace)
+    {
+        set<pair<uint32_t, uint32_t>> cycles;
+        auto im = infoMap;
+        collectCycles(im, jobInfo, im.begin()->first, -1, cycles);
+        for (auto& p : cycles)
+        {
+            cout << p.first << " -> " << p.second << endl;
+        }
+    }
+}
+
+void spanningTreeCheck(TableInfoMap& tableInfoMap, JobStepVector joinSteps,
+                       JobInfo& jobInfo, uint32_t rootTable)
 {
     bool spanningTree = true;
     unsigned errcode = 0;
@@ -1865,8 +1978,15 @@ void spanningTreeCheck(TableInfoMap& tableInfoMap, JobStepVector joinSteps, JobI
         // 2. no cycles
         if (spanningTree && (nodeSet.size() - pathSet.size() / 2 != 1))
         {
-            errcode = ERR_CIRCULAR_JOIN;
-            spanningTree = false;
+            if (jobInfo.outerOnTable.size() == 0)
+            {
+                collectAndBrakeCycles(tableInfoMap, jobInfo, rootTable);
+            }
+            else
+            {
+                errcode = ERR_CIRCULAR_JOIN;
+                spanningTree = false;
+            }
         }
     }
 
@@ -1876,7 +1996,6 @@ void spanningTreeCheck(TableInfoMap& tableInfoMap, JobStepVector joinSteps, JobI
         throw IDBExcept(IDBErrorInfo::instance()->errorMsg(errcode, args), errcode);
     }
 }
-
 
 void outjoinPredicateAdjust(TableInfoMap& tableInfoMap, JobInfo& jobInfo)
 {
@@ -2123,6 +2242,10 @@ string joinTypeToString(const JoinType& joinType)
 SP_JoinInfo joinToLargeTable(uint32_t large, TableInfoMap& tableInfoMap,
                              JobInfo& jobInfo, vector<uint32_t>& joinOrder)
 {
+    if (jobInfo.trace)
+    {
+        cout << "joinToLargeTable" << endl;
+    }
     vector<SP_JoinInfo> smallSides;
     tableInfoMap[large].fVisited = true;
     tableInfoMap[large].fJoinedTables.insert(large);
@@ -2145,6 +2268,8 @@ SP_JoinInfo joinToLargeTable(uint32_t large, TableInfoMap& tableInfoMap,
                             tableInfoMap[*i].fJoinedTables.end());
         }
     }
+
+    cout << "small side size " << smallSides.size() << endl;
 
     // Join with its small sides, if not a leaf node.
     if (smallSides.size() > 0)
@@ -2251,6 +2376,30 @@ SP_JoinInfo joinToLargeTable(uint32_t large, TableInfoMap& tableInfoMap,
             smallKeyIndices.push_back(smallIndices);
             largeKeyIndices.push_back(largeIndices);
 
+            cout << "TRACE begin" << endl;
+
+            cout << "out for typleKeyVec " << endl;
+            for (auto u : jobInfo.keyInfo->tupleKeyVec)
+            {
+                cout << "Table name: " << u.fTable << endl;
+                cout << "Oid: " << u.fId << endl;
+            }
+
+            cout << "keys1 " << endl;
+            for (k1 = keys1.begin(); k1 != keys1.end(); ++k1)
+            {
+                CalpontSystemCatalog::OID oid1 =
+                    jobInfo.keyInfo->tupleKeyVec[*k1].fId;
+                CalpontSystemCatalog::TableColName tcn1 =
+                    jobInfo.csc->colName(oid1);
+                cout << "(" << tcn1.column << ":" << oid1 << ":" << *k1 << ")"
+                     << endl;
+                cout << "key: " << *k1
+                     << " index: " << getKeyIndex(*k1, info->fRowGroup)
+                     << endl;
+            }
+            cout << "TRACE END " << endl;
+
             if (jobInfo.trace)
             {
                 // small side column
@@ -2291,7 +2440,7 @@ SP_JoinInfo joinToLargeTable(uint32_t large, TableInfoMap& tableInfoMap,
             }
         }
 
-        if (jobInfo.trace)
+//        if (jobInfo.trace)
         {
             ostringstream oss;
             oss << "large side RG" << endl << largeSideRG.toString() << endl;
@@ -2359,7 +2508,7 @@ SP_JoinInfo joinToLargeTable(uint32_t large, TableInfoMap& tableInfoMap,
         thjs->setOutputRowGroup(rg);
         tableInfoMap[large].fRowGroup = rg;
 
-        if (jobInfo.trace)
+//        if (jobInfo.trace)
         {
             cout << boldStart  << "\n====== join info ======\n" << boldStop;
 
@@ -2666,6 +2815,11 @@ inline void updateJoinSides(uint32_t small, uint32_t large, map<uint32_t, SP_Joi
 void joinTablesInOrder(uint32_t largest, JobStepVector& joinSteps, TableInfoMap& tableInfoMap,
                        JobInfo& jobInfo, vector<uint32_t>& joinOrder)
 {
+
+    if (jobInfo.trace)
+    {
+        cout << "joinTablesInOrder" << endl;
+    }
     // populate the tableInfo for join
     map<uint32_t, SP_JoinInfo> joinInfoMap;          // <table, JoinInfo>
 
@@ -3028,13 +3182,14 @@ void joinTablesInOrder(uint32_t largest, JobStepVector& joinSteps, TableInfoMap&
         tableInfoMap[large].fRowGroup = rg;
         tableSet.insert(large);
 
-        if (jobInfo.trace)
+//        if (jobInfo.trace)
         {
             cout << boldStart  << "\n====== join info ======\n" << boldStop;
 
             for (vector<string>::iterator t = traces.begin(); t != traces.end(); ++t)
                 cout << *t;
 
+            cout << "check the keys " << endl;
             cout << "RowGroup join result: " << endl << rg.toString() << endl << endl;
         }
 
@@ -3107,8 +3262,9 @@ void joinTablesInOrder(uint32_t largest, JobStepVector& joinSteps, TableInfoMap&
         {
             map<uint32_t, uint32_t> keyToIndexMap; // map keys to the indices in the RG
 
-            for (uint64_t i = 0; i < rg.getKeys().size(); ++i)
-                keyToIndexMap.insert(make_pair(rg.getKeys()[i], i));
+            const auto& rowGroupKeys = rg.getKeys();
+            for (uint64_t i = 0, e = rowGroupKeys.size(); i < e; ++i)
+                keyToIndexMap.insert(make_pair(rowGroupKeys[i], i));
 
             // tables have additional comparisons
             map<uint32_t, int> correlateTables;          // index in thjs
@@ -3323,12 +3479,10 @@ void joinTablesInOrder(uint32_t largest, JobStepVector& joinSteps, TableInfoMap&
     }
 }
 
-
-inline void joinTables(JobStepVector& joinSteps, TableInfoMap& tableInfoMap, JobInfo& jobInfo,
-                       vector<uint32_t>& joinOrder, const bool overrideLargeSideEstimate)
+inline void joinTables(JobStepVector& joinSteps, TableInfoMap& tableInfoMap,
+                       JobInfo& jobInfo, vector<uint32_t>& joinOrder,
+                       uint32_t largestTable)
 {
-    uint32_t largestTable = getLargestTable(jobInfo, tableInfoMap, overrideLargeSideEstimate);
-
     if (jobInfo.outerOnTable.size() == 0)
         joinToLargeTable(largestTable, tableInfoMap, jobInfo, joinOrder);
     else
@@ -3345,8 +3499,6 @@ void makeNoTableJobStep(JobStepVector& querySteps, JobStepVector& projectSteps,
     querySteps.push_back(TupleConstantStep::addConstantStep(jobInfo));
     deliverySteps[CNX_VTABLE_ID] = querySteps.back();
 }
-
-
 }
 
 
@@ -3967,8 +4119,11 @@ void associateTupleJobSteps(JobStepVector& querySteps, JobStepVector& projectSte
     projectSteps.clear();
     deliverySteps.clear();
 
+    uint32_t largestTable =
+        getLargestTable(jobInfo, tableInfoMap, overrideLargeSideEstimate);
+
     // Check if the tables and joins can be used to construct a spanning tree.
-    spanningTreeCheck(tableInfoMap, joinSteps, jobInfo);
+    spanningTreeCheck(tableInfoMap, joinSteps, jobInfo, largestTable);
 
     // 1. combine job steps for each table
     TableInfoMap::iterator mit;
@@ -3979,7 +4134,7 @@ void associateTupleJobSteps(JobStepVector& querySteps, JobStepVector& projectSte
 
     // 2. join the combined steps together to form the spanning tree
     vector<uint32_t> joinOrder;
-    joinTables(joinSteps, tableInfoMap, jobInfo, joinOrder, overrideLargeSideEstimate);
+    joinTables(joinSteps, tableInfoMap, jobInfo, joinOrder, largestTable);
 
     // 3. put the steps together
     for (vector<uint32_t>::iterator i = joinOrder.begin(); i != joinOrder.end(); ++i)
