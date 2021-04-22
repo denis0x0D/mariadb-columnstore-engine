@@ -1606,6 +1606,43 @@ bool addFunctionJoin(vector<uint32_t>& joinedTables, JobStepVector& joinSteps,
     return added;
 }
 
+void walk(TableInfoMap& map, JobInfo& jobInfo, uint32_t currentTable,
+          uint32_t prevTable)
+{
+    map[currentTable].fVisited = true;
+    for (auto sub : map[currentTable].fAdjacentList)
+    {
+        cout << currentTable << " -> " << sub << endl;
+        if (map[sub].fVisited && prevTable != sub)
+        { 
+            cout << "cycle: " << currentTable << " -> " << sub << endl;
+            auto it = jobInfo.tableJoinMap.find(make_pair(currentTable, sub));
+
+            cout << "left keys: " << endl;
+            for (auto key : it->second.fLeftKeys)
+            {
+                cout << key << ", " ;
+            }
+            cout << endl;
+
+            cout << "right keys: " << endl;
+            for (auto key : it->second.fRightKeys)
+            {
+                cout << key << ", " ;
+            }
+            cout << endl;
+        }
+        else if (map[sub].fVisited == false)
+        {
+            walk(map, sub, currentTable);
+        }
+    }
+}
+
+void brakeCycles(TableInfoMap infoMap, JobInfo& jobInfo)
+{
+    walk(infoMap, jobInfo, copyInfoMap.begin()->first, -1);
+}
 
 void spanningTreeCheck(TableInfoMap& tableInfoMap, JobStepVector joinSteps, JobInfo& jobInfo)
 {
@@ -1865,6 +1902,7 @@ void spanningTreeCheck(TableInfoMap& tableInfoMap, JobStepVector joinSteps, JobI
         // 2. no cycles
         if (spanningTree && (nodeSet.size() - pathSet.size() / 2 != 1))
         {
+            brakeCycles(tableInfoMap);
             errcode = ERR_CIRCULAR_JOIN;
             spanningTree = false;
         }
