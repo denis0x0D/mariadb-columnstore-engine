@@ -1606,51 +1606,115 @@ bool addFunctionJoin(vector<uint32_t>& joinedTables, JobStepVector& joinSteps,
     return added;
 }
 
-void walk(TableInfoMap& map, JobInfo& jobInfo, uint32_t currentTable,
-          uint32_t prevTable, set<pair<uint32_t, uint32_t>>& cycles)
+void collectCycles(TableInfoMap& infoMap, const JobInfo& jobInfo,
+                   uint32_t currentTable, uint32_t prevTable,
+                   set<pair<uint32_t, uint32_t>>& collectedCycles)
 {
-    map[currentTable].fVisited = true;
-    for (auto sub : map[currentTable].fAdjacentList)
+    infoMap[currentTable].fVisited = true;
+
+    for (auto sub : infoMap[currentTable].fAdjacentList)
     {
-        cout << currentTable << " -> " << sub << endl;
-        if (map[sub].fVisited && prevTable != sub)
-        { 
-            cout << "cycle: " << currentTable << " -> " << sub << endl;
-            auto it = jobInfo.tableJoinMap.find(make_pair(currentTable, sub));
-            cycles.insert(make_pair(currentTable, sub));
-            cycles.insert(make_pair(sub, currentTable));
-
-            cout << "left keys: " << endl;
-            for (auto key : it->second.fLeftKeys)
-            {
-                cout << "key: " << key << " key to oid: "
-                     << jobInfo.keyInfo->tupleKeyVec[key].fId << endl;
-            }
-            cout << endl;
-
-            cout << "right keys: " << endl;
-            for (auto key : it->second.fRightKeys)
-            {
-                cout << "key: " << key << " key to oid: "
-                     << jobInfo.keyInfo->tupleKeyVec[key].fId << endl;
-            }
-            cout << endl;
-        }
-        else if (map[sub].fVisited == false)
+        if (infoMap[sub].fVisited && prevTable != sub)
         {
-            walk(map, jobInfo, sub, currentTable, cycles);
+            collectedCycles.insert(make_pair(currentTable, sub));
+            //       collectedCycles.insert(make_pair(sub, currentTable));
+
+            if (jobInfo.trace)
+            {
+                cout << "cycle: " << currentTable << " -> " << sub << endl;
+                auto it =
+                    jobInfo.tableJoinMap.find(make_pair(currentTable, sub));
+
+                cout << "left keys: " << endl;
+                for (auto key : it->second.fLeftKeys)
+                {
+                    cout << "key: " << key << " column oid: "
+                         << jobInfo.keyInfo->tupleKeyVec[key].fId << endl;
+                }
+                cout << endl;
+
+                cout << "right keys: " << endl;
+                for (auto key : it->second.fRightKeys)
+                {
+                    cout << "key: " << key << " column oid: "
+                         << jobInfo.keyInfo->tupleKeyVec[key].fId << endl;
+                }
+                cout << endl;
+            }
+        }
+        else if (infoMap[sub].fVisited == false)
+        {
+            if (jobInfo.trace)
+            {
+                cout << currentTable << " -> " << sub << endl;
+            }
+            collectCycles(infoMap, jobInfo, sub, currentTable,
+                          collectedCycles);
         }
     }
 }
 
-void brakeCycles(TableInfoMap infoMap, JobInfo& jobInfo)
+void removeFromList(uint32_t tableId, vector<uint32_t>& adjList)
 {
-    set<pair<uint32_t, uint32_t>> cycles;
-    walk(infoMap, jobInfo, infoMap.begin()->first, -1, cycles);
-    cout << "After walk  " << endl;
-    for (auto& p : cycles)
+    auto tableIdIt = std::find(adjList.begin(), adjList.end(), tableId);
+
+    if (tableIdIt != adjList.end())
     {
-        cout << p.first << " -> " << p.second << endl;
+        adjList.erase(tableIdIt);
+    }
+}
+
+void brakeCycles(TableInfoMap& infoMap, const JobInfo& jobInfo,
+                 set<pair<uint32_t, uint32_t>>& collectedCycles)
+{
+    for (auto& cyclePair : collectedCycles)
+    {
+        if (jobInfo.trace)
+        {
+            cout << "remove " << cyclePair.first << " from adjlist of "
+                 << cyclePair.second << endl;
+        }
+        removeFromList(cyclePair.first,
+                       infoMap[cyclePair.second].fAdjacentList);
+        if (jobInfo.trace)
+        {
+            cout << "remove " << cyclePair.second << " from adjlist of "
+                 << cyclePair.first << endl;
+        }
+        removeFromList(cyclePair.second,
+                       infoMap[cyclePair.first].fAdjacentList);
+    }
+}
+
+void collectAndBrakeCycles(TableInfoMap& infoMap, const JobInfo& jobInfo)
+{
+    set<pair<uint32_t, uint32_t>> collectedCycles;
+    // FIXME: Copy of `TableInfoMap` is a huge memory consumption, just use
+    // more smaller struct.
+    auto copyInfoMap = infoMap;
+    collectCycles(copyInfoMap, jobInfo, copyInfoMap.begin()->first, -1,
+                  collectedCycles);
+
+    if (jobInfo.trace)
+    {
+        cout << "collected cycles:  " << endl;
+        for (auto& p : collectedCycles)
+        {
+            cout << p.first << " -> " << p.second << endl;
+        }
+    }
+
+    brakeCycles(infoMap, jobInfo, collectedCycles);
+
+    if (jobInfo.trace)
+    {
+        set<pair<uint32_t, uint32_t>> cycles;
+        auto im = infoMap;
+        collectCycles(im, jobInfo, im.begin()->first, -1, cycles);
+        for (auto& p : cycles)
+        {
+            cout << p.first << " -> " << p.second << endl;
+        }
     }
 }
 
@@ -1912,9 +1976,15 @@ void spanningTreeCheck(TableInfoMap& tableInfoMap, JobStepVector joinSteps, JobI
         // 2. no cycles
         if (spanningTree && (nodeSet.size() - pathSet.size() / 2 != 1))
         {
-            brakeCycles(tableInfoMap, jobInfo);
-            errcode = ERR_CIRCULAR_JOIN;
-            spanningTree = false;
+            if (jobInfo.outerOnTable.size() == 0)
+            {
+                collectAndBrakeCycles(tableInfoMap, jobInfo);
+            }
+            else
+            {
+                errcode = ERR_CIRCULAR_JOIN;
+                spanningTree = false;
+            }
         }
     }
 
@@ -3420,8 +3490,6 @@ void makeNoTableJobStep(JobStepVector& querySteps, JobStepVector& projectSteps,
     querySteps.push_back(TupleConstantStep::addConstantStep(jobInfo));
     deliverySteps[CNX_VTABLE_ID] = querySteps.back();
 }
-
-
 }
 
 
