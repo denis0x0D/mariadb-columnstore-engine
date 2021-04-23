@@ -1616,8 +1616,14 @@ void collectCycles(TableInfoMap& infoMap, const JobInfo& jobInfo,
     {
         if (infoMap[sub].fVisited && prevTable != sub)
         {
-            collectedCycles.insert(make_pair(currentTable, sub));
-            //       collectedCycles.insert(make_pair(sub, currentTable));
+            const auto edgeForward = make_pair(currentTable, sub);
+            const auto edgeBackward = make_pair(sub, currentTable);
+
+            if (!collectedCycles.count(edgeForward) &&
+                !collectedCycles.count(edgeBackward))
+            {
+                collectedCycles.insert(edgeForward);
+            }
 
             if (jobInfo.trace)
             {
