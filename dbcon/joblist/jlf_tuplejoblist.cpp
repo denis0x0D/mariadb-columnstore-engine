@@ -2744,18 +2744,44 @@ SP_JoinInfo joinToLargeTable(uint32_t large, TableInfoMap& tableInfoMap,
 
                     while (leftKeyIndex < leftSize)
                     {
-                        // Left column.
-                        const auto& leftTableColName = jobInfo.csc->colName(
+                        // Left column oid.
+                        auto leftOid =
                             jobInfo.keyInfo->tupleKeyVec[keys[leftKeyIndex]]
-                                .fId);
+                                .fId;
+                        // Right column oid.
+                        auto rightOid =
+                            jobInfo.keyInfo->tupleKeyVec[keys[rightKeyIndex]]
+                                .fId;
+
+                        // Column types.
+                        auto leftType =
+                            jobInfo.keyInfo->colType[keys[leftKeyIndex]];
+                        auto rightType =
+                            jobInfo.keyInfo->colType[keys[rightKeyIndex]];
+
+                        CalpontSystemCatalog::TableColName leftTableColName;
+                        CalpontSystemCatalog::TableColName rightTableColName;
+
+                        // Check for the dict.
+                        if (joblist::isDictCol(leftType) &&
+                            joblist::isDictCol(rightType))
+                        {
+                            leftTableColName =
+                                jobInfo.csc->dictColName(leftOid);
+                            rightTableColName =
+                                jobInfo.csc->dictColName(rightOid);
+                        }
+                        else
+                        {
+                            leftTableColName = jobInfo.csc->colName(leftOid);
+                            rightTableColName = jobInfo.csc->colName(rightOid);
+                        }
+
+                        // Create columns.
                         auto* leftColumn = new SimpleColumn(
                             leftTableColName.schema, leftTableColName.table,
                             leftTableColName.column);
 
-                        // Right column.
-                        const auto& rightTableColName = jobInfo.csc->colName(
-                            jobInfo.keyInfo->tupleKeyVec[keys[rightKeyIndex]]
-                                .fId);
                         auto* rightColumn = new SimpleColumn(
                             rightTableColName.schema, rightTableColName.table,
                             rightTableColName.column);
