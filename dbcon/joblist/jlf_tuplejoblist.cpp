@@ -2573,7 +2573,7 @@ SP_JoinInfo joinToLargeTable(uint32_t large, TableInfoMap& tableInfoMap,
         {
             if (jobInfo.trace) 
             {
-                cout << "\nmatching the RowGroup to restore the join cycle\n";
+                cout << "\nMatching the RowGroup to restore the join cycle\n";
             }
 
             for (auto& edge : joinEdges)
@@ -2608,7 +2608,7 @@ SP_JoinInfo joinToLargeTable(uint32_t large, TableInfoMap& tableInfoMap,
                        cout << "\nRowGroup not matched\n";
 
                    cout << rg.toString() << endl;
-                   cout << " for the following keys: ";
+                   cout << "For the following keys:\n";
                    for (auto key : keys)
                        cout << key << " ";
                    cout << endl;
@@ -2619,25 +2619,23 @@ SP_JoinInfo joinToLargeTable(uint32_t large, TableInfoMap& tableInfoMap,
                     break;
                 else
                     keys.clear();
-
             }
         }
 
         // check additional compares for semi-join.
         if (readyExpSteps.size() > 0 || keys.size() > 0)
         {
-
             // tables have additional comparisons
             map<uint32_t, int> correlateTables;         // index in thjs
             map<uint32_t, ParseTree*> correlateCompare; // expression
             // map keys to the indices in the RG
             map<uint32_t, uint32_t> keyToIndexMap;
 
+            for (uint64_t i = 0; i < rg.getKeys().size(); ++i)
+                keyToIndexMap.insert(make_pair(rg.getKeys()[i], i));
+
             if (readyExpSteps.size() > 0)
             {
-                for (uint64_t i = 0; i < rg.getKeys().size(); ++i)
-                    keyToIndexMap.insert(make_pair(rg.getKeys()[i], i));
-
                 for (size_t i = 0; i != smallSides.size(); i++)
                 {
                     if ((jointypes[i] & SEMI) || (jointypes[i] & ANTI) ||
@@ -2734,13 +2732,73 @@ SP_JoinInfo joinToLargeTable(uint32_t large, TableInfoMap& tableInfoMap,
             {
                 // add the expression steps in where clause can be solved by this join to bps
                 ParseTree* pt = NULL;
+
                 if (keys.size())
                 {
                     if (jobInfo.trace)
+                        cout << "\nRestore a cycle as a post join filter\n";
+
+                    uint32_t leftKeyIndex = 0;
+                    uint32_t rightKeyIndex = keys.size() / 2;
+                    const uint32_t leftSize = rightKeyIndex;
+
+                    while (leftKeyIndex < leftSize)
                     {
-                        cout << "\nrestore a cycle as a post join filter\n";
+                        // Left column.
+                        const auto& leftTableColName = jobInfo.csc->colName(
+                            jobInfo.keyInfo->tupleKeyVec[keys[leftKeyIndex]]
+                                .fId);
+                        auto* leftColumn = new SimpleColumn(
+                            leftTableColName.schema, leftTableColName.table,
+                            leftTableColName.column);
+
+                        // Right column.
+                        const auto& rightTableColName = jobInfo.csc->colName(
+                            jobInfo.keyInfo->tupleKeyVec[keys[rightKeyIndex]]
+                                .fId);
+                        auto* rightColumn = new SimpleColumn(
+                            rightTableColName.schema, rightTableColName.table,
+                            rightTableColName.column);
+
+                        // Set column indices in rowgroup.
+                        leftColumn->inputIndex(
+                            keyToIndexMap[keys[leftKeyIndex]]);
+                        rightColumn->inputIndex(
+                            keyToIndexMap[keys[rightKeyIndex]]);
+
+                        // Create operator.
+                        SOP eqPredicateOperator(new PredicateOperator("="));
+                        // Set type.
+                        eqPredicateOperator->setOpType(
+                            leftColumn->resultType(),
+                            rightColumn->resultType());
+
+                        // Create a filter.
+                        SimpleFilter* joinFilter = new SimpleFilter(
+                            eqPredicateOperator, leftColumn, rightColumn);
+
+                        if (jobInfo.trace)
+                        {
+                            cout << "join filter created \n";
+                            cout << joinFilter->toString() << endl;
+                        }
+
+                        if (pt == nullptr)
+                        {
+                            pt = new ParseTree(joinFilter);
+                        }
+                        else
+                        {
+                            ParseTree* left = pt;
+                            ParseTree* right = new ParseTree(joinFilter);
+                            pt = new ParseTree(new LogicOperator("and"));
+                            pt->left(left);
+                            pt->right(right);
+                        }
+
+                        ++leftKeyIndex;
+                        ++rightKeyIndex;
                     }
-                    // create a filter.
                 }
 
                 JobStepVector::iterator eit = readyExpSteps.begin();
