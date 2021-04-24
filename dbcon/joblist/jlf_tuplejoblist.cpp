@@ -1610,10 +1610,13 @@ void collectEdges(TableInfoMap& infoMap, const JobInfo& jobInfo,
                   uint32_t currentTable, uint32_t prevTable,
                   set<pair<uint32_t, uint32_t>>& joinEdges)
 {
+    // Mark as visited.
     infoMap[currentTable].fVisited = true;
 
+    // For each sub node.
     for (auto sub : infoMap[currentTable].fAdjacentList)
     {
+        // If visited and not a back edge consider as a cycle.
         if (infoMap[sub].fVisited && prevTable != sub)
         {
             const auto edgeForward = make_pair(currentTable, sub);
@@ -1628,27 +1631,26 @@ void collectEdges(TableInfoMap& infoMap, const JobInfo& jobInfo,
 
             if (jobInfo.trace)
             {
-                cout << "edge: " << currentTable << " -> " << sub
-                     << " make a cycle " << endl;
+                cout << "Edge: " << currentTable << " -> " << sub
+                     << "creates a loop " << endl;
                 auto it = jobInfo.tableJoinMap.find(edgeForward);
 
-                cout << "left keys: " << endl;
+                cout << "Left keys: " << endl;
                 for (auto key : it->second.fLeftKeys)
                 {
-                    cout << "key: " << key << " column oid: "
+                    cout << "Key: " << key << " column oid: "
                          << jobInfo.keyInfo->tupleKeyVec[key].fId << endl;
                 }
-                cout << endl;
 
-                cout << "right keys: " << endl;
+                cout << "Right keys: " << endl;
                 for (auto key : it->second.fRightKeys)
                 {
-                    cout << "key: " << key << " column oid: "
+                    cout << "Key: " << key << " column oid: "
                          << jobInfo.keyInfo->tupleKeyVec[key].fId << endl;
                 }
-                cout << endl;
             }
         }
+        // If not visited - go there.
         else if (infoMap[sub].fVisited == false)
         {
             if (jobInfo.trace)
@@ -1674,17 +1676,14 @@ void brakeCycles(TableInfoMap& infoMap, const JobInfo& jobInfo,
     {
         if (jobInfo.trace)
         {
-            cout << "remove " << cyclePair.first << " from adjlist of "
+            cout << "Remove " << cyclePair.first << " from adjlist of "
                  << cyclePair.second << endl;
-        }
-        removeFromList(cyclePair.first,
-                       infoMap[cyclePair.second].fAdjacentList);
-
-        if (jobInfo.trace)
-        {
-            cout << "remove " << cyclePair.second << " from adjlist of "
+            cout << "Remove " << cyclePair.second << " from adjlist of "
                  << cyclePair.first << endl;
         }
+
+        removeFromList(cyclePair.first,
+                       infoMap[cyclePair.second].fAdjacentList);
         removeFromList(cyclePair.second,
                        infoMap[cyclePair.first].fAdjacentList);
     }
@@ -1702,26 +1701,15 @@ void collectEdgesAndBrakeCycles(TableInfoMap& infoMap, const JobInfo& jobInfo,
 
     if (jobInfo.trace)
     {
-        cout << "collected edges:  " << endl;
+        cout << "Collected edges:" << endl;
         for (auto& edge : joinEdges)
         {
             cout << edge.first << " -> " << edge.second << endl;
         }
     }
 
+    // Finally brake the cycles by removing collected edges from the graph.
     brakeCycles(infoMap, jobInfo, joinEdges);
-
-    if (jobInfo.trace)
-    {
-        // TODO: remove this.
-        set<pair<uint32_t, uint32_t>> edges;
-        auto im = infoMap;
-        collectEdges(im, jobInfo, im.begin()->first, -1, edges);
-        for (auto& p : edges)
-        {
-            cout << p.first << " -> " << p.second << endl;
-        }
-    }
 }
 
 void spanningTreeCheck(TableInfoMap& tableInfoMap, JobStepVector joinSteps,
@@ -1981,16 +1969,16 @@ void spanningTreeCheck(TableInfoMap& tableInfoMap, JobStepVector joinSteps,
 
         }
 
-        // 2. no cycles
+        // 2. Cycles.
         if (spanningTree && (nodeSet.size() - pathSet.size() / 2 != 1))
         {
-            // Inner joins.
+            // 2.1. Inner joins.
             if (jobInfo.outerOnTable.size() == 0)
             {
                 collectEdgesAndBrakeCycles(tableInfoMap, jobInfo, rootTable,
                                            joinEdges);
             }
-            // Outer joins.
+            // 2.2. Outer joins.
             else
             {
                 errcode = ERR_CIRCULAR_JOIN;
@@ -2379,31 +2367,6 @@ SP_JoinInfo joinToLargeTable(uint32_t large, TableInfoMap& tableInfoMap,
 
             smallKeyIndices.push_back(smallIndices);
             largeKeyIndices.push_back(largeIndices);
-
-            cout << "TRACE begin" << endl;
-
-            cout << "out for typleKeyVec " << endl;
-            for (auto u : jobInfo.keyInfo->tupleKeyVec)
-            {
-                cout << "Table name: " << u.fTable << endl;
-                cout << "Oid: " << u.fId << endl;
-            }
-
-            cout << "keys1 size  " << keys1.size() << endl;
-            for (k1 = keys1.begin(); k1 != keys1.end(); ++k1)
-            {
-                CalpontSystemCatalog::OID oid1 =
-                    jobInfo.keyInfo->tupleKeyVec[*k1].fId;
-                CalpontSystemCatalog::TableColName tcn1 =
-                    jobInfo.csc->colName(oid1);
-                cout << "(" << tcn1.column << ":" << oid1 << ":" << *k1 << ")"
-                     << endl;
-                cout << "key: " << *k1
-                     << " index: " << getKeyIndex(*k1, info->fRowGroup)
-                     << endl;
-            }
-
-            cout << "TRACE END " << endl;
 
             if (jobInfo.trace)
             {
@@ -2805,7 +2768,7 @@ SP_JoinInfo joinToLargeTable(uint32_t large, TableInfoMap& tableInfoMap,
 
                         if (jobInfo.trace)
                         {
-                            cout << "join filter created \n";
+                            cout << "Post join filter created\n";
                             cout << joinFilter->toString() << endl;
                         }
 
