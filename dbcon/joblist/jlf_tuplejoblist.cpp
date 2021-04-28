@@ -1981,17 +1981,8 @@ void spanningTreeCheck(TableInfoMap& tableInfoMap, JobStepVector joinSteps,
         // 2. Cycles.
         if (spanningTree && (nodeSet.size() - pathSet.size() / 2 != 1))
         {
-            // 2.1. Inner.
-            if (jobInfo.outerOnTable.size() == 0)
-            {
-                collectEdgesAndBrakeCycles(tableInfoMap, jobInfo, joinEdges);
-            }
-            // 2.2. Outer.
-            else
-            {
-                errcode = ERR_CIRCULAR_JOIN;
-                spanningTree = false;
-            }
+            // 2.1. Inner and Outer joins.
+            collectEdgesAndBrakeCycles(tableInfoMap, jobInfo, joinEdges);
         }
     }
 
@@ -2402,6 +2393,12 @@ void createPostJoinFilters(
             // Create a post join filter.
             SimpleFilter* joinFilter =
                 new SimpleFilter(eqPredicateOperator, leftColumn, rightColumn);
+
+            if (jobInfo.trace)
+            {
+                std::cout << "Created filter: " << std::endl;
+                std::cout << joinFilter->toString() << std::endl;
+            }
 
             postJoinFilters.push_back(joinFilter);
 
@@ -2968,9 +2965,17 @@ void getJoinOrder(vector<JoinOrderData>& joins, JobStepVector& joinSteps, JobInf
     }
 }
 
-inline void updateJoinSides(uint32_t small, uint32_t large, map<uint32_t, SP_JoinInfo>& joinInfoMap,
-                            vector<SP_JoinInfo>& smallSides, TableInfoMap& tableInfoMap, JobInfo& jobInfo)
+inline void updateJoinSides(uint32_t small, uint32_t large,
+                            map<uint32_t, SP_JoinInfo>& joinInfoMap,
+                            vector<SP_JoinInfo>& smallSides,
+                            TableInfoMap& tableInfoMap, JobInfo& jobInfo,
+                            const JoinEdges& joinEdges)
 {
+    // Skip edge removed from join graph.
+    if (joinEdges.count(make_pair(small, large)) ||
+        joinEdges.count(make_pair(large, small)))
+        return;
+
     TableJoinMap::iterator mit = jobInfo.tableJoinMap.find(make_pair(small, large));
 
     if (mit == jobInfo.tableJoinMap.end())
@@ -2984,7 +2989,6 @@ inline void updateJoinSides(uint32_t small, uint32_t large, map<uint32_t, SP_Joi
         tableInfoMap[small].fJoinedTables.begin(), tableInfoMap[small].fJoinedTables.end());
     tableInfoMap[large].fJoinedTables.insert(large);
 }
-
 
 // For OUTER JOIN bug @2422/2633/3437/3759, join table based on join order.
 // The largest table will be always the streaming table, other tables are always on small side.
@@ -3083,7 +3087,8 @@ void joinTablesInOrder(uint32_t largest, JobStepVector& joinSteps,
             small = tid1;
         }
 
-        updateJoinSides(small, large, joinInfoMap, smallSides, tableInfoMap, jobInfo);
+        updateJoinSides(small, large, joinInfoMap, smallSides, tableInfoMap,
+                        jobInfo, joinEdges);
 
         if (find(joinedTable.begin(), joinedTable.end(), small) == joinedTable.end())
             joinedTable.push_back(small);
@@ -3128,7 +3133,8 @@ void joinTablesInOrder(uint32_t largest, JobStepVector& joinSteps,
                 }
             }
 
-            updateJoinSides(small, large, joinInfoMap, smallSides, tableInfoMap, jobInfo);
+            updateJoinSides(small, large, joinInfoMap, smallSides,
+                            tableInfoMap, jobInfo, joinEdges);
             lastJoinId = joins[ns].fJoinId;
 
             if (find(joinedTable.begin(), joinedTable.end(), small) == joinedTable.end())
@@ -3428,8 +3434,12 @@ void joinTablesInOrder(uint32_t largest, JobStepVector& joinSteps,
                                  jobInfo.outerJoinExpressions.begin(),
                                  jobInfo.outerJoinExpressions.end());
 
+        std::vector<std::vector<uint32_t>> postJoinFilterKeys;
+        if (joinEdges.size())
+            matchEdgesInRowGroup(jobInfo, rg, joinEdges, postJoinFilterKeys);
+
         // check additional compares for semi-join
-        if (readyExpSteps.size() > 0)
+        if (readyExpSteps.size() > 0 || postJoinFilterKeys.size() > 0)
         {
             map<uint32_t, uint32_t> keyToIndexMap; // map keys to the indices in the RG
 
@@ -3441,21 +3451,24 @@ void joinTablesInOrder(uint32_t largest, JobStepVector& joinSteps,
             map<uint32_t, int> correlateTables;          // index in thjs
             map<uint32_t, ParseTree*> correlateCompare;  // expression
 
-            for (size_t i = 0; i != smallSides.size(); i++)
+            if (readyExpSteps.size() > 0)
             {
-                if ((jointypes[i] & SEMI) || (jointypes[i] & ANTI) || (jointypes[i] & SCALAR))
+                for (size_t i = 0; i != smallSides.size(); i++)
                 {
-                    uint32_t  tid = getTableKey(jobInfo,
-                                                smallSides[i]->fTableOid,
-                                                smallSides[i]->fAlias,
-                                                smallSides[i]->fSchema,
-                                                smallSides[i]->fView);
-                    correlateTables[tid] = i;
-                    correlateCompare[tid] = NULL;
+                    if ((jointypes[i] & SEMI) || (jointypes[i] & ANTI) ||
+                        (jointypes[i] & SCALAR))
+                    {
+                        uint32_t tid = getTableKey(
+                            jobInfo, smallSides[i]->fTableOid,
+                            smallSides[i]->fAlias, smallSides[i]->fSchema,
+                            smallSides[i]->fView);
+                        correlateTables[tid] = i;
+                        correlateCompare[tid] = NULL;
+                    }
                 }
             }
 
-            if (correlateTables.size() > 0)
+            if (readyExpSteps.size() > 0 && correlateTables.size() > 0)
             {
                 // separate additional compare for each table pair
                 JobStepVector::iterator eit = readyExpSteps.begin();
@@ -3532,10 +3545,31 @@ void joinTablesInOrder(uint32_t largest, JobStepVector& joinSteps,
             }
 
             // normal expression if any
-            if (readyExpSteps.size() > 0)
+            if (readyExpSteps.size() > 0 || postJoinFilterKeys.size() > 0)
             {
                 // add the expression steps in where clause can be solved by this join to bps
                 ParseTree* pt = NULL;
+
+                std::vector<SimpleFilter*> postJoinFilters;
+                createPostJoinFilters(jobInfo, postJoinFilterKeys,
+                                      keyToIndexMap, postJoinFilters);
+
+                for (auto* joinFilter : postJoinFilters)
+                {
+                    if (pt == nullptr)
+                    {
+                        pt = new ParseTree(joinFilter);
+                    }
+                    else
+                    {
+                        ParseTree* left = pt;
+                        ParseTree* right = new ParseTree(joinFilter);
+                        pt = new ParseTree(new LogicOperator("and"));
+                        pt->left(left);
+                        pt->right(right);
+                    }
+                }
+
                 JobStepVector::iterator eit = readyExpSteps.begin();
 
                 for (; eit != readyExpSteps.end(); eit++)
