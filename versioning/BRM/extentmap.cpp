@@ -96,7 +96,7 @@ namespace
 unsigned ExtentSize = 0; // dmc-need to deprecate
 unsigned ExtentRows              = 0;
 unsigned filesPerColumnPartition = 0;
-unsigned extentsPerSegmentFile   = 0;
+unsigned extentsPerSegmentFile   = 2;
 
 // Increment CP sequence (version) number, and wrap-around when applicable
 inline void incSeqNum(int32_t& seqNum)
@@ -6005,11 +6005,8 @@ void ExtentMap::checkReloadConfig()
     //--------------------------------------------------------------------------
     // Initialize extents per segment file
     //--------------------------------------------------------------------------
-    string epsf = cf->getConfig("ExtentMap", "ExtentsPerSegmentFile");
-    extentsPerSegmentFile = cf->uFromText(epsf);
-
-    if (extentsPerSegmentFile == 0)
-        extentsPerSegmentFile = 2;
+    // MCOL-4685: remove the option to set more than 2 extents per file (ExtentsPreSegmentFile).
+    extentsPerSegmentFile = 2;
 }
 
 //------------------------------------------------------------------------------
