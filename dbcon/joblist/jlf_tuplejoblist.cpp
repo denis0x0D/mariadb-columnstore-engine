@@ -1606,23 +1606,70 @@ bool addFunctionJoin(vector<uint32_t>& joinedTables, JobStepVector& joinSteps,
     return added;
 }
 
-void collectEdges(std::map<uint32_t, JoinTableNode>& joinGraph, const JobInfo& jobInfo,
-                  TableInfoMap& tableInfoMap, uint32_t currentTable, uint32_t prevTable,
-                  JoinEdges& joinEdges)
+using Cycles = std::vector<std::vector<std::pair<uint32_t, uint32_t>>>;
+using Cycle = std::vector<std::pair<uint32_t, uint32_t>>;
+
+void collectCycles(std::map<uint32_t, JoinTableNode>& joinGraph, const JobInfo& jobInfo,
+                   TableInfoMap& tableInfoMap, uint32_t currentTable, uint32_t prevTable,
+                   JoinEdges& joinEdges, Cycles& cycles)
 {
+
     // Mark as visited.
     joinGraph[currentTable].fVisited = true;
+    joinGraph[currentTable].fParent = prevTable;
 
-    // For each sub node.
-    for (auto sub : joinGraph[currentTable].fAdjacentList)
+    // For each adjacent node.
+    for (const auto adjNode : joinGraph[currentTable].fAdjacentList)
     {
         // If visited and not a back edge consider as a cycle.
-        if (joinGraph[sub].fVisited && prevTable != sub)
+        if (joinGraph[adjNode].fVisited && prevTable != adjNode)
         {
-            const auto edgeForward = make_pair(currentTable, sub);
-            const auto edgeBackward = make_pair(sub, currentTable);
+            Cycle cycle;
+            const auto edgeForward = make_pair(currentTable, adjNode);
+            const auto edgeBackward = make_pair(adjNode, currentTable);
+
+            if (!joinEdges.count(edgeForward) && !joinEdges.count(edgeBackward))
+            {
+                joinEdges.insert(edgeForward);
+                cycle.push_back(edgeForward);
+            }
+
+            auto nodeIt = currentTable;
+            auto nextNode = joinGraph[nodeIt].fParent;
+            // Walk back until we find node `adjNode` we identified before.
+            while (nextNode != -1 && nextNode != adjNode)
+            {
+                const auto edgeForward = make_pair(nextNode, nodeIt);
+                const auto edgeBackward = make_pair(nodeIt, nextNode);
+
+                if (!joinEdges.count(edgeForward) && !joinEdges.count(edgeBackward))
+                {
+                    joinEdges.insert(edgeForward);
+                    cycle.push_back(edgeForward);
+                }
+
+                nodeIt = nextNode;
+                nextNode = joinGraph[nodeIt].fParent;
+            }
+
+            // Add the last edge.
+            if (nextNode != -1)
+            {
+                const auto edgeForward = make_pair(nextNode, nodeIt);
+                const auto edgeBackward = make_pair(nodeIt, nextNode);
+
+                if (!joinEdges.count(edgeForward) && !joinEdges.count(edgeBackward))
+                {
+                    joinEdges.insert(edgeForward);
+                    cycle.push_back(edgeForward);
+                }
+            }
+
+            // Collect the cycle.
+            cycles.push_back(std::move(cycle));
 
             // If not present add the edge.
+            /*
             if (!joinEdges.count(edgeForward) && !joinEdges.count(edgeBackward))
             {
                 joinEdges.insert(edgeForward);
@@ -1636,35 +1683,37 @@ void collectEdges(std::map<uint32_t, JoinTableNode>& joinGraph, const JobInfo& j
                 secondExp2.insert(secondExp2.end(), tableInfoIt->second.fRightKeys.begin(),
                                   tableInfoIt->second.fRightKeys.end());
             }
+            */
 
             if (jobInfo.trace)
             {
-                cout << "Edge: " << currentTable << " -> " << sub << " creates a loop " << endl;
-                auto it = jobInfo.tableJoinMap.find(edgeForward);
-
-                cout << "Left keys: " << endl;
-                for (auto key : it->second.fLeftKeys)
+                std::cout << "Collected cycle: " << std::endl;
+                for (const auto& edge : cycle)
                 {
-                    cout << "Key: " << key
-                         << " column oid: " << jobInfo.keyInfo->tupleKeyVec[key].fId << endl;
-                }
+                    cout << "Edge: " << edge.first << " -> " << edge.second << endl;
+                    auto it = jobInfo.tableJoinMap.find(edge);
 
-                cout << "Right keys: " << endl;
-                for (auto key : it->second.fRightKeys)
-                {
-                    cout << "Key: " << key
-                         << " column oid: " << jobInfo.keyInfo->tupleKeyVec[key].fId << endl;
+                    cout << "Left keys: " << endl;
+                    for (auto key : it->second.fLeftKeys)
+                    {
+                        cout << "Key: " << key
+                             << " column oid: " << jobInfo.keyInfo->tupleKeyVec[key].fId << endl;
+                    }
+
+                    cout << "Right keys: " << endl;
+                    for (auto key : it->second.fRightKeys)
+                    {
+                        cout << "Key: " << key
+                             << " column oid: " << jobInfo.keyInfo->tupleKeyVec[key].fId << endl;
+                    }
                 }
             }
         }
         // If not visited - go there.
-        else if (joinGraph[sub].fVisited == false)
+        else if (joinGraph[adjNode].fVisited == false)
         {
-            if (jobInfo.trace)
-            {
-                cout << currentTable << " -> " << sub << endl;
-            }
-            collectEdges(joinGraph, jobInfo, tableInfoMap, sub, currentTable, joinEdges);
+            collectCycles(joinGraph, jobInfo, tableInfoMap, adjNode, currentTable, joinEdges,
+                          cycles);
         }
     }
 }
@@ -1706,22 +1755,15 @@ void collectEdgesAndBreakCycles(TableInfoMap& infoMap, const JobInfo& jobInfo, J
 {
     std::map<uint32_t, JoinTableNode> joinGraph;
     initJoinGraph(infoMap, joinGraph);
+    Cycles cycles;
 
-    collectEdges(joinGraph, jobInfo, infoMap,
-                 /*currentTable=*/joinGraph.begin()->first,
-                 /*prevTable=*/-1, joinEdges);
+    collectCycles(joinGraph, jobInfo, infoMap,
+                  /*currentTable=*/joinGraph.begin()->first,
+                  /*prevTable=*/-1, joinEdges, cycles);
 
-    if (jobInfo.trace)
-    {
-        cout << "Collected edges:" << endl;
-        for (auto& edge : joinEdges)
-        {
-            cout << edge.first << " -> " << edge.second << endl;
-        }
-    }
-
+    joinEdges.clear();
     // Finally break the cycles by removing collected edges from the graph.
-    breakCycles(infoMap, jobInfo, joinEdges);
+    // breakCycles(infoMap, jobInfo, joinEdges);
 }
 
 void spanningTreeCheck(TableInfoMap& tableInfoMap, JobStepVector joinSteps,

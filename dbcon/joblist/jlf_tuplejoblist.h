@@ -137,8 +137,9 @@ using JoinEdges = std::set<pair<uint32_t, uint32_t>>;
 struct JoinTableNode
 {
     bool fVisited;
+    uint32_t fParent;
     std::vector<uint32_t> fAdjacentList;
-    JoinTableNode() : fVisited(false) {}
+    JoinTableNode() : fVisited(false), fParent(-1) {}
 };
 
 }
