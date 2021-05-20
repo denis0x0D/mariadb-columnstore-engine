@@ -133,12 +133,17 @@ SJSTEP unionQueries(JobStepVector& queries,
                     JobInfo& jobInfo);
 
 using JoinEdges = std::set<pair<uint32_t, uint32_t>>;
+using Cycles = std::vector<std::vector<std::pair<uint32_t, uint32_t>>>;
+using Cycle = std::vector<std::pair<uint32_t, uint32_t>>;
+using PostJoinFilterKeys =
+    std::vector<std::pair<std::pair<uint32_t, uint32_t>, std::vector<uint32_t>>>;
 
 struct JoinTableNode
 {
     bool fVisited;
+    uint32_t fParent;
     std::vector<uint32_t> fAdjacentList;
-    JoinTableNode() : fVisited(false) {}
+    JoinTableNode() : fVisited(false), fParent(-1) {}
 };
 
 }
