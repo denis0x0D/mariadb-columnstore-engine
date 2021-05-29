@@ -24,6 +24,10 @@
 #include "ha_mcs_sysvars.h"
 #include "ha_maria.h"
 
+#include "calpontsystemcatalog.h"
+
+#include <iostream>
+
 extern handlerton* mcs_hton;
 
 /** @brief
@@ -126,6 +130,31 @@ public:
         return (double) (stats.records + stats.deleted) / 20.0 + 10;
     }
 
+    int analyze(THD* thd, HA_CHECK_OPT* check_opt) {
+        std::cout << "analyze command " << std::endl;
+        std::cout << "Analyze table " << std::endl;
+        std::cout << table->s->table_name.str << std::endl;
+        uint32_t sessionID = execplan::CalpontSystemCatalog::idb_tid2sid(thd->thread_id);
+        std::cout << "session id " << sessionID << std::endl;
+        boost::shared_ptr<execplan::CalpontSystemCatalog> csc =
+            execplan::CalpontSystemCatalog::makeCalpontSystemCatalog(sessionID);
+
+        //        bool columnStore = (table ? isMCSTable(table) : true);
+        //       std::cout << "is columnStore table " << columnStore << std::endl;
+        std::cout << "table->s.db " << table->s->db.str << std::endl;
+        std::cout << "table->s.table_name " << table->s->table_name.str << std::endl;
+        auto shema = table->s->db.str;
+        auto tableName = table->s->table_name.str;
+        // execplan::CalpontSystemCatalog::TableAliasName tn =
+        //    make_aliasview(shema, tableName, tableName, "", true, true);
+
+        execplan::CalpontSystemCatalog::TableName tn(shema, tableName);
+        execplan::CalpontSystemCatalog::RIDList oidlist = csc->columnRIDs(tn, true);
+
+        std::cout << "Size of oidlist " << oidlist.size() << std::endl;
+
+        return 0;
+    }
     /*
       Everything below are methods that we implement in ha_example.cc.
 

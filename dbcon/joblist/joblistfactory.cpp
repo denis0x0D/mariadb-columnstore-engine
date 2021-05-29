@@ -1849,6 +1849,9 @@ SJLP makeJobList_(
     CalpontSelectExecutionPlan* csep = dynamic_cast<CalpontSelectExecutionPlan*>(cplan);
     boost::shared_ptr<CalpontSystemCatalog> csc = CalpontSystemCatalog::makeCalpontSystemCatalog(csep->sessionID());
 
+
+    std::cout << "execplang: " << std::endl;
+    std::cout << csep->toString() << std::endl;
     static config::Config* sysConfig = config::Config::makeConfig();
     int pmsConfigured = atoi(sysConfig->getConfig("PrimitiveServers", "Count").c_str());
 

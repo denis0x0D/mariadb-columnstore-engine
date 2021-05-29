@@ -964,6 +964,381 @@ inline std::ostream& operator<<(std::ostream& os, const CalpontSelectExecutionPl
     return os;
 }
 
+class CalpontAnalyzeTableExecutionPlan : public CalpontExecutionPlan
+{
+
+    /**
+     * Public stuff
+     */
+public:
+    /**
+     * Types and constants
+     */
+    typedef std::vector<SRCP> ReturnedColumnList;
+    typedef std::multimap<std::string, SRCP> ColumnMap;
+
+    typedef expression::expression_parser<Token, ParseTree*, TreeNode*, ExpressionParser> Parser;
+    typedef std::vector<CalpontSystemCatalog::TableAliasName> TableList;
+    typedef std::vector<SCEP> SelectList;
+
+    typedef std::vector<RMParam> RMParmVec;
+
+    /**
+     * Constructors
+     */
+    CalpontAnalyzeTableExecutionPlan(const ReturnedColumnList& returnedCols,
+                                     const std::string alias, const int location,
+                                     const bool dependent)
+    {
+    }
+
+    CalpontAnalyzeTableExecutionPlan(const std::string data) {}
+
+    /**
+     * Destructors
+     */
+    virtual ~CalpontAnalyzeTableExecutionPlan() {}
+
+    /**
+     * Access and mutator methods
+     */
+
+    /**
+     * returned column list
+     */
+    const ReturnedColumnList& returnedCols() const
+    {
+        return fReturnedCols;
+    }
+    ReturnedColumnList& returnedCols()
+    {
+        return fReturnedCols;
+    }
+    void returnedCols (const ReturnedColumnList& returnedCols)
+    {
+        fReturnedCols = returnedCols;
+    }
+
+    /**
+     * table alias
+     */
+    const std::string& tableAlias() const
+    {
+        return fTableAlias;
+    }
+    void tableAlias (const std::string& tableAlias, int lower_case_table_names)
+    {
+        fTableAlias = tableAlias;
+        if (lower_case_table_names)
+            boost::algorithm::to_lower(fTableAlias);
+    }
+
+    /**
+     * location of this select
+     */
+    int location () const
+    {
+        return fLocation;
+    }
+    void location (const int location)
+    {
+        fLocation = location;
+    }
+
+    /** column map
+     * all the columns appeared on query
+     */
+    const ColumnMap& columnMap() const
+    {
+        return fColumnMap;
+    }
+
+    /** column map
+     * all the columns appeared on query
+     */
+    ColumnMap& columnMap()
+    {
+        return fColumnMap;
+    }
+
+    /** assign the static fColMap to non-static fColumnMap. map-wise copy */
+    void columnMap (const ColumnMap& columnMap);
+
+    /** assign a regular map object to non-static fColumnMap. pure assignment */
+    // @note this is to fix memory leak in CSC, becasue no static map is needed there.
+    inline void columnMapNonStatic (const ColumnMap& columnMap)
+    {
+        fColumnMap = columnMap;
+    }
+
+    /** sql representation of this select query
+     *
+     */
+    const std::string data() const { return fData; }
+    void data(const std::string data) { fData = data; }
+
+    /** session id
+     *
+     */
+    uint32_t sessionID() const
+    {
+        return fSessionID;
+    }
+
+    void sessionID ( const uint32_t sessionID )
+    {
+        fSessionID = sessionID;
+    }
+
+    /** transaction id
+     *
+     */
+    int txnID() const
+    {
+        return fTxnID;
+    }
+    void txnID ( const int txnID )
+    {
+        fTxnID = txnID;
+    }
+
+    /** version id
+     *
+     */
+    const BRM::QueryContext verID() const
+    {
+        return fVerID;
+    }
+    void verID ( const BRM::QueryContext verID )
+    {
+        fVerID = verID;
+    }
+
+    inline static ColumnMap& colMap()
+    {
+        return fColMap;
+    }
+
+    inline std::string& schemaName()
+    {
+        return fSchemaName;
+    }
+    inline void schemaName(const std::string& schemaName, int lower_case_table_names)
+    {
+        fSchemaName = schemaName;
+        if (lower_case_table_names)
+            boost::algorithm::to_lower(fSchemaName);
+    }
+
+    inline std::string& tableName()
+    {
+        return fTableName;
+    }
+    inline void tableName(const std::string& tableName, int lower_case_table_names)
+    {
+        fTableName = tableName;
+        if (lower_case_table_names)
+            boost::algorithm::to_lower(fTableName);
+    }
+
+    uint32_t statementID() const
+    {
+        return fStatementID;
+    }
+    void statementID (const uint32_t statementID)
+    {
+        fStatementID = statementID;
+    }
+
+    const RMParmVec& rmParms()
+    {
+        return frmParms;
+    }
+    void rmParms (const RMParmVec& parms);
+
+    const TableList& tableList() const
+    {
+        return fTableList;
+    }
+    void tableList (const TableList& tableList)
+    {
+        fTableList = tableList;
+    }
+
+    void limitStart(const uint64_t limitStart)
+    {
+        fLimitStart = limitStart;
+    }
+    uint64_t limitStart() const
+    {
+        return fLimitStart;
+    }
+
+    void limitNum(const uint64_t limitNum)
+    {
+        fLimitNum = limitNum;
+    }
+    uint64_t limitNum() const
+    {
+        return fLimitNum;
+    }
+
+    void priority(uint32_t p)
+    {
+        fPriority = p;
+    }
+    uint32_t priority() const
+    {
+        return fPriority;
+    }
+
+    void uuid(const boost::uuids::uuid& uuid)
+    {
+        fUuid = uuid;
+    }
+    const boost::uuids::uuid& uuid() const
+    {
+        return fUuid;
+    }
+
+    void umMemLimit(uint64_t l)
+    {
+        fUMMemLimit = l;
+    }
+    int64_t umMemLimit()
+    {
+        return fUMMemLimit;
+    }
+
+    void isDML(bool b)
+    {
+        fIsDML = b;
+    }
+    bool isDML()
+    {
+        return fIsDML;
+    }
+
+    void timeZone(const std::string& timezone)
+    {
+        fTimeZone = timezone;
+    }
+    const std::string timeZone() const
+    {
+        return fTimeZone;
+    }
+
+    /** @brief Return a string rep of the CSEP
+     *
+     * Return a string rep of the CSEP
+     * @return a string
+     */
+    virtual std::string toString() const { return ""; }
+
+    /** @brief Is this an internal query?
+     *
+     * Is this an internal query (a syscat query performed on behalf of another query)
+     * FIXME: add a setter and make this work for really big session ids
+     * @return true/false
+     */
+    virtual bool isInternal() const
+    {
+        return ((fSessionID & 0x80000000) != 0);
+    }
+
+    /**
+     * Protected stuff
+     */
+protected:
+    /**
+     * Fields
+     */
+    /**
+     *
+     */
+    /**
+     * Constructors
+     */
+    /**
+     * Accessor Methods
+     */
+    /**
+     * Operations
+     */
+    /**
+     * Private stuff
+     */
+private:
+
+    /**
+     * If set, then the local PM only option is turned on
+     */
+    uint32_t fLocalQuery;
+
+    /**
+     * A list of ReturnedColumn objects
+     */
+    ReturnedColumnList fReturnedCols;
+    /**
+     * Table or alias name for subselect in FROM clause
+     */
+    std::string fTableAlias;
+    /**
+     * An enum indicating the location of this select statement in the enclosing select statement
+     */
+    int fLocation;
+    /**
+     * SQL representation of this execution plan
+     */
+    std::string fData;
+    static ColumnMap fColMap;  // for getplan to use. class-wise map
+    ColumnMap fColumnMap;  // for ExeMgr to use. not shared between objects
+
+    uint32_t fSessionID;
+    int fTxnID;    // SQLEngine only needs the ID value
+    BRM::QueryContext fVerID;
+    // @bug5316. remove static
+    std::string fSchemaName;
+    std::string fTableName;
+    uint32_t fTraceFlags;
+
+    /**
+     * One-up statementID number for this session (fSessionID)
+     */
+    uint32_t fStatementID;
+
+    RMParmVec frmParms;
+    TableList fTableList;
+
+    // for limit
+    uint64_t fLimitStart;
+    uint64_t fLimitNum;
+
+    // @bug3321, for string scan blocks
+    uint64_t fStringScanThreshold;
+
+    // query type
+    uint32_t fQueryType;
+
+    uint32_t fPriority;
+    uint32_t fStringTableThreshold;
+    
+    // for specific handlers processing, e.g. GROUP BY
+    bool fSpecHandlerProcessed;
+    uint32_t fOrderByThreads;
+
+    boost::uuids::uuid fUuid;
+
+    /* Disk-based join vars */
+    uint64_t fDJSSmallSideLimit;
+    uint64_t fDJSLargeSideLimit;
+    uint64_t fDJSPartitionSize;
+    int64_t fUMMemLimit;
+    bool fIsDML;
+
+    std::string fTimeZone;
+};
+
 }
 #endif //CALPONTSELECTEXECUTIONPLAN_H
 // vim:ts=4 sw=4:

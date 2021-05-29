@@ -2437,6 +2437,8 @@ SimpleColumn* buildSimpleColFromDerivedTable(gp_walk_info& gwi, Item_field* ifp)
 // for FROM clause subquery. get all the columns from real tables and derived tables.
 void collectAllCols(gp_walk_info& gwi, Item_field* ifp)
 {
+
+    std::cout << "collecAllCols" << std::endl;
     // view name
     string viewName = getViewName(ifp->cached_table);
 
@@ -6918,6 +6920,8 @@ void buildInToExistsFilter(gp_walk_info& gwi, SELECT_LEX& select_lex)
  * RETURNS
  *  error id as an int
  ***********************************************************/
+
+// Select plan;
 int getSelectPlan(gp_walk_info& gwi, SELECT_LEX& select_lex,
     SCSEP& csep,
     bool isUnion,
@@ -6954,6 +6958,9 @@ int getSelectPlan(gp_walk_info& gwi, SELECT_LEX& select_lex,
     {
         return rc;
     }
+
+    std::cout << "process from " << std::endl;
+    std::cout << csep << std::endl;
 
     bool unionSel = (!isUnion && select_lex.master_unit()->is_unit_op()) ? true : false;
 
@@ -7017,6 +7024,8 @@ int getSelectPlan(gp_walk_info& gwi, SELECT_LEX& select_lex,
         {
             case Item::FIELD_ITEM:
             {
+
+                std::cout << "FIELD_ITEM " << std::endl;
                 Item_field* ifp = (Item_field*)item;
                 SimpleColumn* sc = NULL;
 
@@ -8223,6 +8232,9 @@ int getSelectPlan(gp_walk_info& gwi, SELECT_LEX& select_lex,
     csep->selectSubList(selectSubList);
     csep->subSelectList(gwi.subselectList);
     clearStacks(gwi);
+
+    std::cout << "after all CSEP " << std::endl;
+    std::cout << csep << std::endl;
     return 0;
 }
 
