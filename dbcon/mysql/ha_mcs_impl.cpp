@@ -1900,6 +1900,165 @@ uint32_t doUpdateDelete(THD* thd, gp_walk_info& gwi, const std::vector<COND*>& c
 
 } //anon namespace
 
+int ha_mcs_impl_analyze(THD* thd, TABLE* table)
+{
+    std::cout << "analyze command " << std::endl;
+    std::cout << "Analyze table " << std::endl;
+    std::cout << table->s->table_name.str << std::endl;
+    uint32_t sessionID = execplan::CalpontSystemCatalog::idb_tid2sid(thd->thread_id);
+    std::cout << "session id " << sessionID << std::endl;
+    boost::shared_ptr<execplan::CalpontSystemCatalog> csc =
+        execplan::CalpontSystemCatalog::makeCalpontSystemCatalog(sessionID);
+
+    csc->identity(execplan::CalpontSystemCatalog::FE);
+
+    // FIXME: Where does it come from?
+    auto lower_case_table_names = 1;
+    auto table_name =
+        execplan::make_table(table->s->db.str, table->s->table_name.str, lower_case_table_names);
+
+    // Skip for now.
+    if (table->s->db.length && strcmp(table->s->db.str, "information_schema") == 0)
+        return 0;
+
+    //        bool columnStore = (table ? isMCSTable(table) : true);
+    //       std::cout << "is columnStore table " << columnStore << std::endl;
+    std::cout << "table->s.db " << table->s->db.str << std::endl;
+    std::cout << "table->s.table_name " << table->s->table_name.str << std::endl;
+    auto shema = table->s->db.str;
+    auto tableName = table->s->table_name.str;
+    // execplan::CalpontSystemCatalog::TableAliasName tn =
+    //    make_aliasview(shema, tableName, tableName, "", true, true);
+
+    execplan::CalpontSystemCatalog::RIDList oidlist = csc->columnRIDs(table_name, true);
+    std::cout << "Size of oidlist " << oidlist.size() << std::endl;
+    std::cout << "Create returned columns for execution plan " << std::endl;
+    execplan::CalpontAnalyzeTableExecutionPlan::ReturnedColumnList returnedColumnList;
+    execplan::CalpontAnalyzeTableExecutionPlan::ColumnMap columnMap;
+
+    for (uint32_t i = 0, e = oidlist.size(); i < e; ++i)
+    {
+        execplan::SRCP returnedColumn;
+        const auto objNum = oidlist[i].objnum;
+        auto tableColName = csc->colName(objNum);
+        auto colType = csc->colType(objNum);
+
+        execplan::SimpleColumn* simpleColumn = new execplan::SimpleColumn();
+        simpleColumn->columnName(tableColName.column);
+        simpleColumn->tableName(tableColName.table, lower_case_table_names);
+        simpleColumn->schemaName(tableColName.schema, lower_case_table_names);
+        simpleColumn->oid(objNum);
+        simpleColumn->alias(tableColName.column);
+        simpleColumn->resultType(colType);
+        simpleColumn->timeZone(thd->variables.time_zone->get_name()->ptr());
+
+        std::cout << "created column " << std::endl;
+        std::cout << simpleColumn->toString() << std::endl;
+        returnedColumn.reset(simpleColumn);
+        returnedColumnList.push_back(returnedColumn);
+        columnMap.insert(execplan::CalpontSelectExecutionPlan::ColumnMap::value_type(
+            simpleColumn->columnName(), returnedColumn));
+    }
+
+    execplan::CalpontAnalyzeTableExecutionPlan* exePlan =
+        new execplan::CalpontAnalyzeTableExecutionPlan(returnedColumnList, columnMap);
+
+    std::cout << "connection " << std::endl;
+
+    /*
+    set_fe_conn_info_ptr(reinterpret_cast<void*>(new cal_connection_info(), thd));
+    cal_connection_info* ci = reinterpret_cast<cal_connection_info*>(get_fe_conn_info_ptr());
+
+    idbassert(ci != 0);
+
+       Enable it.
+    if (thd->killed == KILL_QUERY || thd->killed == KILL_QUERY_HARD)
+    {
+        force_close_fep_conn(thd, ci);
+        return 0;
+    }
+    */
+
+    /*
+    cal_table_info ti;
+    sm::cpsm_conhdl_t* hndl;
+
+    bool localQuery = (get_local_query(thd) > 0 ? true : false);
+    {
+
+        ci->stats.reset(); // reset query stats
+        ci->stats.setStartTime();
+
+        if (thd->main_security_ctx.user)
+        {
+            ci->stats.fUser = thd->main_security_ctx.user;
+        }
+        else
+        {
+            ci->stats.fUser = "";
+        }
+
+        if (thd->main_security_ctx.host)
+            ci->stats.fHost = thd->main_security_ctx.host;
+        else if (thd->main_security_ctx.host_or_ip)
+            ci->stats.fHost = thd->main_security_ctx.host_or_ip;
+        else
+            ci->stats.fHost = "unknown";
+
+        try
+        {
+            ci->stats.userPriority(ci->stats.fHost, ci->stats.fUser);
+        }
+        catch (std::exception& e)
+        {
+            string msg = string("Columnstore User Priority - ") + e.what();
+            ci->warningMsg = msg;
+        }
+
+        // if the previous query has error, re-establish the connection
+        if (ci->queryState != 0)
+        {
+            sm::sm_cleanup(ci->cal_conn_hndl);
+            ci->cal_conn_hndl = 0;
+        }
+
+        sm::sm_init(sessionID, &ci->cal_conn_hndl, localQuery);
+        idbassert(ci->cal_conn_hndl != 0);
+        ci->cal_conn_hndl->csc = csc;
+        idbassert(ci->cal_conn_hndl->exeMgr != 0);
+
+        try
+        {
+            ci->cal_conn_hndl->connect();
+        }
+        catch (...)
+        {
+              //setError(thd, ER_INTERNAL_ERROR,
+               //        IDBErrorInfo::instance()->errorMsg(ERR_LOST_CONN_EXEMGR));
+            CalpontSystemCatalog::removeCalpontSystemCatalog(sessionID);
+            goto error;
+        }
+    }
+
+
+    std::cout << "Conneciton success " << std::endl;
+    hndl = ci->cal_conn_hndl;
+    return 0;
+
+error:
+    std::cout << "error when connect() " << std::endl;
+
+    if (ci->cal_conn_hndl)
+    {
+        sm::sm_cleanup(ci->cal_conn_hndl);
+        ci->cal_conn_hndl = 0;
+    }
+    return ER_INTERNAL_ERROR;
+    */
+
+    return 0;
+}
+
 int ha_mcs_impl_open(const char* name, int mode, uint32_t test_if_locked)
 {
     IDEBUG ( cout << "ha_mcs_impl_open: " << name << ", " << mode << ", " << test_if_locked << endl );
@@ -4582,6 +4741,7 @@ int ha_mcs_impl_group_by_end(TABLE* table)
  * RETURN:
  *    rc as int
  ***********************************************************/
+// Select plan
 int ha_mcs_impl_pushdown_init(mcs_handler_info* handler_info, TABLE* table)
 {
     IDEBUG( cout << "pushdown_init for table " << endl );
@@ -4775,6 +4935,7 @@ int ha_mcs_impl_pushdown_init(mcs_handler_info* handler_info, TABLE* table)
             if (handler_info->hndl_type == mcs_handler_types_t::SELECT)
             {
                 sh = reinterpret_cast<select_handler*>(handler_info->hndl_ptr);
+                // Select plan
                 status = cs_get_select_plan(sh, thd, csep, gwi);
             }
             else if (handler_info->hndl_type == DERIVED)

@@ -8233,8 +8233,6 @@ int getSelectPlan(gp_walk_info& gwi, SELECT_LEX& select_lex,
     csep->subSelectList(gwi.subselectList);
     clearStacks(gwi);
 
-    std::cout << "after all CSEP " << std::endl;
-    std::cout << csep << std::endl;
     return 0;
 }
 
