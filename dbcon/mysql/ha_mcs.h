@@ -25,6 +25,7 @@
 #include "ha_maria.h"
 
 #include "calpontsystemcatalog.h"
+#include "simplecolumn.h"
 
 #include <iostream>
 
@@ -139,6 +140,19 @@ public:
         boost::shared_ptr<execplan::CalpontSystemCatalog> csc =
             execplan::CalpontSystemCatalog::makeCalpontSystemCatalog(sessionID);
 
+        csc->identity(execplan::CalpontSystemCatalog::FE);
+
+        // FIXME: Where does it come from?
+        auto lower_case_table_names = 1;
+        auto table_name = execplan::make_table(table->s->db.str, table->s->table_name.str,
+                                               lower_case_table_names);
+
+        // Skip for now.
+        if (table->s->db.length && strcmp(table->s->db.str, "information_schema") == 0)
+        {
+            return 0;
+        }
+
         //        bool columnStore = (table ? isMCSTable(table) : true);
         //       std::cout << "is columnStore table " << columnStore << std::endl;
         std::cout << "table->s.db " << table->s->db.str << std::endl;
@@ -148,10 +162,27 @@ public:
         // execplan::CalpontSystemCatalog::TableAliasName tn =
         //    make_aliasview(shema, tableName, tableName, "", true, true);
 
-        execplan::CalpontSystemCatalog::TableName tn(shema, tableName);
-        execplan::CalpontSystemCatalog::RIDList oidlist = csc->columnRIDs(tn, true);
-
+        execplan::CalpontSystemCatalog::RIDList oidlist = csc->columnRIDs(table_name, true);
         std::cout << "Size of oidlist " << oidlist.size() << std::endl;
+        std::cout << "Create returned columns for execution plan " << std::endl;
+
+        for (uint32_t i = 0, e = oidlist.size(); i < e; ++i) {
+            const auto objNum = oidlist[i].objnum;
+            auto tableColName = csc->colName(objNum);
+            auto colType = csc->colType(objNum);
+
+            execplan::SimpleColumn* simpleColumn = new execplan::SimpleColumn();
+            simpleColumn->columnName(tableColName.column);
+            simpleColumn->tableName(tableColName.table, lower_case_table_names);
+            simpleColumn->schemaName(tableColName.schema, lower_case_table_names);
+            simpleColumn->oid(objNum);
+            simpleColumn->alias(tableColName.column);
+            simpleColumn->resultType(colType);
+            simpleColumn->timeZone(thd->variables.time_zone->get_name()->ptr());
+
+            std::cout << "created column " << std::endl;
+            std::cout << simpleColumn->toString() << std::endl;
+        }
 
         return 0;
     }
