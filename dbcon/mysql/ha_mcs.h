@@ -26,6 +26,7 @@
 
 #include "calpontsystemcatalog.h"
 #include "simplecolumn.h"
+#include "calpontselectexecutionplan.h"
 
 #include <iostream>
 
@@ -149,9 +150,7 @@ public:
 
         // Skip for now.
         if (table->s->db.length && strcmp(table->s->db.str, "information_schema") == 0)
-        {
             return 0;
-        }
 
         //        bool columnStore = (table ? isMCSTable(table) : true);
         //       std::cout << "is columnStore table " << columnStore << std::endl;
@@ -165,8 +164,12 @@ public:
         execplan::CalpontSystemCatalog::RIDList oidlist = csc->columnRIDs(table_name, true);
         std::cout << "Size of oidlist " << oidlist.size() << std::endl;
         std::cout << "Create returned columns for execution plan " << std::endl;
+        execplan::CalpontAnalyzeTableExecutionPlan::ReturnedColumnList returnedColumnList;
+        execplan::CalpontAnalyzeTableExecutionPlan::ColumnMap columnMap;
 
-        for (uint32_t i = 0, e = oidlist.size(); i < e; ++i) {
+        for (uint32_t i = 0, e = oidlist.size(); i < e; ++i)
+        {
+            execplan::SRCP returnedColumn;
             const auto objNum = oidlist[i].objnum;
             auto tableColName = csc->colName(objNum);
             auto colType = csc->colType(objNum);
@@ -182,7 +185,14 @@ public:
 
             std::cout << "created column " << std::endl;
             std::cout << simpleColumn->toString() << std::endl;
+            returnedColumn.reset(simpleColumn);
+            returnedColumnList.push_back(returnedColumn);
+            columnMap.insert(execplan::CalpontSelectExecutionPlan::ColumnMap::value_type(
+                simpleColumn->columnName(), returnedColumn));
         }
+
+        execplan::CalpontAnalyzeTableExecutionPlan* exePlan =
+            new execplan::CalpontAnalyzeTableExecutionPlan(returnedColumnList, columnMap);
 
         return 0;
     }
