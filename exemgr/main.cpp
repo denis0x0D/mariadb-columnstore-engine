@@ -626,6 +626,7 @@ public:
         {
             for (;;)
             {
+                std::cout << "session thread in cycle " << std::endl;
                 selfJoin = false;
                 tryTuples = false;
                 usingTuples = false;
@@ -690,6 +691,31 @@ public:
                         fIos.write(bs);
                         fIos.close();
                         break;
+                    }
+                    else if (qb == 6)
+                    {
+                        std::cout << "handle analyze exe plan " << std::endl;
+//                        bs = fIos.read();
+                        messageqcpp::ByteStream::quadbyte qb;
+                        bs.restart();
+                        qb = 6;
+                        bs << qb;
+                        std::cout << "write to plugin " << std::endl;
+                        fIos.write(bs);
+ //                       fIos.close();
+                        // useriaize.
+                        std::cout << "break from cycle " << std::endl;
+
+                        while (1)
+                        {
+                            std::cout << "analye in cycle " << std::endl;
+                            bs.restart();
+                            std::cout << "read from plugin " << std::endl;
+                            bs = fIos.read();
+                            std::cout << "write to plugin " << std::endl;
+                            fIos.write(bs);
+                            std::cout << "finishing write " << std::endl;
+                        }
                     }
                     else
                     {
@@ -884,6 +910,7 @@ new_plan:
                 // Project each table as the FE asks for it
                 for (;;)
                 {
+                    std::cout << "read in cycle " << std::endl;
                     bs = fIos.read();
 
                     if (bs.length() == 0)
@@ -990,6 +1017,15 @@ new_plan:
                             statementsRunningCount->decr(stmtCounted);
                             bs = fIos.read();
                             goto new_plan;
+                        }
+                        else if (qb == 6)
+                        {
+                            std::cout << "write to plugin " << std::endl;
+                            bs.restart();
+                            messageqcpp::ByteStream::quadbyte qb;
+                            qb = 6;
+                            bs << qb;
+                            fIos.write(bs);
                         }
                         else // (qb > 3)
                         {
@@ -1274,6 +1310,8 @@ new_plan:
             fIos.close();
         }
 
+        std::cout << "Exe mngr end of session " << std::endl;
+        std::cout << "destructing " << destructing << std::endl;
         // make sure we don't leave scope while joblists are being destroyed
         std::unique_lock<std::mutex> scoped(jlMutex);
         while (destructing > 0)
@@ -1672,6 +1710,7 @@ int ServiceExeMgr::Child()
 
     for (;;)
     {
+        std::cout << "invokin session thread " << std::endl;
         messageqcpp::IOSocket ios;
         ios = mqs->accept();
         exeMgrThreadPool.invoke(SessionThread(ios, ec, rm));
