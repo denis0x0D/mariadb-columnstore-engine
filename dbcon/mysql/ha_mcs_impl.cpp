@@ -1964,12 +1964,15 @@ int ha_mcs_impl_analyze(THD* thd, TABLE* table)
         new execplan::CalpontAnalyzeTableExecutionPlan(returnedColumnList, columnMap);
 
     std::cout << "connection " << std::endl;
-
-    set_fe_conn_info_ptr(reinterpret_cast<void*>(new cal_connection_info(), thd));
     cal_connection_info* ci = reinterpret_cast<cal_connection_info*>(get_fe_conn_info_ptr());
-
     idbassert(ci != 0);
 
+    /*
+    set_fe_conn_info_ptr(reinterpret_cast<void*>(new cal_connection_info(), thd));
+    cal_connection_info* ci = reinterpret_cast<cal_connection_info*>(get_fe_conn_info_ptr());
+    */
+
+    
     /*   Enable it.
     if (thd->killed == KILL_QUERY || thd->killed == KILL_QUERY_HARD)
     {
@@ -1978,7 +1981,6 @@ int ha_mcs_impl_analyze(THD* thd, TABLE* table)
     }
     */
 
-    /*
     cal_table_info ti;
     sm::cpsm_conhdl_t* hndl;
 
@@ -2039,11 +2041,9 @@ int ha_mcs_impl_analyze(THD* thd, TABLE* table)
         }
     }
 
-
     std::cout << "Conneciton success " << std::endl;
     hndl = ci->cal_conn_hndl;
     return 0;
-
 error:
     std::cout << "error when connect() " << std::endl;
 
@@ -2053,9 +2053,6 @@ error:
         ci->cal_conn_hndl = 0;
     }
     return ER_INTERNAL_ERROR;
-    */
-
-    return 0;
 }
 
 int ha_mcs_impl_open(const char* name, int mode, uint32_t test_if_locked)
