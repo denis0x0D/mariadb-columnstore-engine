@@ -702,6 +702,9 @@ public:
                         exePlan.unserialize(bs);
                         std::cout << "unserialized execution plan " << std::endl;
                         std::cout << exePlan.toString() << std::endl;
+
+                        jl = joblist::JobListFactory::makeJobList(&exePlan, fRm, false, true);
+
                         bs.restart();
                         qb = 6;
                         bs << qb;
