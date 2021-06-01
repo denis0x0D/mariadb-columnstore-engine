@@ -697,25 +697,20 @@ public:
                         std::cout << "handle analyze exe plan " << std::endl;
 //                        bs = fIos.read();
                         messageqcpp::ByteStream::quadbyte qb;
+                        execplan::CalpontAnalyzeTableExecutionPlan exePlan;
+                        bs = fIos.read();
+                        exePlan.unserialize(bs);
+                        std::cout << "unserialized execution plan " << std::endl;
+                        std::cout << exePlan.toString() << std::endl;
                         bs.restart();
                         qb = 6;
                         bs << qb;
                         std::cout << "write to plugin " << std::endl;
                         fIos.write(bs);
- //                       fIos.close();
+                        fIos.close();
                         // useriaize.
                         std::cout << "break from cycle " << std::endl;
-
-                        while (1)
-                        {
-                            std::cout << "analye in cycle " << std::endl;
-                            bs.restart();
-                            std::cout << "read from plugin " << std::endl;
-                            bs = fIos.read();
-                            std::cout << "write to plugin " << std::endl;
-                            fIos.write(bs);
-                            std::cout << "finishing write " << std::endl;
-                        }
+                        break;
                     }
                     else
                     {

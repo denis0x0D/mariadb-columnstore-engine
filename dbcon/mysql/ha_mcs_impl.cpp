@@ -1963,6 +1963,9 @@ int ha_mcs_impl_analyze(THD* thd, TABLE* table)
     execplan::CalpontAnalyzeTableExecutionPlan* exePlan =
         new execplan::CalpontAnalyzeTableExecutionPlan(returnedColumnList, columnMap);
 
+    std::cout << "exe plan to string " << std::endl;
+    std::cout << exePlan->toString() << std::endl;
+
     std::cout << "connection " << std::endl;
     cal_connection_info* ci = reinterpret_cast<cal_connection_info*>(get_fe_conn_info_ptr());
     idbassert(ci != 0);
@@ -2043,6 +2046,49 @@ int ha_mcs_impl_analyze(THD* thd, TABLE* table)
 
     std::cout << "Conneciton success " << std::endl;
     hndl = ci->cal_conn_hndl;
+
+    {
+        ByteStream msg;
+        //        ByteStream emsgBs;
+
+        try
+        {
+            ByteStream::quadbyte qb = 6;
+            msg << qb;
+            hndl->exeMgr->write(msg);
+            msg.restart();
+
+            // send plan
+            exePlan->serialize(msg);
+            hndl->exeMgr->write(msg);
+
+            // get ExeMgr status back to indicate a vtable joblist success or not
+            msg.restart();
+            //emsgBs.restart();
+            std::cout << "Reading from exe mng " << std::endl;
+            msg = hndl->exeMgr->read();
+            // emsgBs = hndl->exeMgr->read();
+            string emsg;
+            std::cout << "end of read " << std::endl;
+
+            if (msg.length() == 0)
+            {
+                emsg = "Lost connection to ExeMgr. Please contact your administrator";
+                setError(thd, ER_INTERNAL_ERROR, emsg);
+                return ER_INTERNAL_ERROR;
+            }
+        }
+        catch (...)
+        {
+            goto error;
+        }
+    }
+
+    ci->rmParms.clear();
+    ci->tableMap[table] = ti;
+
+    std::cout << "Success " << std::endl;
+
     return 0;
 error:
     std::cout << "error when connect() " << std::endl;

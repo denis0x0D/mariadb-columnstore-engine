@@ -973,6 +973,8 @@ class CalpontAnalyzeTableExecutionPlan : public CalpontExecutionPlan
     typedef std::vector<SRCP> ReturnedColumnList;
     typedef std::multimap<std::string, SRCP> ColumnMap;
 
+    CalpontAnalyzeTableExecutionPlan() {}
+
     CalpontAnalyzeTableExecutionPlan(const ReturnedColumnList& returnedCols,
                                      const ColumnMap& columnMap)
         : fReturnedCols(returnedCols), fColumnMap(columnMap)
@@ -1031,13 +1033,31 @@ class CalpontAnalyzeTableExecutionPlan : public CalpontExecutionPlan
 
     const std::string timeZone() const { return fTimeZone; }
 
-    virtual std::string toString() const { return ""; }
+    virtual std::string toString() const
+    {
+        std::ostringstream output;
+        output << ">ANALYZE TABLE " << std::endl;
+        // table name
+
+        output << ">>Returned Columns" << std::endl;
+
+        for (auto& rColumn : fReturnedCols)
+            output << *rColumn << std::endl;
+
+        output << "--- Column Map ---" << std::endl;
+        CalpontSelectExecutionPlan::ColumnMap::const_iterator iter;
+
+        for (iter = columnMap().begin(); iter != columnMap().end(); iter++)
+            output << (*iter).first << " : " << (*iter).second << endl;
+
+        return output.str();
+    }
 
     virtual bool isInternal() const { return ((fSessionID & 0x80000000) != 0); }
 
     virtual void serialize(messageqcpp::ByteStream& bs) const
     {
-        bs << static_cast<ObjectReader::id_t>(ObjectReader::CALPOINTANALYZETBLEXECUTIONPLAN);
+        bs << static_cast<ObjectReader::id_t>(ObjectReader::CALPONTANALYZETBLEXECUTIONPLAN);
 
         // Add table name?
 
@@ -1055,7 +1075,34 @@ class CalpontAnalyzeTableExecutionPlan : public CalpontExecutionPlan
         }
     }
 
-    virtual void unserialize(messageqcpp::ByteStream&) {}
+    virtual void unserialize(messageqcpp::ByteStream& bs)
+    {
+        ObjectReader::checkType(bs, ObjectReader::CALPONTANALYZETBLEXECUTIONPLAN);
+        // erase elements, otherwise vectors contain null pointers
+        fReturnedCols.clear();
+        fColumnMap.clear();
+        uint32_t size;
+
+        bs >> size;
+        for (uint32_t i = 0; i < size; ++i)
+        {
+            auto* returnedColumn = dynamic_cast<ReturnedColumn*>(ObjectReader::createTreeNode(bs));
+            SRCP srcp(returnedColumn);
+            fReturnedCols.push_back(srcp);
+        }
+
+        bs >> size;
+        for (uint32_t i = 0; i < size; ++i)
+        {
+            std::string colName;
+            bs >> colName;
+            auto* returnedColumn = dynamic_cast<ReturnedColumn*>(ObjectReader::createTreeNode(bs));
+            SRCP srcp(returnedColumn);
+            fColumnMap.insert(ColumnMap::value_type(colName, srcp));
+        }
+    }
+
+    // TODO: Implement it.
     virtual bool operator==(const CalpontExecutionPlan* t) const { return false; }
     virtual bool operator!=(const CalpontExecutionPlan* t) const { return false; }
 

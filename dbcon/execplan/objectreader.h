@@ -123,7 +123,7 @@ public:
         /** UDAF SDK */
         MCSV1_CONTEXT,
         UDAFCOLUMN,
-        CALPOINTANALYZETBLEXECUTIONPLAN
+        CALPONTANALYZETBLEXECUTIONPLAN
     };
 
     typedef uint8_t id_t;    //expand as necessary
