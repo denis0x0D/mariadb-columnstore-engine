@@ -1965,13 +1965,12 @@ int ha_mcs_impl_analyze(THD* thd, TABLE* table)
 
     std::cout << "connection " << std::endl;
 
-    /*
     set_fe_conn_info_ptr(reinterpret_cast<void*>(new cal_connection_info(), thd));
     cal_connection_info* ci = reinterpret_cast<cal_connection_info*>(get_fe_conn_info_ptr());
 
     idbassert(ci != 0);
 
-       Enable it.
+    /*   Enable it.
     if (thd->killed == KILL_QUERY || thd->killed == KILL_QUERY_HARD)
     {
         force_close_fep_conn(thd, ci);
