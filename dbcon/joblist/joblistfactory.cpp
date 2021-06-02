@@ -1766,7 +1766,85 @@ void makeVtableModeSteps(CalpontSelectExecutionPlan* csep, JobInfo& jobInfo,
 //	ds->setTraceFlags(jobInfo.traceFlags);
 }
 
+void parseAnalyzeTableExecutionPlan(CalpontAnalyzeTableExecutionPlan* caep, JobInfo& jobInfo,
+                                    JobStepVector& querySteps, JobStepVector& projectSteps,
+                                    DeliveredTableMap& deliverySteps)
+{
+
+  /*
+    projectSteps = doProject(jobInfo.nonConstCols, jobInfo);
+
+    // bug3736, have jobInfo include the column map info.
+    const CalpontSelectExecutionPlan::ColumnMap& retCols = csep->columnMap();
+    CalpontSelectExecutionPlan::ColumnMap::const_iterator i = retCols.begin();
+
+    for (; i != retCols.end(); i++)
+    {
+        SimpleColumn* sc = dynamic_cast<SimpleColumn*>(i->second.get());
+
+        if (sc && !sc->schemaName().empty())
+        {
+            CalpontSystemCatalog::OID tblOid = tableOid(sc, jobInfo.csc);
+            CalpontSystemCatalog::ColType ct = sc->colType();
+
+//XXX use this before connector sets colType in sc correctly.
+            if (sc->isColumnStore() && dynamic_cast<const PseudoColumn*>(sc) == NULL)
+            {
+                ct = jobInfo.csc->colType(sc->oid());
+                ct.charsetNumber =sc->colType().charsetNumber;
+            }
+
+//X
+
+            string alias(extractTableAlias(sc));
+            TupleInfo ti(setTupleInfo(ct, sc->oid(), jobInfo, tblOid, sc, alias));
+            uint32_t colKey = ti.key;
+            uint32_t tblKey = getTableKey(jobInfo, colKey);
+            jobInfo.columnMap[tblKey].push_back(colKey);
+
+            if (jobInfo.tableColMap.find(tblKey) == jobInfo.tableColMap.end())
+                jobInfo.tableColMap[tblKey] = i->second;
+        }
+    }
+
+    JobStepVector::iterator jsiter = projectSteps.begin();
+    JobStepVector::iterator jsend = projectSteps.end();
+
+    while (jsiter != jsend)
+    {
+        JobStep* js = jsiter->get();
+
+        if (js->tupleId() != (uint64_t) - 1)
+            tableId = getTableKey(jobInfo, js->tupleId());
+        else
+            tableId = getTableKey(jobInfo, js);
+
+        if (typeid(*(jsiter->get())) == typeid(pColStep) &&
+                tableIDMap.find(tableId) == tableIDMap.end())
+        {
+            SJSTEP step0 = *jsiter;
+            pColStep* colStep = dynamic_cast<pColStep*>(step0.get());
+            pColScanStep* scanStep = new pColScanStep(*colStep);
+            //clear out any output association so we get a nice, new one during association
+            scanStep->outputAssociation(JobStepAssociation());
+            step0.reset(scanStep);
+            querySteps.push_back(step0);
+            js = step0.get();
+            tableId = getTableKey(jobInfo, js->tupleId());
+            tableIDMap.insert(tableId);
+        }
+
+        ++jsiter;
+    }
+    */
 }
+
+void generateAnalyzeTableJobSteps(CalpontAnalyzeTableExecutionPlan* csep, JobInfo& jobInfo,
+                                  JobStepVector& querySteps, JobStepVector& projectSteps,
+                                  DeliveredTableMap& deliverySteps)
+{
+}
+} // namespace
 
 namespace joblist
 {
@@ -1834,8 +1912,14 @@ void makeUnionJobSteps(CalpontSelectExecutionPlan* csep, JobInfo& jobInfo,
     deliverySteps[execplan::CNX_VTABLE_ID] = unionStep;
 }
 
-
+void makeAnalyzeTableJobSteps(CalpontAnalyzeTableExecutionPlan* caep, JobInfo& jobInfo,
+                              JobStepVector& querySteps, JobStepVector& projectSteps,
+                              DeliveredTableMap& deliverySteps)
+{
+    parseAnalyzeTableExecutionPlan(caep, jobInfo, querySteps, projectSteps, deliverySteps);
+    generateAnalyzeTableJobSteps(caep, jobInfo, querySteps, projectSteps, deliverySteps);
 }
+} // namespace joblist
 
 namespace
 {
@@ -2047,11 +2131,107 @@ SJLP makeJobList_(
     else
     {
         auto* exePlan = dynamic_cast<CalpontAnalyzeTableExecutionPlan*>(cplan);
+
+        boost::shared_ptr<CalpontSystemCatalog> csc =
+            CalpontSystemCatalog::makeCalpontSystemCatalog(csep->sessionID());
+
+        static config::Config* sysConfig = config::Config::makeConfig();
+        int pmsConfigured = atoi(sysConfig->getConfig("PrimitiveServers", "Count").c_str());
+
+        SErrorInfo errorInfo(new ErrorInfo());
+        boost::shared_ptr<TupleKeyInfo> keyInfo(new TupleKeyInfo);
+        boost::shared_ptr<int> subCount(new int);
+        *subCount = 0;
         JobList* jl = new TupleJobList(isExeMgr);
+        jl->setPMsConfigured(pmsConfigured);
+//        jl->priority(exePlan->priority());
+        jl->errorInfo(errorInfo);
+ //       rm->setTraceFlags(csep->traceFlags());
+
+        // Stuff a util struct with some stuff we always need
+        JobInfo jobInfo(rm);
+        /*
+        jobInfo.sessionId = exePlan->sessionID();
+        jobInfo.txnId = csep->txnID();
+        jobInfo.verId = csep->verID();
+        jobInfo.statementId = csep->statementID();
+        jobInfo.queryType = csep->queryType();
+        */
+        jobInfo.csc = csc;
+        // TODO: clean up the vestiges of the bool trace
+        //jobInfo.trace = csep->traceOn();
+        //jobInfo.traceFlags = csep->traceFlags();
+        jobInfo.isExeMgr = isExeMgr;
+        //	jobInfo.tryTuples = tryTuples; // always tuples after release 3.0
+        //jobInfo.stringScanThreshold = csep->stringScanThreshold();
+        jobInfo.errorInfo = errorInfo;
+        jobInfo.keyInfo = keyInfo;
+        jobInfo.subCount = subCount;
+        jobInfo.projectingTableOID = jl->projectingTableOIDPtr();
+        jobInfo.jobListPtr = jl;
+        //jobInfo.stringTableThreshold = csep->stringTableThreshold();
+        //jobInfo.localQuery = csep->localQuery();
+        //jobInfo.uuid = csep->uuid();
+        //jobInfo.timeZone = csep->timeZone();
+
+        /* disk-based join vars */
+        //jobInfo.smallSideLimit = csep->djsSmallSideLimit();
+        //jobInfo.largeSideLimit = csep->djsLargeSideLimit();
+        //jobInfo.partitionSize = csep->djsPartitionSize();
+        //jobInfo.umMemLimit.reset(new int64_t);
+       // *(jobInfo.umMemLimit) = csep->umMemLimit();
+        //jobInfo.isDML = csep->isDML();
+
+        //jobInfo.smallSideUsage.reset(new int64_t);
+        //*jobInfo.smallSideUsage = 0;
+
+        /*
+        try
+        {
+            JobStepVector querySteps;
+            JobStepVector projectSteps;
+            DeliveredTableMap deliverySteps;
+
+            // FIXME: is this needed ?
+            uint16_t stepNo = numberSteps(querySteps, 0, jobInfo.traceFlags);
+            stepNo = numberSteps(projectSteps, stepNo, jobInfo.traceFlags);
+
+            // Parse exe plan and create a jobstesp from it.
+            makeAnalyzeTableJobSteps(exePlan, jobInfo, querySteps, projectSteps, deliverySteps);
+
+            jl->addQuery(querySteps);
+            jl->addProject(projectSteps);
+            jl->addDelivery(deliverySteps);
+            dynamic_cast<TupleJobList*>(jl)->setDeliveryFlag(true);
+        }
+        catch (IDBExcept& iex)
+        {
+            jobInfo.errorInfo->errCode = iex.errorCode();
+            errCode = iex.errorCode();
+            exceptionHandler(jl, jobInfo, iex.what(), LOG_TYPE_DEBUG);
+            emsg = iex.what();
+            jl = 0;
+        }
+        catch (const std::exception& ex)
+        {
+            jobInfo.errorInfo->errCode = makeJobListErr;
+            errCode = makeJobListErr;
+            exceptionHandler(jl, jobInfo, ex.what());
+            emsg = ex.what();
+            jl = 0;
+        }
+        catch (...)
+        {
+            jobInfo.errorInfo->errCode = makeJobListErr;
+            errCode = makeJobListErr;
+            exceptionHandler(jl, jobInfo, "an exception");
+            emsg = "An unknown internal joblist error";
+            jl = 0;
+        }
+        */
+
         SJLP jlp(jl);
         return jlp;
-        // parse
-        // create job steps
     }
 }
 } // namespace

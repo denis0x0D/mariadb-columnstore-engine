@@ -24,15 +24,6 @@
 #include "ha_mcs_sysvars.h"
 #include "ha_maria.h"
 
-#include "calpontsystemcatalog.h"
-#include "simplecolumn.h"
-#include "calpontselectexecutionplan.h"
-
-using namespace logging;
-using namespace execplan;
-
-#include <iostream>
-
 extern handlerton* mcs_hton;
 
 /** @brief

@@ -1001,7 +1001,7 @@ class CalpontAnalyzeTableExecutionPlan : public CalpontExecutionPlan
 
     ColumnMap& columnMap() { return fColumnMap; }
 
-    void columnMap(const ColumnMap& columnMap);
+    void columnMap(const ColumnMap& columnMap) { fColumnMap = columnMap; }
 
     uint32_t sessionID() const { return fSessionID; }
 
@@ -1108,7 +1108,7 @@ class CalpontAnalyzeTableExecutionPlan : public CalpontExecutionPlan
 
   private:
     ReturnedColumnList fReturnedCols;
-    ColumnMap fColumnMap; // for ExeMgr to use. not shared between objects
+    ColumnMap fColumnMap;
 
     std::string fTableAlias;
     uint32_t fSessionID;
