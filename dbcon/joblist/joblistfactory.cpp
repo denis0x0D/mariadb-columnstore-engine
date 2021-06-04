@@ -1766,9 +1766,9 @@ void makeVtableModeSteps(CalpontSelectExecutionPlan* csep, JobInfo& jobInfo,
 //	ds->setTraceFlags(jobInfo.traceFlags);
 }
 
-void parseAnalyzeTableExecutionPlan(CalpontAnalyzeTableExecutionPlan* caep, JobInfo& jobInfo,
-                                    JobStepVector& querySteps, JobStepVector& projectSteps,
-                                    DeliveredTableMap& deliverySteps)
+void generateAnalyzeTableJobSteps(CalpontAnalyzeTableExecutionPlan* caep, JobInfo& jobInfo,
+                                  JobStepVector& querySteps, JobStepVector& projectSteps,
+                                  DeliveredTableMap& deliverySteps)
 {
     const auto& retCols = caep->returnedCols();
 
@@ -1869,7 +1869,7 @@ void parseAnalyzeTableExecutionPlan(CalpontAnalyzeTableExecutionPlan* caep, JobI
     RowGroupDL* dl = new RowGroupDL(1, jobInfo.fifoSize);
     AnyDataListSPtr spdl(new AnyDataList());
     spdl->rowGroupDL(dl);
-   // dl->OID(mit->first);
+    dl->OID(0); // mit->first); select does it.
     JobStepAssociation jsa;
     jsa.outAdd(spdl);
     // Create BPS
@@ -1877,13 +1877,12 @@ void parseAnalyzeTableExecutionPlan(CalpontAnalyzeTableExecutionPlan* caep, JobI
     tbps->setOutputRowGroup(rg);
 
     std::cout << tbps->toString() << std::endl;
+    querySteps.clear();
+    SJSTEP sjsp;
+    sjsp.reset(tbps);
+    querySteps.push_back(sjsp);
 }
 
-void generateAnalyzeTableJobSteps(CalpontAnalyzeTableExecutionPlan* csep, JobInfo& jobInfo,
-                                  JobStepVector& querySteps, JobStepVector& projectSteps,
-                                  DeliveredTableMap& deliverySteps)
-{
-}
 } // namespace
 
 namespace joblist
@@ -1956,7 +1955,6 @@ void makeAnalyzeTableJobSteps(CalpontAnalyzeTableExecutionPlan* caep, JobInfo& j
                               JobStepVector& querySteps, JobStepVector& projectSteps,
                               DeliveredTableMap& deliverySteps)
 {
-    parseAnalyzeTableExecutionPlan(caep, jobInfo, querySteps, projectSteps, deliverySteps);
     generateAnalyzeTableJobSteps(caep, jobInfo, querySteps, projectSteps, deliverySteps);
 }
 } // namespace joblist
@@ -2212,17 +2210,6 @@ SJLP makeJobList_(
         // jobInfo.uuid = csep->uuid();
         // jobInfo.timeZone = csep->timeZone();
 
-        /* disk-based join vars */
-        // jobInfo.smallSideLimit = csep->djsSmallSideLimit();
-        // jobInfo.largeSideLimit = csep->djsLargeSideLimit();
-        // jobInfo.partitionSize = csep->djsPartitionSize();
-        // jobInfo.umMemLimit.reset(new int64_t);
-        // *(jobInfo.umMemLimit) = csep->umMemLimit();
-        // jobInfo.isDML = csep->isDML();
-
-        //jobInfo.smallSideUsage.reset(new int64_t);
-        //*jobInfo.smallSideUsage = 0;
-
         try
         {
             JobStepVector querySteps;
@@ -2265,6 +2252,9 @@ SJLP makeJobList_(
             emsg = "An unknown internal joblist error";
             jl = 0;
         }
+
+        std::cout << "Generated job list " << std::endl;
+        std::cout << jl->toString() << std::endl;
 
         SJLP jlp(jl);
         return jlp;

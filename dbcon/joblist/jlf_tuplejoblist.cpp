@@ -765,6 +765,7 @@ void addProjectStepsToBps(TableInfoMap::iterator& mit, BatchPrimitive* bps, JobI
     AnyDataListSPtr spdl(new AnyDataList());
     RowGroupDL* dl = new RowGroupDL(1, jobInfo.fifoSize);
     spdl->rowGroupDL(dl);
+    std::cout << "Table OID " << mit->first << std::endl;
     dl->OID(mit->first);
     JobStepAssociation jsa;
     jsa.outAdd(spdl);
