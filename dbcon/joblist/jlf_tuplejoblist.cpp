@@ -1398,6 +1398,15 @@ bool combineJobStepsByTable(TableInfoMap::iterator& mit, JobInfo& jobInfo)
     if (jobInfo.trace)
         cout << "RowGroup for " << mit->first << " : " << mit->second.fRowGroup.toString() << endl;
 
+
+    std::cout << "new steps size " << std::endl;
+    std::cout << newSteps.size() << std::endl;
+
+    for (auto& s : newSteps)
+    {
+        std::cout << s.get()->toString() << std::endl;
+    }
+
     qsv.swap(newSteps);
 
     return true;

@@ -1806,6 +1806,13 @@ void parseAnalyzeTableExecutionPlan(CalpontAnalyzeTableExecutionPlan* caep, JobI
     step0.reset(scanStep);
     querySteps.push_back(step0);
 
+    TupleBPS* tbps = new TupleBPS(*(static_cast<pColScanStep*>(step0.get())), jobInfo);
+    tbps->setFirstStepType(SCAN);
+    std::cout << "tupe bps is created " << std::endl;
+
+    // One Filter step is scan step.
+    tbps->setBPP(step0.get());
+    tbps->setStepCount();
 
     vector<uint32_t> pos;
     vector<uint32_t> oids;
@@ -1821,6 +1828,7 @@ void parseAnalyzeTableExecutionPlan(CalpontAnalyzeTableExecutionPlan* caep, JobI
     {
         JobStep* js = it->get();
         auto* colStep = static_cast<pColStep*>(js);
+        SJSTEP stepWrapper;
 
         if (first)
         {
@@ -1830,8 +1838,13 @@ void parseAnalyzeTableExecutionPlan(CalpontAnalyzeTableExecutionPlan* caep, JobI
             pts->view(colStep->view());
             pts->name(colStep->name());
             pts->tupleId(colStep->tupleId());
+            tbps->setProjectBPP(pts, NULL);
             // Why it does not work?
 //            it->reset(pts);
+        }
+        else
+        {
+            tbps->setProjectBPP(it->get(), NULL);
         }
 
         std::cout << "create tuple info " << std::endl;
@@ -1860,8 +1873,10 @@ void parseAnalyzeTableExecutionPlan(CalpontAnalyzeTableExecutionPlan* caep, JobI
     JobStepAssociation jsa;
     jsa.outAdd(spdl);
     // Create BPS
-    //    bps->outputAssociation(jsa);
-    //   bps->setOutputRowGroup(rg);
+    tbps->outputAssociation(jsa);
+    tbps->setOutputRowGroup(rg);
+
+    std::cout << tbps->toString() << std::endl;
 }
 
 void generateAnalyzeTableJobSteps(CalpontAnalyzeTableExecutionPlan* csep, JobInfo& jobInfo,
