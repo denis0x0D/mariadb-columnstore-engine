@@ -1867,12 +1867,15 @@ void generateAnalyzeTableJobSteps(CalpontAnalyzeTableExecutionPlan* caep, JobInf
 
     std::cout << "create row group " << std::endl;
     std::cout << rg.toString() << std::endl;
-    std::cout << "fifo size " << jobInfo.fifoSize << std::endl;
+    
     // fix the output association
     RowGroupDL* dl = new RowGroupDL(1, jobInfo.fifoSize);
+    // Update it.
+    dl->OID(100);
+
     AnyDataListSPtr spdl(new AnyDataList());
     spdl->rowGroupDL(dl);
-    dl->OID(100); // mit->first); select does it.
+
     JobStepAssociation jsa;
     jsa.outAdd(spdl);
     // Create BPS
@@ -1886,7 +1889,37 @@ void generateAnalyzeTableJobSteps(CalpontAnalyzeTableExecutionPlan* caep, JobInf
     projectSteps.clear();
 
     // Delivery Step.
-    TupleAnnexStep* tas = new TupleAnnexStep(jobInfo);
+    SJSTEP annexStep;
+    auto* tas = new TupleAnnexStep(jobInfo);
+    annexStep.reset(tas);
+    //   annexStep->setLimit(jobInfo.limitStart, jobInfo.limitCount);
+
+    RowGroup rg2 = tbps->getDeliveredRowGroup();
+
+    RowGroupDL* dlIn = new RowGroupDL(1, jobInfo.fifoSize);
+    dlIn->OID(CNX_VTABLE_ID);
+    AnyDataListSPtr spdlIn(new AnyDataList());
+    spdlIn->rowGroupDL(dlIn);
+
+    JobStepAssociation jsaIn;
+    jsaIn.outAdd(spdlIn);
+
+    tbps->outputAssociation(jsaIn);
+    annexStep->inputAssociation(jsaIn);
+
+
+    RowGroupDL* dlOut = new RowGroupDL(1, jobInfo.fifoSize);
+    dlOut->OID(CNX_VTABLE_ID);
+    AnyDataListSPtr spdlOut(new AnyDataList());
+    spdlOut->rowGroupDL(dlOut);
+
+    JobStepAssociation jsaOut;
+    jsaOut.outAdd(spdlOut);
+    annexStep->outputAssociation(jsaOut);
+
+    querySteps.push_back(annexStep);
+    tas->initialize(rg2, jobInfo);
+    deliverySteps[CNX_VTABLE_ID] = jobInfo.annexStep;
 }
 
 } // namespace

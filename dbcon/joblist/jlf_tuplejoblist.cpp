@@ -523,8 +523,6 @@ void adjustLastStep(JobStepVector& querySteps, DeliveredTableMap& deliverySteps,
 
     if (jobInfo.annexStep)
     {
-
-        std::cout << "TupleDeilivery Step " << std::endl;
         TupleDeliveryStep* ds =
             dynamic_cast<TupleDeliveryStep*>(deliverySteps[CNX_VTABLE_ID].get());
         RowGroup rg2 = ds->getDeliveredRowGroup();
