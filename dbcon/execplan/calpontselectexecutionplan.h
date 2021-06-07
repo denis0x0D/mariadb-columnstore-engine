@@ -972,6 +972,7 @@ class CalpontAnalyzeTableExecutionPlan : public CalpontExecutionPlan
   public:
     typedef std::vector<SRCP> ReturnedColumnList;
     typedef std::multimap<std::string, SRCP> ColumnMap;
+    typedef std::vector<RMParam> RMParmVec;
 
     CalpontAnalyzeTableExecutionPlan() {}
 
@@ -1003,9 +1004,21 @@ class CalpontAnalyzeTableExecutionPlan : public CalpontExecutionPlan
 
     void columnMap(const ColumnMap& columnMap) { fColumnMap = columnMap; }
 
+    const std::string data() const { return fData; }
+
+    void data(const std::string data) { fData = data; }
+
     uint32_t sessionID() const { return fSessionID; }
 
     void sessionID(const uint32_t sessionID) { fSessionID = sessionID; }
+
+    int txnID() const { return fTxnID; }
+
+    void txnID(const int txnID) { fTxnID = txnID; }
+
+    const BRM::QueryContext verID() const { return fVerID; }
+
+    void verID(const BRM::QueryContext verID) { fVerID = verID; }
 
     inline std::string& schemaName() { return fSchemaName; }
 
@@ -1025,6 +1038,10 @@ class CalpontAnalyzeTableExecutionPlan : public CalpontExecutionPlan
             boost::algorithm::to_lower(fTableName);
     }
 
+    uint32_t statementID() const { return fStatementID; }
+
+    void statementID(const uint32_t statementID) { fStatementID = statementID; }
+
     void uuid(const boost::uuids::uuid& uuid) { fUuid = uuid; }
 
     const boost::uuids::uuid& uuid() const { return fUuid; }
@@ -1032,6 +1049,22 @@ class CalpontAnalyzeTableExecutionPlan : public CalpontExecutionPlan
     void timeZone(const std::string& timezone) { fTimeZone = timezone; }
 
     const std::string timeZone() const { return fTimeZone; }
+
+    void priority(uint32_t p) { fPriority = p; }
+
+    uint32_t priority() const { return fPriority; }
+
+    const RMParmVec& rmParms() { return frmParms; }
+
+    void rmParms(const RMParmVec& parms)
+    {
+        frmParms.clear();
+        frmParms.assign(parms.begin(), parms.end());
+    }
+
+    uint32_t localQuery() const { return fLocalQuery; }
+
+    void localQuery(const uint32_t localQuery) { fLocalQuery = localQuery; }
 
     virtual std::string toString() const
     {
@@ -1049,6 +1082,10 @@ class CalpontAnalyzeTableExecutionPlan : public CalpontExecutionPlan
 
         for (iter = columnMap().begin(); iter != columnMap().end(); iter++)
             output << (*iter).first << " : " << (*iter).second << endl;
+
+        output << "SessionID: " << fSessionID << endl;
+        output << "TxnID: " << fTxnID << endl;
+        output << "VerID: " << fVerID << endl;
 
         return output.str();
     }
@@ -1073,6 +1110,26 @@ class CalpontAnalyzeTableExecutionPlan : public CalpontExecutionPlan
             bs << column.first;
             column.second->serialize(bs);
         }
+
+        bs << static_cast<uint32_t>(frmParms.size());
+
+        for (RMParmVec::const_iterator it = frmParms.begin(); it != frmParms.end(); ++it)
+        {
+            bs << it->sessionId;
+            bs << it->id;
+            bs << it->value;
+        }
+
+        bs << fData;
+        bs << static_cast<uint32_t>(fSessionID);
+        bs << static_cast<uint32_t>(fTxnID);
+        bs << fVerID;
+        bs << fStatementID;
+        bs << static_cast<uint64_t>(fStringScanThreshold);
+        bs << fPriority;
+        bs << fSchemaName;
+        bs << fLocalQuery;
+        bs << fTimeZone;
     }
 
     virtual void unserialize(messageqcpp::ByteStream& bs)
@@ -1100,6 +1157,32 @@ class CalpontAnalyzeTableExecutionPlan : public CalpontExecutionPlan
             SRCP srcp(returnedColumn);
             fColumnMap.insert(ColumnMap::value_type(colName, srcp));
         }
+
+        bs >> size;
+        messageqcpp::ByteStream::doublebyte id;
+        messageqcpp::ByteStream::quadbyte sessionId;
+        messageqcpp::ByteStream::octbyte memory;
+
+        for (uint32_t i = 0; i < size; i++)
+        {
+            bs >> sessionId;
+            bs >> id;
+            bs >> memory;
+            frmParms.push_back(RMParam(sessionId, id, memory));
+        }
+
+//        b >> fTableAlias;
+
+        bs >> fData;
+        bs >> reinterpret_cast<uint32_t&>(fSessionID);
+        bs >> reinterpret_cast<uint32_t&>(fTxnID);
+        bs >> fVerID;
+        bs >> fStatementID;
+        bs >> reinterpret_cast<uint64_t&>(fStringScanThreshold);
+        bs >> fPriority;
+        bs >> fSchemaName;
+        bs >> fLocalQuery;
+        bs >> fTimeZone;
     }
 
     // TODO: Implement it.
@@ -1111,15 +1194,39 @@ class CalpontAnalyzeTableExecutionPlan : public CalpontExecutionPlan
     ColumnMap fColumnMap;
 
     std::string fTableAlias;
+
     uint32_t fSessionID;
-    int fTxnID; // SQLEngine only needs the ID value
+
+    int fTxnID;
+
     BRM::QueryContext fVerID;
+
     std::string fSchemaName;
+
     std::string fTableName;
+
     uint32_t fTraceFlags;
-    uint32_t fStatementID;
+
     boost::uuids::uuid fUuid;
+
     std::string fTimeZone;
+
+    uint32_t fStatementID;
+
+    // for limit
+    uint64_t fLimitStart;
+
+    uint64_t fLimitNum;
+
+    uint64_t fStringScanThreshold;
+
+    std::string fData;
+
+    RMParmVec frmParms;
+
+    uint32_t fPriority;
+
+    uint32_t fLocalQuery;
 };
 }
 #endif //CALPONTSELECTEXECUTIONPLAN_H

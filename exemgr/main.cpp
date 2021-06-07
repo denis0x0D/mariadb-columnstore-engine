@@ -705,6 +705,26 @@ public:
 
                         jl = joblist::JobListFactory::makeJobList(&exePlan, fRm, false, true);
 
+                        if (UNLIKELY(fEc->getNumConnections() != fEc->connectedPmServers()))
+                        {
+                            std::cout << "fEc setup " << std::endl;
+                            fEc->Setup();
+                        }
+                        if (jl->status() == 0)
+                        {
+                            std::string emsg;
+
+                            if (jl->putEngineComm(fEc) != 0)
+                                throw std::runtime_error(jl->errMsg());
+                        }
+                        else
+                        {
+                            throw std::runtime_error("ExeMgr: could not build a JobList!");
+                        }
+
+                        std::cout << "Do query " << std::endl;
+                        jl->doQuery();
+
                         bs.restart();
                         qb = 6;
                         bs << qb;

@@ -6959,9 +6959,6 @@ int getSelectPlan(gp_walk_info& gwi, SELECT_LEX& select_lex,
         return rc;
     }
 
-    std::cout << "process from " << std::endl;
-    std::cout << csep << std::endl;
-
     bool unionSel = (!isUnion && select_lex.master_unit()->is_unit_op()) ? true : false;
 
     gwi.clauseType = WHERE;
@@ -7024,8 +7021,6 @@ int getSelectPlan(gp_walk_info& gwi, SELECT_LEX& select_lex,
         {
             case Item::FIELD_ITEM:
             {
-
-                std::cout << "FIELD_ITEM " << std::endl;
                 Item_field* ifp = (Item_field*)item;
                 SimpleColumn* sc = NULL;
 

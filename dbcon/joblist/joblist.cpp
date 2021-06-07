@@ -156,6 +156,9 @@ JobList::~JobList()
 
 int JobList::doQuery()
 {
+    std::cout << "JobList doQuery " << std::endl;
+    std::cout << "pms conf " << fPmsConfigured << std::endl;
+    std::cout << "pms connec " << fPmsConnected << std::endl;
     // Don't start the steps if there is no PrimProc connection.
     if (fPmsConfigured < 1 || fPmsConnected < fPmsConfigured)
         return 0;
@@ -220,6 +223,7 @@ int JobList::doQuery()
     JobStepVector::iterator iter = fQuery.begin();
     JobStepVector::iterator end  = fQuery.end();
 
+    std::cout << "fQuery size " << fQuery.size() << std::endl;
     // Start the query running
     while (iter != end)
     {

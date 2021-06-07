@@ -90,6 +90,9 @@ using namespace rowgroup;
 
 #include "mcsv1_udaf.h"
 
+// TODO: Remove it.
+#include "tupleannexstep.h"
+
 namespace
 {
 using namespace joblist;
@@ -1869,18 +1872,21 @@ void generateAnalyzeTableJobSteps(CalpontAnalyzeTableExecutionPlan* caep, JobInf
     RowGroupDL* dl = new RowGroupDL(1, jobInfo.fifoSize);
     AnyDataListSPtr spdl(new AnyDataList());
     spdl->rowGroupDL(dl);
-    dl->OID(0); // mit->first); select does it.
+    dl->OID(100); // mit->first); select does it.
     JobStepAssociation jsa;
     jsa.outAdd(spdl);
     // Create BPS
     tbps->outputAssociation(jsa);
     tbps->setOutputRowGroup(rg);
 
-    std::cout << tbps->toString() << std::endl;
     querySteps.clear();
     SJSTEP sjsp;
     sjsp.reset(tbps);
     querySteps.push_back(sjsp);
+    projectSteps.clear();
+
+    // Delivery Step.
+    TupleAnnexStep* tas = new TupleAnnexStep(jobInfo);
 }
 
 } // namespace
@@ -2182,33 +2188,30 @@ SJLP makeJobList_(
         boost::shared_ptr<int> subCount(new int);
         *subCount = 0;
         jl->setPMsConfigured(pmsConfigured);
-        // jl->priority(exePlan->priority());
+        jl->priority(caep->priority()); // FIXME
         jl->errorInfo(errorInfo);
         // rm->setTraceFlags(csep->traceFlags());
 
         // Stuff a util struct with some stuff we always need
         JobInfo jobInfo(rm);
         jobInfo.sessionId = caep->sessionID();
-        // jobInfo.txnId = csep->txnID();
-        // jobInfo.verId = csep->verID();
-        // jobInfo.statementId = csep->statementID();
-        // jobInfo.queryType = csep->queryType();
+        jobInfo.txnId = caep->txnID();
+        jobInfo.verId = caep->verID();
+        jobInfo.statementId = caep->statementID();
+        // jobInfo.queryType = caep->queryType();
         jobInfo.csc = csc;
-        // TODO: clean up the vestiges of the bool trace
-        // jobInfo.trace = csep->traceOn();
-        // jobInfo.traceFlags = csep->traceFlags();
+        // jobInfo.trace = caep->traceOn();
+        // jobInfo.traceFlags = caep->traceFlags();
         jobInfo.isExeMgr = isExeMgr;
-        // jobInfo.tryTuples = tryTuples; // always tuples after release 3.0
-        // jobInfo.stringScanThreshold = csep->stringScanThreshold();
+        jobInfo.stringScanThreshold = 20; // caep->stringScanThreshold();
         jobInfo.errorInfo = errorInfo;
         jobInfo.keyInfo = keyInfo;
         jobInfo.subCount = subCount;
         jobInfo.projectingTableOID = jl->projectingTableOIDPtr();
         jobInfo.jobListPtr = jl;
-        // jobInfo.stringTableThreshold = csep->stringTableThreshold();
-        // jobInfo.localQuery = csep->localQuery();
-        // jobInfo.uuid = csep->uuid();
-        // jobInfo.timeZone = csep->timeZone();
+        jobInfo.localQuery = caep->localQuery();
+        // jobInfo.uuid = caep->uuid();
+        jobInfo.timeZone = caep->timeZone();
 
         try
         {

@@ -523,6 +523,8 @@ void adjustLastStep(JobStepVector& querySteps, DeliveredTableMap& deliverySteps,
 
     if (jobInfo.annexStep)
     {
+
+        std::cout << "TupleDeilivery Step " << std::endl;
         TupleDeliveryStep* ds =
             dynamic_cast<TupleDeliveryStep*>(deliverySteps[CNX_VTABLE_ID].get());
         RowGroup rg2 = ds->getDeliveredRowGroup();
@@ -592,6 +594,8 @@ void adjustLastStep(JobStepVector& querySteps, DeliveredTableMap& deliverySteps,
 
         if (ds) cout << "Delivered RowGroup: " << ds->getDeliveredRowGroup().toString() << endl;
     }
+
+    std::cout << "delivery steps, query steps size " << querySteps.size() << std::endl;
 }
 
 
@@ -3998,7 +4002,7 @@ void associateTupleJobSteps(JobStepVector& querySteps, JobStepVector& projectSte
                           tableInfoMap[*i].fQuerySteps.begin(),
                           tableInfoMap[*i].fQuerySteps.end());
 
-    adjustLastStep(querySteps, deliverySteps, jobInfo);  // to match the select clause
+    adjustLastStep(querySteps, deliverySteps, jobInfo); // to match the select clause
 }
 
 

@@ -536,6 +536,7 @@ TupleBPS::~TupleBPS()
 
 void TupleBPS::setBPP(JobStep* jobStep)
 {
+    std::cout << "Set BPS " << std::endl;
     fCardinality = jobStep->cardinality();
 
     pColStep* pcsp = dynamic_cast<pColStep*>(jobStep);
@@ -1128,6 +1129,9 @@ void TupleBPS::reloadExtentLists()
 
 void TupleBPS::run()
 {
+
+    std::cout << "void TupleBPS::run() " << std::endl;
+
     uint32_t i;
     boost::mutex::scoped_lock lk(jlLock);
     uint32_t retryCounter = 0;
@@ -1397,14 +1401,19 @@ void TupleBPS::interleaveJobs(vector<Job>* jobs) const
 
 void TupleBPS::sendJobs(const vector<Job>& jobs)
 {
+
+    std::cout << "send jobs " << std::endl;
     uint32_t i;
     boost::unique_lock<boost::mutex> tplLock(tplMutex, boost::defer_lock);
 
+    std::cout << "job size " << jobs.size() << std::endl;
     for (i = 0; i < jobs.size() && !cancelled(); i++)
     {
+        std::cout << "write job by unique id " << uniqueID << std::endl;
         fDec->write(uniqueID, *(jobs[i].msg));
         tplLock.lock();
         msgsSent += jobs[i].expectedResponses;
+        std::cout << "message sent " << msgsSent << std::endl;
 
         if (recvWaiting)
             condvar.notify_all();
@@ -1745,6 +1754,7 @@ void TupleBPS::makeJobs(vector<Job>* jobs)
 
     totalMsgs = 0;
 
+    std::cout << "TupleBPS scannedExtents size " << scannedExtents.size() << std::endl;
     for (i = 0; i < scannedExtents.size(); i++)
     {
 
@@ -1836,6 +1846,7 @@ void TupleBPS::makeJobs(vector<Job>* jobs)
 
         startingLBID = scannedExtents[i].range.start;
 
+        std::cout << "blocksToScan " << blocksToScan << std::endl;
         while (blocksToScan > 0)
         {
             uint32_t blocksThisJob = min(blocksToScan, blocksPerJob);
@@ -1856,6 +1867,8 @@ void TupleBPS::makeJobs(vector<Job>* jobs)
 
 void TupleBPS::sendPrimitiveMessages()
 {
+    std::cout << " void TupleBPS::sendPrimitiveMessages() " << std::endl;
+
     vector<Job> jobs;
 
     idbassert(ffirstStepType == SCAN);

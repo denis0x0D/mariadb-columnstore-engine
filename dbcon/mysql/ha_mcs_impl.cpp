@@ -1902,11 +1902,7 @@ uint32_t doUpdateDelete(THD* thd, gp_walk_info& gwi, const std::vector<COND*>& c
 
 int ha_mcs_impl_analyze(THD* thd, TABLE* table)
 {
-    std::cout << "analyze command " << std::endl;
-    std::cout << "Analyze table " << std::endl;
-    std::cout << table->s->table_name.str << std::endl;
     uint32_t sessionID = execplan::CalpontSystemCatalog::idb_tid2sid(thd->thread_id);
-    std::cout << "session id " << sessionID << std::endl;
     boost::shared_ptr<execplan::CalpontSystemCatalog> csc =
         execplan::CalpontSystemCatalog::makeCalpontSystemCatalog(sessionID);
 
@@ -1923,16 +1919,14 @@ int ha_mcs_impl_analyze(THD* thd, TABLE* table)
 
     //        bool columnStore = (table ? isMCSTable(table) : true);
     //       std::cout << "is columnStore table " << columnStore << std::endl;
-    std::cout << "table->s.db " << table->s->db.str << std::endl;
-    std::cout << "table->s.table_name " << table->s->table_name.str << std::endl;
+    // std::cout << "table->s.db " << table->s->db.str << std::endl;
+    // std::cout << "table->s.table_name " << table->s->table_name.str << std::endl;
     auto shema = table->s->db.str;
     auto tableName = table->s->table_name.str;
     // execplan::CalpontSystemCatalog::TableAliasName tn =
     //    make_aliasview(shema, tableName, tableName, "", true, true);
 
     execplan::CalpontSystemCatalog::RIDList oidlist = csc->columnRIDs(table_name, true);
-    std::cout << "Size of oidlist " << oidlist.size() << std::endl;
-    std::cout << "Create returned columns for execution plan " << std::endl;
     execplan::CalpontAnalyzeTableExecutionPlan::ReturnedColumnList returnedColumnList;
     execplan::CalpontAnalyzeTableExecutionPlan::ColumnMap columnMap;
 
@@ -1960,15 +1954,46 @@ int ha_mcs_impl_analyze(THD* thd, TABLE* table)
             simpleColumn->columnName(), returnedColumn));
     }
 
-    execplan::CalpontAnalyzeTableExecutionPlan* exePlan =
+    execplan::CalpontAnalyzeTableExecutionPlan* caep =
         new execplan::CalpontAnalyzeTableExecutionPlan(returnedColumnList, columnMap);
+    caep->timeZone(thd->variables.time_zone->get_name()->ptr());
 
-    std::cout << "exe plan to string " << std::endl;
-    std::cout << exePlan->toString() << std::endl;
+    SessionManager sm;
+    BRM::TxnID txnID;
+    txnID = sm.getTxnID(sessionID);
 
-    std::cout << "connection " << std::endl;
+    if (!txnID.valid)
+    {
+        txnID.id = 0;
+        txnID.valid = true;
+    }
+
+    QueryContext verID;
+    verID = sm.verID();
+
+    caep->txnID(txnID.id);
+    caep->verID(verID);
+    caep->sessionID(sessionID);
+
+    string query;
+    query.assign(idb_mysql_query_str(thd));
+    caep->data(query);
+
+    //std::cout << "exe plan to string " << std::endl;
+    std::cout << caep->toString() << std::endl;
+
     cal_connection_info* ci = reinterpret_cast<cal_connection_info*>(get_fe_conn_info_ptr());
     idbassert(ci != 0);
+
+    try
+    {
+        caep->priority(ci->stats.userPriority(ci->stats.fHost, ci->stats.fUser));
+    }
+    catch (std::exception& e)
+    {
+        string msg = string("Columnstore User Priority - ") + e.what();
+        push_warning(thd, Sql_condition::WARN_LEVEL_WARN, 9999, msg.c_str());
+    }
 
     /*
     set_fe_conn_info_ptr(reinterpret_cast<void*>(new cal_connection_info(), thd));
@@ -1988,8 +2013,9 @@ int ha_mcs_impl_analyze(THD* thd, TABLE* table)
     sm::cpsm_conhdl_t* hndl;
 
     bool localQuery = (get_local_query(thd) > 0 ? true : false);
-    {
+    caep->localQuery(localQuery);
 
+    {
         ci->stats.reset(); // reset query stats
         ci->stats.setStartTime();
 
@@ -2057,9 +2083,10 @@ int ha_mcs_impl_analyze(THD* thd, TABLE* table)
             msg << qb;
             hndl->exeMgr->write(msg);
             msg.restart();
+            caep->rmParms(ci->rmParms);
 
             // send plan
-            exePlan->serialize(msg);
+            caep->serialize(msg);
             hndl->exeMgr->write(msg);
 
             // get ExeMgr status back to indicate a vtable joblist success or not
