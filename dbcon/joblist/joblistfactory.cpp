@@ -2208,31 +2208,40 @@ SJLP makeJobList_(
     else
     {
         auto* caep = dynamic_cast<CalpontAnalyzeTableExecutionPlan*>(cplan);
-        JobList* jl = new TupleJobList(isExeMgr);
+        JobList* jl = nullptr;
 
+        if (caep == nullptr)
+        {
+            SJLP jlp(jl);
+            std::cerr << "Ivalid execution plan" << std::endl;
+            return jlp;
+        }
+
+        jl = new TupleJobList(isExeMgr);
         boost::shared_ptr<CalpontSystemCatalog> csc =
             CalpontSystemCatalog::makeCalpontSystemCatalog(caep->sessionID());
 
         static config::Config* sysConfig = config::Config::makeConfig();
-        int pmsConfigured = atoi(sysConfig->getConfig("PrimitiveServers", "Count").c_str());
+        uint32_t pmsConfigured = atoi(sysConfig->getConfig("PrimitiveServers", "Count").c_str());
 
         SErrorInfo errorInfo(new ErrorInfo());
         boost::shared_ptr<TupleKeyInfo> keyInfo(new TupleKeyInfo);
         boost::shared_ptr<int> subCount(new int);
         *subCount = 0;
+
         jl->setPMsConfigured(pmsConfigured);
-        jl->priority(caep->priority()); // FIXME
+        jl->priority(caep->priority());
         jl->errorInfo(errorInfo);
+        // TODO: Add trace.
         // rm->setTraceFlags(csep->traceFlags());
 
-        // Stuff a util struct with some stuff we always need
         JobInfo jobInfo(rm);
         jobInfo.sessionId = caep->sessionID();
         jobInfo.txnId = caep->txnID();
         jobInfo.verId = caep->verID();
         jobInfo.statementId = caep->statementID();
-        // jobInfo.queryType = caep->queryType();
         jobInfo.csc = csc;
+        // TODO: Add trace.
         // jobInfo.trace = caep->traceOn();
         // jobInfo.traceFlags = caep->traceFlags();
         jobInfo.isExeMgr = isExeMgr;
@@ -2243,7 +2252,6 @@ SJLP makeJobList_(
         jobInfo.projectingTableOID = jl->projectingTableOIDPtr();
         jobInfo.jobListPtr = jl;
         jobInfo.localQuery = caep->localQuery();
-        // jobInfo.uuid = caep->uuid();
         jobInfo.timeZone = caep->timeZone();
 
         try
@@ -2252,7 +2260,6 @@ SJLP makeJobList_(
             JobStepVector projectSteps;
             DeliveredTableMap deliverySteps;
 
-            // FIXME: is this needed ?
             uint16_t stepNo = numberSteps(querySteps, 0, jobInfo.traceFlags);
             stepNo = numberSteps(projectSteps, stepNo, jobInfo.traceFlags);
 
