@@ -703,6 +703,7 @@ public:
                         std::cout << "unserialized execution plan " << std::endl;
                         std::cout << exePlan.toString() << std::endl;
 
+                        statementsRunningCount->incr(stmtCounted);
                         jl = joblist::JobListFactory::makeJobList(&exePlan, fRm, false, true);
 
                         if (UNLIKELY(fEc->getNumConnections() != fEc->connectedPmServers()))
@@ -723,17 +724,28 @@ public:
                         }
 
                         std::cout << "Do query " << std::endl;
+
                         jl->doQuery();
 
+                        FEMsgHandler msgHandler(jl, &fIos);
+
+                        msgHandler.start();
+                        auto rowCount = jl->projectTable(100, bs);
+                        std::cout << "row count " << rowCount << std::endl;
+                        msgHandler.stop();
+                   
                         bs.restart();
                         qb = 6;
                         bs << qb;
                         std::cout << "write to plugin " << std::endl;
                         fIos.write(bs);
-                        fIos.close();
+                        bs.reset();
+                        // fIos.close();
                         // useriaize.
                         std::cout << "break from cycle " << std::endl;
-                        break;
+
+                        statementsRunningCount->decr(stmtCounted);
+                        continue;
                     }
                     else
                     {
@@ -1035,15 +1047,6 @@ new_plan:
                             statementsRunningCount->decr(stmtCounted);
                             bs = fIos.read();
                             goto new_plan;
-                        }
-                        else if (qb == 6)
-                        {
-                            std::cout << "write to plugin " << std::endl;
-                            bs.restart();
-                            messageqcpp::ByteStream::quadbyte qb;
-                            qb = 6;
-                            bs << qb;
-                            fIos.write(bs);
                         }
                         else // (qb > 3)
                         {

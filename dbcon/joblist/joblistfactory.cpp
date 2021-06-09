@@ -1919,7 +1919,7 @@ void generateAnalyzeTableJobSteps(CalpontAnalyzeTableExecutionPlan* caep, JobInf
 
     querySteps.push_back(annexStep);
     tas->initialize(rg2, jobInfo);
-    deliverySteps[CNX_VTABLE_ID] = jobInfo.annexStep;
+    deliverySteps[CNX_VTABLE_ID] = annexStep;
 }
 
 } // namespace
