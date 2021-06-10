@@ -626,7 +626,6 @@ public:
         {
             for (;;)
             {
-                std::cout << "session thread in cycle " << std::endl;
                 selfJoin = false;
                 tryTuples = false;
                 usingTuples = false;
@@ -694,17 +693,14 @@ public:
                     }
                     else if (qb == 6)
                     {
-                        std::cout << "handle analyze exe plan " << std::endl;
-//                        bs = fIos.read();
                         messageqcpp::ByteStream::quadbyte qb;
-                        execplan::CalpontAnalyzeTableExecutionPlan exePlan;
+                        execplan::CalpontAnalyzeTableExecutionPlan caep;
+
                         bs = fIos.read();
-                        exePlan.unserialize(bs);
-                        std::cout << "unserialized execution plan " << std::endl;
-                        std::cout << exePlan.toString() << std::endl;
+                        caep.unserialize(bs);
 
                         statementsRunningCount->incr(stmtCounted);
-                        jl = joblist::JobListFactory::makeJobList(&exePlan, fRm, false, true);
+                        jl = joblist::JobListFactory::makeJobList(&caep, fRm, false, true);
 
                         if (UNLIKELY(fEc->getNumConnections() != fEc->connectedPmServers()))
                         {
@@ -723,8 +719,7 @@ public:
                             throw std::runtime_error("ExeMgr: could not build a JobList!");
                         }
 
-                        std::cout << "Do query " << std::endl;
-
+                        // Execute a joblist.
                         jl->doQuery();
 
                         FEMsgHandler msgHandler(jl, &fIos);
@@ -733,17 +728,13 @@ public:
                         auto rowCount = jl->projectTable(100, bs);
                         std::cout << "row count " << rowCount << std::endl;
                         msgHandler.stop();
-                   
+
+                        // Send the signal back to front-end.
                         bs.restart();
                         qb = 6;
                         bs << qb;
-                        std::cout << "write to plugin " << std::endl;
                         fIos.write(bs);
                         bs.reset();
-                        // fIos.close();
-                        // useriaize.
-                        std::cout << "break from cycle " << std::endl;
-
                         statementsRunningCount->decr(stmtCounted);
                         continue;
                     }
@@ -940,7 +931,6 @@ new_plan:
                 // Project each table as the FE asks for it
                 for (;;)
                 {
-                    std::cout << "read in cycle " << std::endl;
                     bs = fIos.read();
 
                     if (bs.length() == 0)

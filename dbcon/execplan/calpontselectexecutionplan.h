@@ -989,15 +989,6 @@ class CalpontAnalyzeTableExecutionPlan : public CalpontExecutionPlan
 
     void returnedCols(const ReturnedColumnList& returnedCols) { fReturnedCols = returnedCols; }
 
-    const std::string& tableAlias() const { return fTableAlias; }
-
-    void tableAlias(const std::string& tableAlias, int lower_case_table_names)
-    {
-        fTableAlias = tableAlias;
-        if (lower_case_table_names)
-            boost::algorithm::to_lower(fTableAlias);
-    }
-
     const ColumnMap& columnMap() const { return fColumnMap; }
 
     ColumnMap& columnMap() { return fColumnMap; }
@@ -1171,8 +1162,6 @@ class CalpontAnalyzeTableExecutionPlan : public CalpontExecutionPlan
             frmParms.push_back(RMParam(sessionId, id, memory));
         }
 
-//        b >> fTableAlias;
-
         bs >> fData;
         bs >> reinterpret_cast<uint32_t&>(fSessionID);
         bs >> reinterpret_cast<uint32_t&>(fTxnID);
@@ -1192,40 +1181,19 @@ class CalpontAnalyzeTableExecutionPlan : public CalpontExecutionPlan
   private:
     ReturnedColumnList fReturnedCols;
     ColumnMap fColumnMap;
-
-    std::string fTableAlias;
-
     uint32_t fSessionID;
-
     int fTxnID;
-
     BRM::QueryContext fVerID;
-
     std::string fSchemaName;
-
     std::string fTableName;
-
     uint32_t fTraceFlags;
-
     boost::uuids::uuid fUuid;
-
     std::string fTimeZone;
-
     uint32_t fStatementID;
-
-    // for limit
-    uint64_t fLimitStart;
-
-    uint64_t fLimitNum;
-
     uint64_t fStringScanThreshold;
-
     std::string fData;
-
     RMParmVec frmParms;
-
     uint32_t fPriority;
-
     uint32_t fLocalQuery;
 };
 }

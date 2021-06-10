@@ -1898,7 +1898,7 @@ uint32_t doUpdateDelete(THD* thd, gp_walk_info& gwi, const std::vector<COND*>& c
     return rc;
 }
 
-bool isSupportedToAnalyze(const execplan::CalpontSystemCatalog::ColType& colType)
+inline bool isSupportedToAnalyze(const execplan::CalpontSystemCatalog::ColType& colType)
 {
     return colType.isUnsignedInteger() || colType.isSignedInteger();
 }
@@ -1925,15 +1925,11 @@ int ha_mcs_impl_analyze(THD* thd, TABLE* table)
     if (!columnStore)
         return 0;
 
-    auto shema = table->s->db.str;
-    auto tableName = table->s->table_name.str;
-    // execplan::CalpontSystemCatalog::TableAliasName tn =
-    //    make_aliasview(shema, tableName, tableName, "", true, true);
-
     execplan::CalpontSystemCatalog::RIDList oidlist = csc->columnRIDs(table_name, true);
     execplan::CalpontAnalyzeTableExecutionPlan::ReturnedColumnList returnedColumnList;
     execplan::CalpontAnalyzeTableExecutionPlan::ColumnMap columnMap;
 
+    // Iterate over table oid list and create a `SimpleColumn` for every column with supported type.
     for (uint32_t i = 0, e = oidlist.size(); i < e; ++i)
     {
         execplan::SRCP returnedColumn;
@@ -1963,6 +1959,7 @@ int ha_mcs_impl_analyze(THD* thd, TABLE* table)
     execplan::CalpontAnalyzeTableExecutionPlan* caep =
         new execplan::CalpontAnalyzeTableExecutionPlan(returnedColumnList, columnMap);
 
+    caep->schemaName(thd->db.str, lower_case_table_names);
     caep->timeZone(thd->variables.time_zone->get_name()->ptr());
 
     SessionManager sm;
@@ -1986,6 +1983,9 @@ int ha_mcs_impl_analyze(THD* thd, TABLE* table)
     query.assign(idb_mysql_query_str(thd));
     caep->data(query);
 
+    if (!get_fe_conn_info_ptr())
+        set_fe_conn_info_ptr(reinterpret_cast<void*>(new cal_connection_info(), thd));
+
     cal_connection_info* ci = reinterpret_cast<cal_connection_info*>(get_fe_conn_info_ptr());
     idbassert(ci != 0);
 
@@ -1999,18 +1999,12 @@ int ha_mcs_impl_analyze(THD* thd, TABLE* table)
         push_warning(thd, Sql_condition::WARN_LEVEL_WARN, 9999, msg.c_str());
     }
 
-    /*
-    set_fe_conn_info_ptr(reinterpret_cast<void*>(new cal_connection_info(), thd));
-    cal_connection_info* ci = reinterpret_cast<cal_connection_info*>(get_fe_conn_info_ptr());
-    */
-
-    /*   Enable it.
+    // FIXME: Should we send a message to ExeMgr?
     if (thd->killed == KILL_QUERY || thd->killed == KILL_QUERY_HARD)
     {
         force_close_fep_conn(thd, ci);
         return 0;
     }
-    */
 
     cal_table_info ti;
     sm::cpsm_conhdl_t* hndl;
@@ -2048,7 +2042,6 @@ int ha_mcs_impl_analyze(THD* thd, TABLE* table)
             ci->warningMsg = msg;
         }
 
-        // if the previous query has error, re-establish the connection
         if (ci->queryState != 0)
         {
             sm::sm_cleanup(ci->cal_conn_hndl);
@@ -2079,17 +2072,18 @@ int ha_mcs_impl_analyze(THD* thd, TABLE* table)
 
         try
         {
+            // We use 6 to indicate that we want to run `ANALYZE TABLE` command.
             ByteStream::quadbyte qb = 6;
             msg << qb;
             hndl->exeMgr->write(msg);
             msg.restart();
             caep->rmParms(ci->rmParms);
 
-            // send plan
+            // Send the execution plan.
             caep->serialize(msg);
             hndl->exeMgr->write(msg);
 
-            // get ExeMgr status back to indicate a vtable joblist success or not
+            // Get the status from ExeMgr.
             msg.restart();
             msg = hndl->exeMgr->read();
 
