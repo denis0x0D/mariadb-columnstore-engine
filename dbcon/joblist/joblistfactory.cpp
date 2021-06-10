@@ -1770,10 +1770,14 @@ void makeVtableModeSteps(CalpontSelectExecutionPlan* csep, JobInfo& jobInfo,
 }
 
 void makeAnalyzeTableJobSteps(CalpontAnalyzeTableExecutionPlan* caep, JobInfo& jobInfo,
-                              JobStepVector& querySteps, JobStepVector& projectSteps,
-                              DeliveredTableMap& deliverySteps)
+                              JobStepVector& querySteps, DeliveredTableMap& deliverySteps)
 {
+    JobStepVector projectSteps;
     const auto& retCols = caep->returnedCols();
+
+    if (retCols.size() == 0)
+        return;
+
     // Iterate over `returned columns` and create a `pColStep` for each.
     for (uint32_t i = 0; i < retCols.size(); i++)
     {
@@ -1800,11 +1804,16 @@ void makeAnalyzeTableJobSteps(CalpontAnalyzeTableExecutionPlan* caep, JobInfo& j
         }
     }
 
+    if (projectSteps.size() == 0)
+        return;
+
     // Transform the first `pColStep` to `pColScanStep`.
-    SJSTEP firstStep = *(projectSteps.begin());
+    SJSTEP firstStep = projectSteps.front();
     pColStep* colStep = static_cast<pColStep*>(firstStep.get());
+    // Create a `pColScanStep` using first `pColStep`.
     pColScanStep* scanStep = new pColScanStep(*colStep);
     scanStep->outputAssociation(JobStepAssociation());
+    // Update first step.
     firstStep.reset(scanStep);
 
     // Create tuple BPS step.
@@ -1854,21 +1863,7 @@ void makeAnalyzeTableJobSteps(CalpontAnalyzeTableExecutionPlan* caep, JobInfo& j
         precision.push_back(ti.precision);
     }
 
-    // FIXME: Fix last param
     RowGroup rg(oids.size(), pos, oids, keys, types, csNums, scale, precision, 20);
-
-    // fix the output association
-    RowGroupDL* dl = new RowGroupDL(1, jobInfo.fifoSize);
-    // Update it.
-    dl->OID(CNX_VTABLE_ID);
-
-    AnyDataListSPtr spdl(new AnyDataList());
-    spdl->rowGroupDL(dl);
-    JobStepAssociation jsa;
-    jsa.outAdd(spdl);
-    tbps->outputAssociation(jsa);
-    tbps->setOutputRowGroup(rg);
-
     SJSTEP sjsp;
     sjsp.reset(tbps);
     // Add tuple BPS step to query steps.
@@ -1879,31 +1874,34 @@ void makeAnalyzeTableJobSteps(CalpontAnalyzeTableExecutionPlan* caep, JobInfo& j
     auto* tas = new TupleAnnexStep(jobInfo);
     annexStep.reset(tas);
 
-    RowGroup rg2 = tbps->getDeliveredRowGroup();
-
+    // Create input `RowGroupDL`.
     RowGroupDL* dlIn = new RowGroupDL(1, jobInfo.fifoSize);
     dlIn->OID(CNX_VTABLE_ID);
     AnyDataListSPtr spdlIn(new AnyDataList());
     spdlIn->rowGroupDL(dlIn);
-
     JobStepAssociation jsaIn;
     jsaIn.outAdd(spdlIn);
 
-    tbps->outputAssociation(jsaIn);
-    annexStep->inputAssociation(jsaIn);
-
+    // Create output `RowGroupDL`.
     RowGroupDL* dlOut = new RowGroupDL(1, jobInfo.fifoSize);
     dlOut->OID(CNX_VTABLE_ID);
     AnyDataListSPtr spdlOut(new AnyDataList());
     spdlOut->rowGroupDL(dlOut);
-
     JobStepAssociation jsaOut;
     jsaOut.outAdd(spdlOut);
+
+    // Set input and output.
+    tbps->setOutputRowGroup(rg);
+    tbps->outputAssociation(jsaIn);
+    annexStep->inputAssociation(jsaIn);
     annexStep->outputAssociation(jsaOut);
 
-    querySteps.push_back(annexStep);
-    tas->initialize(rg2, jobInfo);
+    // Initialize.
+    tas->initialize(rg, jobInfo);
+
+    // Add `annexStep` to delivery steps and to query steps.
     deliverySteps[CNX_VTABLE_ID] = annexStep;
+    querySteps.push_back(annexStep);
 }
 
 } // namespace
@@ -2235,17 +2233,13 @@ SJLP makeJobList_(
         try
         {
             JobStepVector querySteps;
-            JobStepVector projectSteps;
             DeliveredTableMap deliverySteps;
 
-            uint16_t stepNo = numberSteps(querySteps, 0, jobInfo.traceFlags);
-            stepNo = numberSteps(projectSteps, stepNo, jobInfo.traceFlags);
-
             // Parse exe plan and create a jobstesp from it.
-            makeAnalyzeTableJobSteps(caep, jobInfo, querySteps, projectSteps, deliverySteps);
+            makeAnalyzeTableJobSteps(caep, jobInfo, querySteps, deliverySteps);
+            auto stepNo = numberSteps(querySteps, 0, jobInfo.traceFlags);
 
             jl->addQuery(querySteps);
-            jl->addProject(projectSteps);
             jl->addDelivery(deliverySteps);
 
             dynamic_cast<TupleJobList*>(jl)->setDeliveryFlag(true);
