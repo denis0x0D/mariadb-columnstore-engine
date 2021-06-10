@@ -12,6 +12,7 @@ set(brm_LIB_SRCS
     copylocks.cpp
     dbrm.cpp
     extentmap.cpp
+    statistics.cpp
     lbidresourcegraph.cpp
     logicalpartition.cpp
     mastersegmenttable.cpp
@@ -32,6 +33,8 @@ set(brm_LIB_SRCS
     ../../datatypes/mcs_datatype.cpp)
 
 add_library(brm SHARED ${brm_LIB_SRCS})
+
+target_link_libraries(brm boost_filesystem)
 
 add_dependencies(brm loggingcpp)
 
