@@ -1898,6 +1898,10 @@ uint32_t doUpdateDelete(THD* thd, gp_walk_info& gwi, const std::vector<COND*>& c
     return rc;
 }
 
+bool isSupportedToAnalyze(const execplan::CalpontSystemCatalog::ColType& colType)
+{
+    return colType.isUnsignedInteger() || colType.isSignedInteger();
+}
 
 } //anon namespace
 
@@ -1937,6 +1941,9 @@ int ha_mcs_impl_analyze(THD* thd, TABLE* table)
         auto tableColName = csc->colName(objNum);
         auto colType = csc->colType(objNum);
 
+        if (!isSupportedToAnalyze(colType))
+            continue;
+
         execplan::SimpleColumn* simpleColumn = new execplan::SimpleColumn();
         simpleColumn->columnName(tableColName.column);
         simpleColumn->tableName(tableColName.table, lower_case_table_names);
@@ -1946,8 +1953,6 @@ int ha_mcs_impl_analyze(THD* thd, TABLE* table)
         simpleColumn->resultType(colType);
         simpleColumn->timeZone(thd->variables.time_zone->get_name()->ptr());
 
-        //    std::cout << "created column " << std::endl;
-        //   std::cout << simpleColumn->toString() << std::endl;
         returnedColumn.reset(simpleColumn);
         returnedColumnList.push_back(returnedColumn);
         columnMap.insert(execplan::CalpontSelectExecutionPlan::ColumnMap::value_type(
@@ -1980,9 +1985,6 @@ int ha_mcs_impl_analyze(THD* thd, TABLE* table)
     string query;
     query.assign(idb_mysql_query_str(thd));
     caep->data(query);
-
-    std::cout << "exe plan to string " << std::endl;
-    std::cout << caep->toString() << std::endl;
 
     cal_connection_info* ci = reinterpret_cast<cal_connection_info*>(get_fe_conn_info_ptr());
     idbassert(ci != 0);
