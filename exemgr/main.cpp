@@ -626,6 +626,7 @@ public:
         {
             for (;;)
             {
+                std::cout << "session thread in cycle " << std::endl;
                 selfJoin = false;
                 tryTuples = false;
                 usingTuples = false;
@@ -690,6 +691,61 @@ public:
                         fIos.write(bs);
                         fIos.close();
                         break;
+                    }
+                    else if (qb == 6)
+                    {
+                        std::cout << "handle analyze exe plan " << std::endl;
+//                        bs = fIos.read();
+                        messageqcpp::ByteStream::quadbyte qb;
+                        execplan::CalpontAnalyzeTableExecutionPlan exePlan;
+                        bs = fIos.read();
+                        exePlan.unserialize(bs);
+                        std::cout << "unserialized execution plan " << std::endl;
+                        std::cout << exePlan.toString() << std::endl;
+
+                        statementsRunningCount->incr(stmtCounted);
+                        jl = joblist::JobListFactory::makeJobList(&exePlan, fRm, false, true);
+
+                        if (UNLIKELY(fEc->getNumConnections() != fEc->connectedPmServers()))
+                        {
+                            std::cout << "fEc setup " << std::endl;
+                            fEc->Setup();
+                        }
+                        if (jl->status() == 0)
+                        {
+                            std::string emsg;
+
+                            if (jl->putEngineComm(fEc) != 0)
+                                throw std::runtime_error(jl->errMsg());
+                        }
+                        else
+                        {
+                            throw std::runtime_error("ExeMgr: could not build a JobList!");
+                        }
+
+                        std::cout << "Do query " << std::endl;
+
+                        jl->doQuery();
+
+                        FEMsgHandler msgHandler(jl, &fIos);
+
+                        msgHandler.start();
+                        auto rowCount = jl->projectTable(100, bs);
+                        std::cout << "row count " << rowCount << std::endl;
+                        msgHandler.stop();
+                   
+                        bs.restart();
+                        qb = 6;
+                        bs << qb;
+                        std::cout << "write to plugin " << std::endl;
+                        fIos.write(bs);
+                        bs.reset();
+                        // fIos.close();
+                        // useriaize.
+                        std::cout << "break from cycle " << std::endl;
+
+                        statementsRunningCount->decr(stmtCounted);
+                        continue;
                     }
                     else
                     {
@@ -884,6 +940,7 @@ new_plan:
                 // Project each table as the FE asks for it
                 for (;;)
                 {
+                    std::cout << "read in cycle " << std::endl;
                     bs = fIos.read();
 
                     if (bs.length() == 0)
@@ -1274,6 +1331,8 @@ new_plan:
             fIos.close();
         }
 
+        std::cout << "Exe mngr end of session " << std::endl;
+        std::cout << "destructing " << destructing << std::endl;
         // make sure we don't leave scope while joblists are being destroyed
         std::unique_lock<std::mutex> scoped(jlMutex);
         while (destructing > 0)
@@ -1672,6 +1731,7 @@ int ServiceExeMgr::Child()
 
     for (;;)
     {
+        std::cout << "invokin session thread " << std::endl;
         messageqcpp::IOSocket ios;
         ios = mqs->accept();
         exeMgrThreadPool.invoke(SessionThread(ios, ec, rm));

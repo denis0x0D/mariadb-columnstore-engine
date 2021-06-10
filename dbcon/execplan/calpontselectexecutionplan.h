@@ -45,6 +45,9 @@
 #  endif
 #endif
 
+// TODO: delete header
+#include "objectreader.h"
+
 /**
  * Namespace
  */
@@ -964,6 +967,267 @@ inline std::ostream& operator<<(std::ostream& os, const CalpontSelectExecutionPl
     return os;
 }
 
+class CalpontAnalyzeTableExecutionPlan : public CalpontExecutionPlan
+{
+  public:
+    typedef std::vector<SRCP> ReturnedColumnList;
+    typedef std::multimap<std::string, SRCP> ColumnMap;
+    typedef std::vector<RMParam> RMParmVec;
+
+    CalpontAnalyzeTableExecutionPlan() {}
+
+    CalpontAnalyzeTableExecutionPlan(const ReturnedColumnList& returnedCols,
+                                     const ColumnMap& columnMap)
+        : fReturnedCols(returnedCols), fColumnMap(columnMap)
+    {
+    }
+
+    virtual ~CalpontAnalyzeTableExecutionPlan() {}
+
+    const ReturnedColumnList& returnedCols() const { return fReturnedCols; }
+    ReturnedColumnList& returnedCols() { return fReturnedCols; }
+
+    void returnedCols(const ReturnedColumnList& returnedCols) { fReturnedCols = returnedCols; }
+
+    const std::string& tableAlias() const { return fTableAlias; }
+
+    void tableAlias(const std::string& tableAlias, int lower_case_table_names)
+    {
+        fTableAlias = tableAlias;
+        if (lower_case_table_names)
+            boost::algorithm::to_lower(fTableAlias);
+    }
+
+    const ColumnMap& columnMap() const { return fColumnMap; }
+
+    ColumnMap& columnMap() { return fColumnMap; }
+
+    void columnMap(const ColumnMap& columnMap) { fColumnMap = columnMap; }
+
+    const std::string data() const { return fData; }
+
+    void data(const std::string data) { fData = data; }
+
+    uint32_t sessionID() const { return fSessionID; }
+
+    void sessionID(const uint32_t sessionID) { fSessionID = sessionID; }
+
+    int txnID() const { return fTxnID; }
+
+    void txnID(const int txnID) { fTxnID = txnID; }
+
+    const BRM::QueryContext verID() const { return fVerID; }
+
+    void verID(const BRM::QueryContext verID) { fVerID = verID; }
+
+    inline std::string& schemaName() { return fSchemaName; }
+
+    inline void schemaName(const std::string& schemaName, int lower_case_table_names)
+    {
+        fSchemaName = schemaName;
+        if (lower_case_table_names)
+            boost::algorithm::to_lower(fSchemaName);
+    }
+
+    inline std::string& tableName() { return fTableName; }
+
+    inline void tableName(const std::string& tableName, int lower_case_table_names)
+    {
+        fTableName = tableName;
+        if (lower_case_table_names)
+            boost::algorithm::to_lower(fTableName);
+    }
+
+    uint32_t statementID() const { return fStatementID; }
+
+    void statementID(const uint32_t statementID) { fStatementID = statementID; }
+
+    void uuid(const boost::uuids::uuid& uuid) { fUuid = uuid; }
+
+    const boost::uuids::uuid& uuid() const { return fUuid; }
+
+    void timeZone(const std::string& timezone) { fTimeZone = timezone; }
+
+    const std::string timeZone() const { return fTimeZone; }
+
+    void priority(uint32_t p) { fPriority = p; }
+
+    uint32_t priority() const { return fPriority; }
+
+    const RMParmVec& rmParms() { return frmParms; }
+
+    void rmParms(const RMParmVec& parms)
+    {
+        frmParms.clear();
+        frmParms.assign(parms.begin(), parms.end());
+    }
+
+    uint32_t localQuery() const { return fLocalQuery; }
+
+    void localQuery(const uint32_t localQuery) { fLocalQuery = localQuery; }
+
+    virtual std::string toString() const
+    {
+        std::ostringstream output;
+        output << ">ANALYZE TABLE " << std::endl;
+        // table name
+
+        output << ">>Returned Columns" << std::endl;
+
+        for (auto& rColumn : fReturnedCols)
+            output << *rColumn << std::endl;
+
+        output << "--- Column Map ---" << std::endl;
+        CalpontSelectExecutionPlan::ColumnMap::const_iterator iter;
+
+        for (iter = columnMap().begin(); iter != columnMap().end(); iter++)
+            output << (*iter).first << " : " << (*iter).second << endl;
+
+        output << "SessionID: " << fSessionID << endl;
+        output << "TxnID: " << fTxnID << endl;
+        output << "VerID: " << fVerID << endl;
+
+        return output.str();
+    }
+
+    virtual bool isInternal() const { return ((fSessionID & 0x80000000) != 0); }
+
+    virtual void serialize(messageqcpp::ByteStream& bs) const
+    {
+        bs << static_cast<ObjectReader::id_t>(ObjectReader::CALPONTANALYZETBLEXECUTIONPLAN);
+
+        // Add table name?
+
+        // Returned columns.
+        bs << static_cast<uint32_t>(fReturnedCols.size());
+        for (auto& rColumn : fReturnedCols)
+            rColumn->serialize(bs);
+
+        // Column map.
+        bs << static_cast<uint32_t>(fColumnMap.size());
+        for (auto& column : fColumnMap)
+        {
+            bs << column.first;
+            column.second->serialize(bs);
+        }
+
+        bs << static_cast<uint32_t>(frmParms.size());
+
+        for (RMParmVec::const_iterator it = frmParms.begin(); it != frmParms.end(); ++it)
+        {
+            bs << it->sessionId;
+            bs << it->id;
+            bs << it->value;
+        }
+
+        bs << fData;
+        bs << static_cast<uint32_t>(fSessionID);
+        bs << static_cast<uint32_t>(fTxnID);
+        bs << fVerID;
+        bs << fStatementID;
+        bs << static_cast<uint64_t>(fStringScanThreshold);
+        bs << fPriority;
+        bs << fSchemaName;
+        bs << fLocalQuery;
+        bs << fTimeZone;
+    }
+
+    virtual void unserialize(messageqcpp::ByteStream& bs)
+    {
+        ObjectReader::checkType(bs, ObjectReader::CALPONTANALYZETBLEXECUTIONPLAN);
+        // erase elements, otherwise vectors contain null pointers
+        fReturnedCols.clear();
+        fColumnMap.clear();
+        uint32_t size;
+
+        bs >> size;
+        for (uint32_t i = 0; i < size; ++i)
+        {
+            auto* returnedColumn = dynamic_cast<ReturnedColumn*>(ObjectReader::createTreeNode(bs));
+            SRCP srcp(returnedColumn);
+            fReturnedCols.push_back(srcp);
+        }
+
+        bs >> size;
+        for (uint32_t i = 0; i < size; ++i)
+        {
+            std::string colName;
+            bs >> colName;
+            auto* returnedColumn = dynamic_cast<ReturnedColumn*>(ObjectReader::createTreeNode(bs));
+            SRCP srcp(returnedColumn);
+            fColumnMap.insert(ColumnMap::value_type(colName, srcp));
+        }
+
+        bs >> size;
+        messageqcpp::ByteStream::doublebyte id;
+        messageqcpp::ByteStream::quadbyte sessionId;
+        messageqcpp::ByteStream::octbyte memory;
+
+        for (uint32_t i = 0; i < size; i++)
+        {
+            bs >> sessionId;
+            bs >> id;
+            bs >> memory;
+            frmParms.push_back(RMParam(sessionId, id, memory));
+        }
+
+//        b >> fTableAlias;
+
+        bs >> fData;
+        bs >> reinterpret_cast<uint32_t&>(fSessionID);
+        bs >> reinterpret_cast<uint32_t&>(fTxnID);
+        bs >> fVerID;
+        bs >> fStatementID;
+        bs >> reinterpret_cast<uint64_t&>(fStringScanThreshold);
+        bs >> fPriority;
+        bs >> fSchemaName;
+        bs >> fLocalQuery;
+        bs >> fTimeZone;
+    }
+
+    // TODO: Implement it.
+    virtual bool operator==(const CalpontExecutionPlan* t) const { return false; }
+    virtual bool operator!=(const CalpontExecutionPlan* t) const { return false; }
+
+  private:
+    ReturnedColumnList fReturnedCols;
+    ColumnMap fColumnMap;
+
+    std::string fTableAlias;
+
+    uint32_t fSessionID;
+
+    int fTxnID;
+
+    BRM::QueryContext fVerID;
+
+    std::string fSchemaName;
+
+    std::string fTableName;
+
+    uint32_t fTraceFlags;
+
+    boost::uuids::uuid fUuid;
+
+    std::string fTimeZone;
+
+    uint32_t fStatementID;
+
+    // for limit
+    uint64_t fLimitStart;
+
+    uint64_t fLimitNum;
+
+    uint64_t fStringScanThreshold;
+
+    std::string fData;
+
+    RMParmVec frmParms;
+
+    uint32_t fPriority;
+
+    uint32_t fLocalQuery;
+};
 }
 #endif //CALPONTSELECTEXECUTIONPLAN_H
 // vim:ts=4 sw=4:
