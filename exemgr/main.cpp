@@ -691,6 +691,53 @@ public:
                         fIos.close();
                         break;
                     }
+                    else if (qb == 6)
+                    {
+                        messageqcpp::ByteStream::quadbyte qb;
+                        execplan::CalpontAnalyzeTableExecutionPlan caep;
+
+                        bs = fIos.read();
+                        caep.unserialize(bs);
+
+                        statementsRunningCount->incr(stmtCounted);
+                        jl = joblist::JobListFactory::makeJobList(&caep, fRm, false, true);
+
+                        if (UNLIKELY(fEc->getNumConnections() != fEc->connectedPmServers()))
+                        {
+                            std::cout << "fEc setup " << std::endl;
+                            fEc->Setup();
+                        }
+                        if (jl->status() == 0)
+                        {
+                            std::string emsg;
+
+                            if (jl->putEngineComm(fEc) != 0)
+                                throw std::runtime_error(jl->errMsg());
+                        }
+                        else
+                        {
+                            throw std::runtime_error("ExeMgr: could not build a JobList!");
+                        }
+
+                        // Execute a joblist.
+                        jl->doQuery();
+
+                        FEMsgHandler msgHandler(jl, &fIos);
+
+                        msgHandler.start();
+                        auto rowCount = jl->projectTable(100, bs);
+                        std::cout << "row count " << rowCount << std::endl;
+                        msgHandler.stop();
+
+                        // Send the signal back to front-end.
+                        bs.restart();
+                        qb = 6;
+                        bs << qb;
+                        fIos.write(bs);
+                        bs.reset();
+                        statementsRunningCount->decr(stmtCounted);
+                        continue;
+                    }
                     else
                     {
                         if (gDebug)

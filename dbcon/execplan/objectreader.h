@@ -71,8 +71,8 @@ public:
      */
     enum CLASSID
     {
-        ZERO,      // an appropriate initializer
-        NULL_CLASS,		// to denote that some member is NULL
+        ZERO,       // an appropriate initializer
+        NULL_CLASS, // to denote that some member is NULL
 
         /**** TreeNodes */
         TREENODE,
@@ -123,6 +123,7 @@ public:
         /** UDAF SDK */
         MCSV1_CONTEXT,
         UDAFCOLUMN,
+        CALPONTANALYZETBLEXECUTIONPLAN
     };
 
     typedef uint8_t id_t;    //expand as necessary
