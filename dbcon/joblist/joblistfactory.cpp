@@ -1769,13 +1769,13 @@ void makeVtableModeSteps(CalpontSelectExecutionPlan* csep, JobInfo& jobInfo,
 //	ds->setTraceFlags(jobInfo.traceFlags);
 }
 
-void generateAnalyzeTableJobSteps(CalpontAnalyzeTableExecutionPlan* caep, JobInfo& jobInfo,
-                                  JobStepVector& querySteps, JobStepVector& projectSteps,
-                                  DeliveredTableMap& deliverySteps)
+void makeAnalyzeTableJobSteps(CalpontAnalyzeTableExecutionPlan* caep, JobInfo& jobInfo,
+                              JobStepVector& querySteps, JobStepVector& projectSteps,
+                              DeliveredTableMap& deliverySteps)
 {
     const auto& retCols = caep->returnedCols();
-
-    for (unsigned i = 0; i < retCols.size(); i++)
+    // Iterate over `returned columns` and create a `pColStep` for each.
+    for (uint32_t i = 0; i < retCols.size(); i++)
     {
         const SimpleColumn* sc = dynamic_cast<const SimpleColumn*>(retCols[i].get());
         CalpontSystemCatalog::OID oid = sc->oid();
@@ -1798,23 +1798,21 @@ void generateAnalyzeTableJobSteps(CalpontAnalyzeTableExecutionPlan* caep, JobInf
             sjstep.reset(pcs);
             projectSteps.push_back(sjstep);
         }
-        // else Skip it?
     }
 
-    SJSTEP step0 = *(projectSteps.begin());
-    pColStep* colStep = dynamic_cast<pColStep*>(step0.get());
+    // Transform the first `pColStep` to `pColScanStep`.
+    SJSTEP firstStep = *(projectSteps.begin());
+    pColStep* colStep = static_cast<pColStep*>(firstStep.get());
     pColScanStep* scanStep = new pColScanStep(*colStep);
-    // clear out any output association so we get a nice, new one during association
     scanStep->outputAssociation(JobStepAssociation());
-    step0.reset(scanStep);
-    querySteps.push_back(step0);
+    firstStep.reset(scanStep);
 
-    TupleBPS* tbps = new TupleBPS(*(static_cast<pColScanStep*>(step0.get())), jobInfo);
+    // Create tuple BPS step.
+    TupleBPS* tbps = new TupleBPS(*scanStep, jobInfo);
     tbps->setFirstStepType(SCAN);
-    std::cout << "tupe bps is created " << std::endl;
 
-    // One Filter step is scan step.
-    tbps->setBPP(step0.get());
+    // One `filter` step is scan step.
+    tbps->setBPP(scanStep);
     tbps->setStepCount();
 
     vector<uint32_t> pos;
@@ -1842,16 +1840,10 @@ void generateAnalyzeTableJobSteps(CalpontAnalyzeTableExecutionPlan* caep, JobInf
             pts->name(colStep->name());
             pts->tupleId(colStep->tupleId());
             tbps->setProjectBPP(pts, NULL);
-            // Why it does not work?
-//            it->reset(pts);
         }
         else
-        {
             tbps->setProjectBPP(it->get(), NULL);
-        }
 
-        std::cout << "create tuple info " << std::endl;
-        // add the tuple info of the column into the RowGroup
         TupleInfo ti(getTupleInfo(colStep->tupleId(), jobInfo));
         pos.push_back(pos.back() + ti.width);
         oids.push_back(ti.oid);
@@ -1865,34 +1857,27 @@ void generateAnalyzeTableJobSteps(CalpontAnalyzeTableExecutionPlan* caep, JobInf
     // FIXME: Fix last param
     RowGroup rg(oids.size(), pos, oids, keys, types, csNums, scale, precision, 20);
 
-    std::cout << "create row group " << std::endl;
-    std::cout << rg.toString() << std::endl;
-    
     // fix the output association
     RowGroupDL* dl = new RowGroupDL(1, jobInfo.fifoSize);
     // Update it.
-    dl->OID(100);
+    dl->OID(CNX_VTABLE_ID);
 
     AnyDataListSPtr spdl(new AnyDataList());
     spdl->rowGroupDL(dl);
-
     JobStepAssociation jsa;
     jsa.outAdd(spdl);
-    // Create BPS
     tbps->outputAssociation(jsa);
     tbps->setOutputRowGroup(rg);
 
-    querySteps.clear();
     SJSTEP sjsp;
     sjsp.reset(tbps);
+    // Add tuple BPS step to query steps.
     querySteps.push_back(sjsp);
-    projectSteps.clear();
 
-    // Delivery Step.
+    // Delivery step.
     SJSTEP annexStep;
     auto* tas = new TupleAnnexStep(jobInfo);
     annexStep.reset(tas);
-    //   annexStep->setLimit(jobInfo.limitStart, jobInfo.limitCount);
 
     RowGroup rg2 = tbps->getDeliveredRowGroup();
 
@@ -1906,7 +1891,6 @@ void generateAnalyzeTableJobSteps(CalpontAnalyzeTableExecutionPlan* caep, JobInf
 
     tbps->outputAssociation(jsaIn);
     annexStep->inputAssociation(jsaIn);
-
 
     RowGroupDL* dlOut = new RowGroupDL(1, jobInfo.fifoSize);
     dlOut->OID(CNX_VTABLE_ID);
@@ -1988,13 +1972,6 @@ void makeUnionJobSteps(CalpontSelectExecutionPlan* csep, JobInfo& jobInfo,
     uint16_t stepNo = jobInfo.subId * 10000;
     numberSteps(querySteps, stepNo, jobInfo.traceFlags);
     deliverySteps[execplan::CNX_VTABLE_ID] = unionStep;
-}
-
-void makeAnalyzeTableJobSteps(CalpontAnalyzeTableExecutionPlan* caep, JobInfo& jobInfo,
-                              JobStepVector& querySteps, JobStepVector& projectSteps,
-                              DeliveredTableMap& deliverySteps)
-{
-    generateAnalyzeTableJobSteps(caep, jobInfo, querySteps, projectSteps, deliverySteps);
 }
 } // namespace joblist
 
@@ -2245,7 +2222,8 @@ SJLP makeJobList_(
         // jobInfo.trace = caep->traceOn();
         // jobInfo.traceFlags = caep->traceFlags();
         jobInfo.isExeMgr = isExeMgr;
-        jobInfo.stringScanThreshold = 20; // caep->stringScanThreshold();
+        // TODO: Implement it when we have a dict columnt.
+        jobInfo.stringScanThreshold = 20;
         jobInfo.errorInfo = errorInfo;
         jobInfo.keyInfo = keyInfo;
         jobInfo.subCount = subCount;
@@ -2269,6 +2247,7 @@ SJLP makeJobList_(
             jl->addQuery(querySteps);
             jl->addProject(projectSteps);
             jl->addDelivery(deliverySteps);
+
             dynamic_cast<TupleJobList*>(jl)->setDeliveryFlag(true);
         }
         catch (IDBExcept& iex)
