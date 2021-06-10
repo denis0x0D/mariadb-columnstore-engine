@@ -1898,6 +1898,7 @@ uint32_t doUpdateDelete(THD* thd, gp_walk_info& gwi, const std::vector<COND*>& c
     return rc;
 }
 
+
 } //anon namespace
 
 int ha_mcs_impl_analyze(THD* thd, TABLE* table)
@@ -1908,8 +1909,6 @@ int ha_mcs_impl_analyze(THD* thd, TABLE* table)
 
     csc->identity(execplan::CalpontSystemCatalog::FE);
 
-    // FIXME: Where does it come from?
-    auto lower_case_table_names = 1;
     auto table_name =
         execplan::make_table(table->s->db.str, table->s->table_name.str, lower_case_table_names);
 
@@ -1917,10 +1916,11 @@ int ha_mcs_impl_analyze(THD* thd, TABLE* table)
     if (table->s->db.length && strcmp(table->s->db.str, "information_schema") == 0)
         return 0;
 
-    //        bool columnStore = (table ? isMCSTable(table) : true);
-    //       std::cout << "is columnStore table " << columnStore << std::endl;
-    // std::cout << "table->s.db " << table->s->db.str << std::endl;
-    // std::cout << "table->s.table_name " << table->s->table_name.str << std::endl;
+    bool columnStore = (table ? isMCSTable(table) : true);
+    // Skip non columnstore tables.
+    if (!columnStore)
+        return 0;
+
     auto shema = table->s->db.str;
     auto tableName = table->s->table_name.str;
     // execplan::CalpontSystemCatalog::TableAliasName tn =
@@ -1946,16 +1946,18 @@ int ha_mcs_impl_analyze(THD* thd, TABLE* table)
         simpleColumn->resultType(colType);
         simpleColumn->timeZone(thd->variables.time_zone->get_name()->ptr());
 
-        std::cout << "created column " << std::endl;
-        std::cout << simpleColumn->toString() << std::endl;
+        //    std::cout << "created column " << std::endl;
+        //   std::cout << simpleColumn->toString() << std::endl;
         returnedColumn.reset(simpleColumn);
         returnedColumnList.push_back(returnedColumn);
         columnMap.insert(execplan::CalpontSelectExecutionPlan::ColumnMap::value_type(
             simpleColumn->columnName(), returnedColumn));
     }
 
+    // Create execution plan and initialize it with `returned columns` and `column map`.
     execplan::CalpontAnalyzeTableExecutionPlan* caep =
         new execplan::CalpontAnalyzeTableExecutionPlan(returnedColumnList, columnMap);
+
     caep->timeZone(thd->variables.time_zone->get_name()->ptr());
 
     SessionManager sm;
@@ -1979,7 +1981,7 @@ int ha_mcs_impl_analyze(THD* thd, TABLE* table)
     query.assign(idb_mysql_query_str(thd));
     caep->data(query);
 
-    //std::cout << "exe plan to string " << std::endl;
+    std::cout << "exe plan to string " << std::endl;
     std::cout << caep->toString() << std::endl;
 
     cal_connection_info* ci = reinterpret_cast<cal_connection_info*>(get_fe_conn_info_ptr());
@@ -2000,7 +2002,6 @@ int ha_mcs_impl_analyze(THD* thd, TABLE* table)
     cal_connection_info* ci = reinterpret_cast<cal_connection_info*>(get_fe_conn_info_ptr());
     */
 
-    
     /*   Enable it.
     if (thd->killed == KILL_QUERY || thd->killed == KILL_QUERY_HARD)
     {
@@ -2016,7 +2017,7 @@ int ha_mcs_impl_analyze(THD* thd, TABLE* table)
     caep->localQuery(localQuery);
 
     {
-        ci->stats.reset(); // reset query stats
+        ci->stats.reset();
         ci->stats.setStartTime();
 
         if (thd->main_security_ctx.user)
@@ -2063,19 +2064,16 @@ int ha_mcs_impl_analyze(THD* thd, TABLE* table)
         }
         catch (...)
         {
-              //setError(thd, ER_INTERNAL_ERROR,
-               //        IDBErrorInfo::instance()->errorMsg(ERR_LOST_CONN_EXEMGR));
+            setError(thd, ER_INTERNAL_ERROR,
+                     IDBErrorInfo::instance()->errorMsg(ERR_LOST_CONN_EXEMGR));
             CalpontSystemCatalog::removeCalpontSystemCatalog(sessionID);
             goto error;
         }
     }
-
-    std::cout << "Conneciton success " << std::endl;
     hndl = ci->cal_conn_hndl;
 
     {
         ByteStream msg;
-        //        ByteStream emsgBs;
 
         try
         {
@@ -2091,16 +2089,12 @@ int ha_mcs_impl_analyze(THD* thd, TABLE* table)
 
             // get ExeMgr status back to indicate a vtable joblist success or not
             msg.restart();
-            //emsgBs.restart();
-            std::cout << "Reading from exe mng " << std::endl;
             msg = hndl->exeMgr->read();
-            // emsgBs = hndl->exeMgr->read();
-            string emsg;
-            std::cout << "end of read " << std::endl;
 
+            // Any return code is ok for now.
             if (msg.length() == 0)
             {
-                emsg = "Lost connection to ExeMgr. Please contact your administrator";
+                auto emsg = "Lost connection to ExeMgr. Please contact your administrator";
                 setError(thd, ER_INTERNAL_ERROR, emsg);
                 return ER_INTERNAL_ERROR;
             }
@@ -2114,11 +2108,8 @@ int ha_mcs_impl_analyze(THD* thd, TABLE* table)
     ci->rmParms.clear();
     ci->tableMap[table] = ti;
 
-    std::cout << "Success " << std::endl;
-
     return 0;
 error:
-    std::cout << "error when connect() " << std::endl;
 
     if (ci->cal_conn_hndl)
     {
