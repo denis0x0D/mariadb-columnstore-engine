@@ -39,6 +39,7 @@ using namespace boost;
 
 #include "calpontexecutionplan.h"
 #include "calpontselectexecutionplan.h"
+#include "calpontanalyzetableexecutionplan.h"
 #include "calpontsystemcatalog.h"
 #include "dbrm.h"
 #include "filter.h"

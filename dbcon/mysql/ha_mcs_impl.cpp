@@ -104,6 +104,7 @@ using namespace BRM;
 using namespace querystats;
 
 #include "calpontselectexecutionplan.h"
+#include "calpontanalyzetableexecutionplan.h"
 #include "calpontsystemcatalog.h"
 #include "simplecolumn_int.h"
 #include "simplecolumn_decimal.h"

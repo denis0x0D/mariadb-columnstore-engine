@@ -48,6 +48,7 @@
 #include <boost/filesystem.hpp>
 
 #include "calpontselectexecutionplan.h"
+#include "calpontanalyzetableexecutionplan.h"
 #include "activestatementcounter.h"
 #include "distributedenginecomm.h"
 #include "resourcemanager.h"
