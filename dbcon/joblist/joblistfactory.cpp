@@ -1843,7 +1843,7 @@ void makeAnalyzeTableJobSteps(CalpontAnalyzeTableExecutionPlan* caep, JobInfo& j
         JobStep* js = it->get();
         auto* colStep = static_cast<pColStep*>(js);
 
-        // TODO: Hoist the condition branch from the cycle.
+        // TODO: Hoist the condition branch from the cycle, it will look ugly, but probaby faster.
         if (UNLIKELY(!passThruCreated))
         {
             PassThruStep* pts = new PassThruStep(*colStep);
@@ -1870,6 +1870,7 @@ void makeAnalyzeTableJobSteps(CalpontAnalyzeTableExecutionPlan* caep, JobInfo& j
     }
 
     RowGroup rg(oids.size(), pos, oids, keys, types, csNums, scale, precision, 20);
+
     SJSTEP sjsp;
     sjsp.reset(tbps);
     // Add tuple BPS step to query steps.
@@ -1908,6 +1909,14 @@ void makeAnalyzeTableJobSteps(CalpontAnalyzeTableExecutionPlan* caep, JobInfo& j
     // Add `annexStep` to delivery steps and to query steps.
     deliverySteps[CNX_VTABLE_ID] = annexStep;
     querySteps.push_back(annexStep);
+
+    if (jobInfo.trace)
+    {
+        std::cout << "TupleBPS created: " << std::endl;
+        std::cout << tbps->toString() << std::endl;
+        std::cout << "Result row group: " << std::endl;
+        std::cout << rg.toString() << std::endl;
+    }
 }
 
 } // namespace
@@ -2213,8 +2222,6 @@ SJLP makeJobList_(
         jl->setPMsConfigured(pmsConfigured);
         jl->priority(caep->priority());
         jl->errorInfo(errorInfo);
-        // TODO: Add trace.
-        // rm->setTraceFlags(csep->traceFlags());
 
         JobInfo jobInfo(rm);
         jobInfo.sessionId = caep->sessionID();
