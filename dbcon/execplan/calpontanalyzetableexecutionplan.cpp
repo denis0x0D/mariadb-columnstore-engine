@@ -41,8 +41,8 @@ std::string CalpontAnalyzeTableExecutionPlan::toString() const
 {
     std::ostringstream output;
     output << ">ANALYZE TABLE " << std::endl;
-    output << fSchemaName << std::endl;
-    output << fTableName << std::endl;
+    output << "Shema: " << fSchemaName << std::endl;
+    output << "Table: " << fTableName << std::endl;
 
     output << ">>Returned Columns" << std::endl;
 
@@ -55,9 +55,9 @@ std::string CalpontAnalyzeTableExecutionPlan::toString() const
     for (iter = columnMap().begin(); iter != columnMap().end(); iter++)
         output << (*iter).first << " : " << (*iter).second << endl;
 
-    output << "SessionID: " << fSessionID << endl;
-    output << "TxnID: " << fTxnID << endl;
-    output << "VerID: " << fVerID << endl;
+    output << "SessionID: " << fSessionID << std::endl;
+    output << "TxnID: " << fTxnID << std::endl;
+    output << "VerID: " << fVerID << std::endl;
 
     return output.str();
 }
@@ -99,6 +99,7 @@ void CalpontAnalyzeTableExecutionPlan::serialize(messageqcpp::ByteStream& bs) co
     bs << fTableName;
     bs << fLocalQuery;
     bs << fTimeZone;
+    bs << fTraceFlags;
 }
 
 void CalpontAnalyzeTableExecutionPlan::unserialize(messageqcpp::ByteStream& bs)
@@ -150,5 +151,6 @@ void CalpontAnalyzeTableExecutionPlan::unserialize(messageqcpp::ByteStream& bs)
     bs >> fTableName;
     bs >> fLocalQuery;
     bs >> fTimeZone;
+    bs >> fTraceFlags;
 }
 } // namespace execplan

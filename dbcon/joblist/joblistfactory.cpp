@@ -2222,9 +2222,7 @@ SJLP makeJobList_(
         jobInfo.verId = caep->verID();
         jobInfo.statementId = caep->statementID();
         jobInfo.csc = csc;
-        // TODO: Add trace.
-        // jobInfo.trace = caep->traceOn();
-        // jobInfo.traceFlags = caep->traceFlags();
+        jobInfo.trace = caep->traceOn();
         jobInfo.isExeMgr = isExeMgr;
         // TODO: Implement it when we have a dict columnt.
         jobInfo.stringScanThreshold = 20;

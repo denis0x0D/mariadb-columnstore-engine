@@ -2008,6 +2008,8 @@ int ha_mcs_impl_analyze(THD* thd, TABLE* table)
         return 0;
     }
 
+    caep->traceFlags(ci->traceFlags);
+
     cal_table_info ti;
     sm::cpsm_conhdl_t* hndl;
 
@@ -2068,6 +2070,9 @@ int ha_mcs_impl_analyze(THD* thd, TABLE* table)
         }
     }
     hndl = ci->cal_conn_hndl;
+
+    if (caep->traceOn())
+        std::cout << caep->toString() << std::endl;
 
     {
         ByteStream msg;

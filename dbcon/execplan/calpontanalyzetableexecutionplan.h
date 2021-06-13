@@ -47,11 +47,11 @@ class CalpontAnalyzeTableExecutionPlan : public CalpontExecutionPlan
     typedef std::multimap<std::string, SRCP> ColumnMap;
     typedef std::vector<RMParam> RMParmVec;
 
-    CalpontAnalyzeTableExecutionPlan() = default;
+    CalpontAnalyzeTableExecutionPlan() : fTraceFlags(TRACE_NONE) {}
 
     CalpontAnalyzeTableExecutionPlan(const ReturnedColumnList& returnedCols,
                                      const ColumnMap& columnMap)
-        : fReturnedCols(returnedCols), fColumnMap(columnMap)
+        : fReturnedCols(returnedCols), fColumnMap(columnMap), fTraceFlags(TRACE_NONE)
     {
     }
 
@@ -130,6 +130,12 @@ class CalpontAnalyzeTableExecutionPlan : public CalpontExecutionPlan
 
     void localQuery(const uint32_t localQuery) { fLocalQuery = localQuery; }
 
+    inline bool traceOn() const { return (traceFlags() & TRACE_LOG); }
+
+    inline uint32_t traceFlags() const { return fTraceFlags; }
+
+    inline void traceFlags(uint32_t traceFlags) { fTraceFlags = traceFlags; }
+
     virtual std::string toString() const;
 
     virtual bool isInternal() const { return ((fSessionID & 0x80000000) != 0); }
@@ -138,7 +144,7 @@ class CalpontAnalyzeTableExecutionPlan : public CalpontExecutionPlan
 
     virtual void unserialize(messageqcpp::ByteStream& bs);
 
-    // TODO: Implement it.
+    // TODO: Why do we need this?
     virtual bool operator==(const CalpontExecutionPlan* t) const { return false; }
     virtual bool operator!=(const CalpontExecutionPlan* t) const { return false; }
 
