@@ -80,6 +80,71 @@
 #include "mariadb_my_sys.h"
 
 
+#include <unordered_map>
+#include <unordered_set>
+
+enum class KeyType
+{
+    PK,
+    FK
+};
+
+class StatisticManager
+{
+  public:
+    static StatisticManager* instance()
+    {
+        static StatisticManager* sm = new StatisticManager();
+        return sm;
+    }
+
+    void analyzeColumnKeyTypes(const rowgroup::RowGroup& rowGroup)
+    {
+        std::lock_guard<std::mutex> lock(mut);
+        const auto rowCount = rowGroup.getRowCount();
+        const auto columnCount = rowGroup.getColumnCount();
+        if (!rowCount || !columnCount)
+            return;
+
+        auto& oids = rowGroup.getOIDs();
+        rowgroup::Row r;
+        rowGroup.initRow(&r);
+        rowGroup.getRow(0, &r);
+
+        std::vector<std::unordered_set<uint32_t>> columns(columnCount,
+                                                          std::unordered_set<uint32_t>());
+        // Init key types.
+        for (uint32_t index = 0; index < columnCount; ++index)
+            keyTypes[oids[index]] = KeyType::PK;
+
+        // This is strange, it's a CS but I'm processing data as row by row, how to fix it?
+        for (uint32_t i = 0; i < rowCount; ++i)
+        {
+            for (uint32_t j = 0; j < columnCount; ++j)
+            {
+                if (r.isNullValue(j) || columns[j].count(r.getIntField(j)))
+                    keyTypes[oids[j]] = KeyType::FK;
+                else
+                    columns[j].insert(r.getIntField(j));
+            }
+            r.nextRow();
+        }
+
+        toStringKeyTypes();
+    }
+
+    void toStringKeyTypes()
+    {
+        for (const auto& p : keyTypes)
+            std::cout << p.first << " " << (int) p.second << std::endl;
+    }
+
+  private:
+    std::unordered_map<uint32_t, KeyType> keyTypes;
+    StatisticManager() = default;
+    std::mutex mut;
+};
+
 class Opt
 {
 public:
@@ -727,24 +792,20 @@ public:
 
                         msgHandler.start();
                         auto rowCount = jl->projectTable(100, bs);
-                        std::cout << "row count " << rowCount << std::endl;
-                        msgHandler.stop();
+                            msgHandler.stop();
 
-                        auto outRG = ((joblist::TupleJobList*) jl.get())->getOutputRowGroup();
-                        std::cout << "result row group " << std::endl;
-                        std::cout << outRG.toString() << std::endl;
+                        auto outRG =
+                            (static_cast<joblist::TupleJobList*>(jl.get()))->getOutputRowGroup();
 
-                        /*
-                        rowgroup::Row r;
-                        outRG.initRow(&r);
-                        outRG.getRow(0, &r);
-                        for (uint32_t i = 0; i < outRG.getRowCount(); i++)
+                        if (caep.traceOn())
                         {
-                            std::cout << "out row " << std::endl;
-                            std::cout << r.toString() << endl;
-                            r.nextRow();
+                            std::cout << "Row count " << rowCount << std::endl;
+                            std::cout << "result row group " << std::endl;
+                            std::cout << outRG.toString() << std::endl;
                         }
-                        */
+
+                        auto* statisticManager = StatisticManager::instance();
+                        statisticManager->analyzeColumnKeyTypes(outRG);
 
                         // Send the signal back to front-end.
                         bs.restart();
