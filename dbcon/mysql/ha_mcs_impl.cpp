@@ -1960,7 +1960,8 @@ int ha_mcs_impl_analyze(THD* thd, TABLE* table)
     execplan::CalpontAnalyzeTableExecutionPlan* caep =
         new execplan::CalpontAnalyzeTableExecutionPlan(returnedColumnList, columnMap);
 
-    caep->schemaName(thd->db.str, lower_case_table_names);
+    caep->schemaName(table->s->db.str, lower_case_table_names);
+    caep->tableName(table->s->table_name.str, lower_case_table_names);
     caep->timeZone(thd->variables.time_zone->get_name()->ptr());
 
     SessionManager sm;
@@ -2070,7 +2071,6 @@ int ha_mcs_impl_analyze(THD* thd, TABLE* table)
 
     {
         ByteStream msg;
-
         try
         {
             // We use 6 to indicate that we want to run `ANALYZE TABLE` command.

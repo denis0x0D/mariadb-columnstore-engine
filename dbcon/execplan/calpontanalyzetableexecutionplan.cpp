@@ -41,7 +41,8 @@ std::string CalpontAnalyzeTableExecutionPlan::toString() const
 {
     std::ostringstream output;
     output << ">ANALYZE TABLE " << std::endl;
-    // table name
+    output << fSchemaName << std::endl;
+    output << fTableName << std::endl;
 
     output << ">>Returned Columns" << std::endl;
 
@@ -64,8 +65,6 @@ std::string CalpontAnalyzeTableExecutionPlan::toString() const
 void CalpontAnalyzeTableExecutionPlan::serialize(messageqcpp::ByteStream& bs) const
 {
     bs << static_cast<ObjectReader::id_t>(ObjectReader::CALPONTANALYZETBLEXECUTIONPLAN);
-
-    // Add table name?
 
     // Returned columns.
     bs << static_cast<uint32_t>(fReturnedCols.size());
@@ -97,6 +96,7 @@ void CalpontAnalyzeTableExecutionPlan::serialize(messageqcpp::ByteStream& bs) co
     bs << static_cast<uint64_t>(fStringScanThreshold);
     bs << fPriority;
     bs << fSchemaName;
+    bs << fTableName;
     bs << fLocalQuery;
     bs << fTimeZone;
 }
@@ -104,7 +104,6 @@ void CalpontAnalyzeTableExecutionPlan::serialize(messageqcpp::ByteStream& bs) co
 void CalpontAnalyzeTableExecutionPlan::unserialize(messageqcpp::ByteStream& bs)
 {
     ObjectReader::checkType(bs, ObjectReader::CALPONTANALYZETBLEXECUTIONPLAN);
-    // erase elements, otherwise vectors contain null pointers
     fReturnedCols.clear();
     fColumnMap.clear();
     uint32_t size;
@@ -148,6 +147,7 @@ void CalpontAnalyzeTableExecutionPlan::unserialize(messageqcpp::ByteStream& bs)
     bs >> reinterpret_cast<uint64_t&>(fStringScanThreshold);
     bs >> fPriority;
     bs >> fSchemaName;
+    bs >> fTableName;
     bs >> fLocalQuery;
     bs >> fTimeZone;
 }
