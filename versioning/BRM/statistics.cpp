@@ -16,6 +16,12 @@
    MA 02110-1301, USA. */
 
 #include "statistics.h"
+#include "IDBPolicy.h"
+#include "brmtypes.h"
+#include "hasher.h"
+
+using namespace idbdatafile;
+using namespace logging;
 
 namespace statistics
 {
@@ -75,6 +81,139 @@ void StatisticsManager::toString(StatisticsType statisticsType)
     }
 }
 
-void StatisticsManager::storeToFile() {}
+void StatisticsManager::saveToFile()
+{
+    std::lock_guard<std::mutex> lock(mut);
+    const char* fileName = statsFile.c_str();
+
+    std::unique_ptr<IDBDataFile> out(
+        IDBDataFile::open(IDBPolicy::getType(fileName, IDBPolicy::WRITEENG), fileName, "wb", 1));
+    if (!out)
+    {
+        BRM::log_errno("StatisticsManager::saveToFile(): open");
+        throw ios_base::failure(
+            "StatisticsManager::saveToFile(): open failed. Check the error log.");
+    }
+
+    // Number of pairs.
+    uint64_t count = keyTypes.size();
+    // count, [[uid, keyType], ... ]
+    const uint64_t dataStreamSize = sizeof(uint64_t) + count * (sizeof(uint32_t) + sizeof(KeyType));
+
+    // Allocate memory for data stream.
+    char* dataStream = new char[dataStreamSize];
+    std::unique_ptr<char[]> dataStreamSmartPtr;
+    dataStreamSmartPtr.reset(dataStream);
+
+    // Initialize the data stream.
+    uint64_t offset = 0;
+    std::memcpy(dataStream, reinterpret_cast<char*>(&count), sizeof(uint64_t));
+    offset += sizeof(uint64_t);
+
+    // For each pair [oid, key type].
+    for (const auto& p : keyTypes)
+    {
+        uint32_t oid = p.first;
+        std::memcpy(&dataStream[offset], reinterpret_cast<char*>(&oid), sizeof(uint32_t));
+        offset += sizeof(uint32_t);
+
+        KeyType keyType = p.second;
+        std::memcpy(&dataStream[offset], reinterpret_cast<char*>(&keyType), sizeof(KeyType));
+        offset += sizeof(KeyType);
+    }
+
+    utils::Hasher128 hasher;
+    // Prepare a statistics file header.
+    const uint32_t headerSize = sizeof(StatisticsFileHeader);
+    StatisticsFileHeader fileHeader;
+    std::memset(&fileHeader, 0, headerSize);
+    fileHeader.version = version;
+    fileHeader.epoch = epoch;
+    fileHeader.dataSize = dataStreamSize;
+    // Compute hash from the data.
+    fileHeader.fileHash = hasher(dataStream, dataStreamSize);
+
+    // Write statistics file header.
+    int64_t size = out->write(reinterpret_cast<char*>(&fileHeader), headerSize);
+    if (size != headerSize)
+        throw ios_base::failure("StatisticsManager::saveToFile(): write failed. ");
+
+    // Write data.
+    size = out->write(dataStream, dataStreamSize);
+    if (size != dataStreamSize)
+        throw ios_base::failure("StatisticsManager::saveToFile(): write failed. ");
+}
+
+void StatisticsManager::loadFromFile()
+{
+    std::lock_guard<std::mutex> lock(mut);
+    const char* fileName = statsFile.c_str();
+
+    std::unique_ptr<IDBDataFile> in(
+        IDBDataFile::open(IDBPolicy::getType(fileName, IDBPolicy::WRITEENG), fileName, "rb", 1));
+    if (!in)
+    {
+        BRM::log_errno("StatisticsManager::loadFromFile(): open");
+        throw ios_base::failure(
+            "StatisticsManager::loadFromFile(): open failed. Check the error log.");
+    }
+
+    // Read the file header.
+    StatisticsFileHeader fileHeader;
+    const uint32_t headerSize = sizeof(StatisticsFileHeader);
+    int64_t size = in->read(reinterpret_cast<char*>(&fileHeader), headerSize);
+    if (size != headerSize)
+        throw ios_base::failure("StatisticsManager::loadFromFile(): read failed. ");
+
+    // Initialize fields from the file header.
+    version = fileHeader.version;
+    epoch = fileHeader.epoch;
+    const auto fileHash = fileHeader.fileHash;
+    const auto dataStreamSize = fileHeader.dataSize;
+
+    // Allocate the memory for the file data.
+    char* dataStream = new char[dataStreamSize];
+    std::unique_ptr<char[]> dataStreamSmartPtr;
+    dataStreamSmartPtr.reset(dataStream);
+
+    // Read the data.
+    uint64_t dataOffset = 0;
+    auto sizeToRead = dataStreamSize;
+    size = in->read(dataStream, sizeToRead);
+    sizeToRead -= size;
+    dataOffset += size;
+
+    while (sizeToRead > 0)
+    {
+        size = in->read(dataStream + dataOffset, sizeToRead);
+        if (size < 0)
+            throw ios_base::failure("StatisticsManager::loadFromFile(): read failed. ");
+
+        sizeToRead -= size;
+        dataOffset += size;
+    }
+
+    utils::Hasher128 hasher;
+    auto computedFileHash = hasher(dataStream, dataStreamSize);
+    if (fileHash != computedFileHash)
+        throw ios_base::failure("StatisticsManager::loadFromFile(): invalid file hash. ");
+
+    uint64_t count = 0;
+    std::memcpy(reinterpret_cast<char*>(&count), dataStream, sizeof(uint64_t));
+    uint64_t offset = sizeof(uint64_t);
+
+    // For each pair.
+    for (uint64_t i = 0; i < count; ++i)
+    {
+        uint32_t oid;
+        KeyType keyType;
+        std::memcpy(reinterpret_cast<char*>(&oid), &dataStream[offset], sizeof(uint32_t));
+        offset += sizeof(uint32_t);
+        std::memcpy(reinterpret_cast<char*>(&keyType), &dataStream[offset], sizeof(keyType));
+        offset += sizeof(KeyType);
+        // Insert pair.
+        keyTypes[oid] = keyType;
+    }
+}
 
 } // namespace statistics

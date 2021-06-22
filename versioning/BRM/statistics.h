@@ -19,13 +19,27 @@
 #define STATISTICS_H
 
 #include "rowgroup.h"
+#include "logger.h"
+#include "hasher.h"
+#include "IDBPolicy.h"
 
 #include <unordered_map>
 #include <unordered_set>
 #include <mutex>
 
+using namespace idbdatafile;
+
 namespace statistics
 {
+
+struct StatisticsFileHeader
+{
+    uint64_t version;
+    uint64_t epoch;
+    uint64_t fileHash;
+    uint64_t dataSize;
+    uint8_t offset[1024];
+};
 
 enum class KeyType
 {
@@ -43,13 +57,20 @@ class StatisticsManager
   public:
     static StatisticsManager* instance();
     void analyzeColumnKeyTypes(const rowgroup::RowGroup& rowGroup, bool trace);
-    void toString(StatisticsType statisticsType);
-    void storeToFile();
+    void toString(StatisticsType statisticsType = StatisticsType::PK_FK);
+    void saveToFile();
+    void loadFromFile();
+    void incEpoch() { ++epoch; }
 
   private:
     std::unordered_map<uint32_t, KeyType> keyTypes;
-    StatisticsManager() = default;
+    StatisticsManager() : epoch(0), version(1) { IDBPolicy::init(true, false, "", 0); }
     std::mutex mut;
+    uint32_t epoch;
+    uint32_t version;
+    // FIXME:
+    // Should we put it to the config file?
+    std::string statsFile = "/var/lib/columnstore/local/statistics";
 };
 } // namespace statistics
 #endif
