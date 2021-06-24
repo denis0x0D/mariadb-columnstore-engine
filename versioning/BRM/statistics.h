@@ -61,6 +61,8 @@ class StatisticsManager
     void saveToFile();
     void loadFromFile();
     void incEpoch() { ++epoch; }
+    void serialize(messageqcpp::ByteStream& bs);
+    void unserialize(messageqcpp::ByteStream& bs);
 
   private:
     std::unordered_map<uint32_t, KeyType> keyTypes;

@@ -230,10 +230,40 @@ void StatisticsManager::loadFromFile()
         KeyType keyType;
         std::memcpy(reinterpret_cast<char*>(&oid), &dataStream[offset], sizeof(uint32_t));
         offset += sizeof(uint32_t);
-        std::memcpy(reinterpret_cast<char*>(&keyType), &dataStream[offset], sizeof(keyType));
+        std::memcpy(reinterpret_cast<char*>(&keyType), &dataStream[offset], sizeof(KeyType));
         offset += sizeof(KeyType);
         // Insert pair.
         keyTypes[oid] = keyType;
+    }
+}
+
+void StatisticsManager::serialize(messageqcpp::ByteStream& bs)
+{
+    uint64_t count = keyTypes.size();
+    bs << version;
+    bs << epoch;
+    bs << count;
+
+    for (const auto& keyType : keyTypes)
+    {
+        bs << keyType.first;
+        bs << (uint32_t) keyType.second;
+    }
+}
+
+void StatisticsManager::unserialize(messageqcpp::ByteStream& bs)
+{
+    uint64_t count;
+    bs >> version;
+    bs >> epoch;
+    bs >> count;
+
+    for (uint32_t i = 0; i < count; ++i)
+    {
+        uint32_t oid, keyType;
+        bs >> oid;
+        bs >> keyType;
+        keyTypes[oid] = static_cast<KeyType>(keyType);
     }
 }
 

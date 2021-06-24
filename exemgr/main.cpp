@@ -289,6 +289,56 @@ const std::string prettyPrintMiniInfo(const std::string& in)
     return oss.str();
 }
 
+// FIXME: undef.
+#define DEBUG_STATISTICS
+void distributeStatistics()
+{
+    try
+    {
+#ifdef DEBUG_STATISTICS
+        std::cout << "Distribute statistics from ExeMgr(Server) to ExeMgr(Clients) " << std::endl;
+#endif
+        messageqcpp::ByteStream msg, statsBs;
+        messageqcpp::ByteStream::quadbyte qb = 7;
+        msg << qb;
+        statistics::StatisticsManager::instance()->serialize(statsBs);
+
+        // for each exe mgr.
+        std::unique_ptr<messageqcpp::MessageQueueClient> exemgrClient(
+            new messageqcpp::MessageQueueClient("ExeMgr2"));
+
+#ifdef DEBUG_STATISTICS
+        std::cout << "Write flag 7 from ExeMgr(Server) to ExeMgr(Clients) " << std::endl;
+#endif
+        // Write a flag to client ExeMgr.
+        exemgrClient->write(msg);
+
+#ifdef DEBUG_STATISTICS
+        std::cout << "Write statistics from ExeMgr(Server) to ExeMgr(Clients) " << std::endl;
+#endif
+        // Write a statistics to client ExeMgr.
+        exemgrClient->write(statsBs);
+
+        msg.restart();
+        // Read the flag back from the client ExeMgr.
+        msg = exemgrClient->read();
+
+        if (msg.length() == 0)
+            throw runtime_error("Lost conection to ExeMgr.");
+#ifdef DEBUG_STATISTICS
+        std::cout << "Read flag on ExeMgr(Server) from ExeMgr(Client) " << std::endl;
+#endif
+    }
+    catch (std::exception& e)
+    {
+        cerr << "distributeStatistics() failed with error: " << e.what() << std::endl;
+    }
+    catch (...)
+    {
+        cerr << "distributeStatistics() failed with unknown error." << std::endl;
+    }
+}
+
 const std::string timeNow()
 {
     time_t outputTime = time(0);
@@ -744,7 +794,7 @@ public:
 
                         msgHandler.start();
                         auto rowCount = jl->projectTable(100, bs);
-                            msgHandler.stop();
+                        msgHandler.stop();
 
                         auto outRG =
                             (static_cast<joblist::TupleJobList*>(jl.get()))->getOutputRowGroup();
@@ -757,6 +807,7 @@ public:
                         statisticsManager->incEpoch();
                         statisticsManager->saveToFile();
 
+                        distributeStatistics();
                         // Send the signal back to front-end.
                         bs.restart();
                         qb = 6;
@@ -764,6 +815,31 @@ public:
                         fIos.write(bs);
                         bs.reset();
                         statementsRunningCount->decr(stmtCounted);
+                        continue;
+                    }
+                    else if (qb == 7)
+                    {
+#ifdef DEBUG_STATISTICS
+                        std::cout
+                            << "Get distributed statistics on ExeMgr(Client) from ExeMgr(Server) "
+                            << std::endl;
+#endif
+                        bs = fIos.read();
+#ifdef DEBUG_STATISTICS
+                        std::cout << "Read the statistics from ExeMgr(Server) " << std::endl;
+#endif
+                        statistics::StatisticsManager::instance()->unserialize(bs);
+                        statistics::StatisticsManager::instance()->saveToFile();
+
+#ifdef DEBUG_STATISTICS
+                        std::cout << "Write flag on ExeMgr(Client) to ExeMgr(Server)" << std::endl;
+#endif
+                        messageqcpp::ByteStream::quadbyte qb;
+                        qb = 7;
+                        bs << qb;
+                        fIos.write(bs);
+
+                        bs.reset();
                         continue;
                     }
                     else
