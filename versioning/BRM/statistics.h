@@ -74,5 +74,23 @@ class StatisticsManager
     // Should we put it to the config file?
     std::string statsFile = "/var/lib/columnstore/local/statistics";
 };
+
+class StatisticsDistributor
+{
+  public:
+    static StatisticsDistributor* instance()
+    {
+        static StatisticsDistributor* sd = new StatisticsDistributor();
+        return sd;
+    }
+
+    void countClients();
+    void distributeStatistics();
+
+  private:
+    StatisticsDistributor() : clientsCount(0) {}
+    uint32_t clientsCount;
+};
+
 } // namespace statistics
 #endif

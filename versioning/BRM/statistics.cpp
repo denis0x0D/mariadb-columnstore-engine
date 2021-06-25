@@ -22,6 +22,8 @@
 #include "IDBPolicy.h"
 #include "brmtypes.h"
 #include "hasher.h"
+#include "messagequeue.h"
+#include "configcpp.h"
 
 using namespace idbdatafile;
 using namespace logging;
@@ -265,6 +267,86 @@ void StatisticsManager::unserialize(messageqcpp::ByteStream& bs)
         bs >> keyType;
         keyTypes[oid] = static_cast<KeyType>(keyType);
     }
+}
+
+#define DEBUG_STATISTICS
+void StatisticsDistributor::distributeStatistics()
+{
+    try
+    {
+#ifdef DEBUG_STATISTICS
+        std::cout << "Distribute statistics from ExeMgr(Server) to ExeMgr(Clients) " << std::endl;
+#endif
+        messageqcpp::ByteStream msg, statsBs;
+        messageqcpp::ByteStream::quadbyte qb = 7;
+        msg << qb;
+        statistics::StatisticsManager::instance()->serialize(statsBs);
+
+        for (uint32_t i = 0; i < clientsCount; ++i)
+        {
+            auto exeMgrID = "ExeMgr" + std::to_string(i + 2);
+            // Create a client.
+            std::unique_ptr<messageqcpp::MessageQueueClient> exemgrClient(
+                new messageqcpp::MessageQueueClient(exeMgrID));
+
+#ifdef DEBUG_STATISTICS
+            std::cout << "Write flag 7 from ExeMgr(Server) to ExeMgr(Clients) " << std::endl;
+#endif
+            // Write a flag to client ExeMgr.
+            exemgrClient->write(msg);
+
+#ifdef DEBUG_STATISTICS
+            std::cout << "Write statistics from ExeMgr(Server) to ExeMgr(Clients) " << std::endl;
+#endif
+            // Write a statistics to client ExeMgr.
+            exemgrClient->write(statsBs);
+
+            msg.restart();
+            // Read the flag back from the client ExeMgr.
+            msg = exemgrClient->read();
+
+            if (msg.length() == 0)
+                throw runtime_error("Lost conection to ExeMgr.");
+#ifdef DEBUG_STATISTICS
+            std::cout << "Read flag on ExeMgr(Server) from ExeMgr(Client) " << std::endl;
+#endif
+        }
+    }
+    catch (std::exception& e)
+    {
+        cerr << "distributeStatisticsAcrossClients() failed with error: " << e.what() << std::endl;
+    }
+    catch (...)
+    {
+        cerr << "distributeStatisticsAcrossClients() failed with unknown error." << std::endl;
+    }
+}
+
+void StatisticsDistributor::countClients()
+{
+#ifdef DEBUG_STATISTICS
+    std::cout << "count clients to distribute statistics " << std::endl;
+#endif
+    auto* config = config::Config::makeConfig();
+    // Starting from the ExeMgr2, since the Server starts on the ExeMgr1.
+    uint32_t exeMgrNumber = 2;
+
+    while (true)
+    {
+        auto exeMgrID = "ExeMgr" + std::to_string(exeMgrNumber);
+        auto exeMgrIP = config->getConfig(exeMgrID, "IPAddr");
+        if (exeMgrIP == "")
+            break;
+#ifdef DEBUG_STATISTICS
+        std::cout << "Client: " << exeMgrID << std::endl;
+#endif
+        ++exeMgrNumber;
+    }
+
+    clientsCount = exeMgrNumber - 2;
+#ifdef DEBUG_STATISTICS
+    std::cout << "Number of clients: " << clientsCount << std::endl;
+#endif
 }
 
 } // namespace statistics

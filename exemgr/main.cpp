@@ -289,56 +289,6 @@ const std::string prettyPrintMiniInfo(const std::string& in)
     return oss.str();
 }
 
-// FIXME: undef.
-#define DEBUG_STATISTICS
-void distributeStatistics()
-{
-    try
-    {
-#ifdef DEBUG_STATISTICS
-        std::cout << "Distribute statistics from ExeMgr(Server) to ExeMgr(Clients) " << std::endl;
-#endif
-        messageqcpp::ByteStream msg, statsBs;
-        messageqcpp::ByteStream::quadbyte qb = 7;
-        msg << qb;
-        statistics::StatisticsManager::instance()->serialize(statsBs);
-
-        // for each exe mgr.
-        std::unique_ptr<messageqcpp::MessageQueueClient> exemgrClient(
-            new messageqcpp::MessageQueueClient("ExeMgr2"));
-
-#ifdef DEBUG_STATISTICS
-        std::cout << "Write flag 7 from ExeMgr(Server) to ExeMgr(Clients) " << std::endl;
-#endif
-        // Write a flag to client ExeMgr.
-        exemgrClient->write(msg);
-
-#ifdef DEBUG_STATISTICS
-        std::cout << "Write statistics from ExeMgr(Server) to ExeMgr(Clients) " << std::endl;
-#endif
-        // Write a statistics to client ExeMgr.
-        exemgrClient->write(statsBs);
-
-        msg.restart();
-        // Read the flag back from the client ExeMgr.
-        msg = exemgrClient->read();
-
-        if (msg.length() == 0)
-            throw runtime_error("Lost conection to ExeMgr.");
-#ifdef DEBUG_STATISTICS
-        std::cout << "Read flag on ExeMgr(Server) from ExeMgr(Client) " << std::endl;
-#endif
-    }
-    catch (std::exception& e)
-    {
-        cerr << "distributeStatistics() failed with error: " << e.what() << std::endl;
-    }
-    catch (...)
-    {
-        cerr << "distributeStatistics() failed with unknown error." << std::endl;
-    }
-}
-
 const std::string timeNow()
 {
     time_t outputTime = time(0);
@@ -802,12 +752,15 @@ public:
                         if (caep.traceOn())
                             std::cout << "Row count " << rowCount << std::endl;
 
+                        // Process `RowGroup`, increase an epoch and save statistics to the file.
                         auto* statisticsManager = statistics::StatisticsManager::instance();
                         statisticsManager->analyzeColumnKeyTypes(outRG, caep.traceOn());
                         statisticsManager->incEpoch();
                         statisticsManager->saveToFile();
 
-                        distributeStatistics();
+                        // Distribute statistics across all ExeMgr clients if possible.
+                        statistics::StatisticsDistributor::instance()->distributeStatistics();
+
                         // Send the signal back to front-end.
                         bs.restart();
                         qb = 6;
@@ -819,6 +772,8 @@ public:
                     }
                     else if (qb == 7)
                     {
+// TODO: Update
+#define DEBUG_STATISTICS
 #ifdef DEBUG_STATISTICS
                         std::cout
                             << "Get distributed statistics on ExeMgr(Client) from ExeMgr(Server) "
@@ -1825,6 +1780,7 @@ int ServiceExeMgr::Child()
     try
     {
         statistics::StatisticsManager::instance()->loadFromFile();
+        statistics::StatisticsDistributor::instance()->countClients();
     }
     catch (...)
     {
