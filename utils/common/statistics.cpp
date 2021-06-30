@@ -16,6 +16,7 @@
    MA 02110-1301, USA. */
 
 #include <iostream>
+#include <atomic>
 #include <boost/filesystem.hpp>
 
 #include "statistics.h"
@@ -30,6 +31,7 @@ using namespace logging;
 
 namespace statistics
 {
+using ColumnsCache = std::vector<std::unordered_set<uint32_t>>;
 
 StatisticsManager* StatisticsManager::instance()
 {
@@ -51,7 +53,7 @@ void StatisticsManager::analyzeColumnKeyTypes(const rowgroup::RowGroup& rowGroup
     rowGroup.initRow(&r);
     rowGroup.getRow(0, &r);
 
-    std::vector<std::unordered_set<uint32_t>> columns(columnCount, std::unordered_set<uint32_t>());
+    ColumnsCache columns(columnCount, std::unordered_set<uint32_t>());
     // Init key types.
     for (uint32_t index = 0; index < columnCount; ++index)
         keyTypes[oids[index]] = KeyType::PK;
@@ -87,31 +89,17 @@ void StatisticsManager::output(StatisticsType statisticsType)
     }
 }
 
-void StatisticsManager::saveToFile()
+// Someday it will be a virtual method, based on statistics type we processing.
+std::unique_ptr<char[]> StatisticsManager::convertStatsToDataStream(uint64_t& dataStreamSize)
 {
-    std::lock_guard<std::mutex> lock(mut);
-
-    const char* fileName = statsFile.c_str();
-    std::unique_ptr<IDBDataFile> out(
-        IDBDataFile::open(IDBPolicy::getType(fileName, IDBPolicy::WRITEENG), fileName, "wb", 1));
-
-    if (!out)
-    {
-        BRM::log_errno("StatisticsManager::saveToFile(): open");
-        throw ios_base::failure(
-            "StatisticsManager::saveToFile(): open failed. Check the error log.");
-    }
-
     // Number of pairs.
     uint64_t count = keyTypes.size();
     // count, [[uid, keyType], ... ]
-    const uint64_t dataStreamSize = sizeof(uint64_t) + count * (sizeof(uint32_t) + sizeof(KeyType));
+    dataStreamSize = sizeof(uint64_t) + count * (sizeof(uint32_t) + sizeof(KeyType));
 
     // Allocate memory for data stream.
-    char* dataStream = new char[dataStreamSize];
-    std::unique_ptr<char[]> dataStreamSmartPtr;
-    dataStreamSmartPtr.reset(dataStream);
-
+    std::unique_ptr<char[]> dataStreamSmartPtr(new char[dataStreamSize]);
+    auto* dataStream = dataStreamSmartPtr.get();
     // Initialize the data stream.
     uint64_t offset = 0;
     std::memcpy(dataStream, reinterpret_cast<char*>(&count), sizeof(uint64_t));
@@ -129,7 +117,28 @@ void StatisticsManager::saveToFile()
         offset += sizeof(KeyType);
     }
 
+    return dataStreamSmartPtr;
+}
+
+void StatisticsManager::saveToFile()
+{
+    std::lock_guard<std::mutex> lock(mut);
+
+    const char* fileName = statsFile.c_str();
+    std::unique_ptr<IDBDataFile> out(
+        IDBDataFile::open(IDBPolicy::getType(fileName, IDBPolicy::WRITEENG), fileName, "wb", 1));
+
+    if (!out)
+    {
+        BRM::log_errno("StatisticsManager::saveToFile(): open");
+        throw ios_base::failure("StatisticsManager::saveToFile(): open failed.");
+    }
+
+    // Compute hash.
+    uint64_t dataStreamSize = 0;
+    std::unique_ptr<char[]> dataStreamSmartPtr = convertStatsToDataStream(dataStreamSize);
     utils::Hasher128 hasher;
+
     // Prepare a statistics file header.
     const uint32_t headerSize = sizeof(StatisticsFileHeader);
     StatisticsFileHeader fileHeader;
@@ -138,7 +147,7 @@ void StatisticsManager::saveToFile()
     fileHeader.epoch = epoch;
     fileHeader.dataSize = dataStreamSize;
     // Compute hash from the data.
-    fileHeader.fileHash = hasher(dataStream, dataStreamSize);
+    fileHeader.dataHash = hasher(dataStreamSmartPtr.get(), dataStreamSize);
 
     // Write statistics file header.
     int64_t size = out->write(reinterpret_cast<char*>(&fileHeader), headerSize);
@@ -152,7 +161,7 @@ void StatisticsManager::saveToFile()
     }
 
     // Write data.
-    size = out->write(dataStream, dataStreamSize);
+    size = out->write(dataStreamSmartPtr.get(), dataStreamSize);
     if (size != dataStreamSize)
     {
         auto rc = IDBPolicy::remove(fileName);
@@ -191,13 +200,12 @@ void StatisticsManager::loadFromFile()
     // Initialize fields from the file header.
     version = fileHeader.version;
     epoch = fileHeader.epoch;
-    const auto fileHash = fileHeader.fileHash;
+    const auto dataHash = fileHeader.dataHash;
     const auto dataStreamSize = fileHeader.dataSize;
 
     // Allocate the memory for the file data.
-    char* dataStream = new char[dataStreamSize];
-    std::unique_ptr<char[]> dataStreamSmartPtr;
-    dataStreamSmartPtr.reset(dataStream);
+    std::unique_ptr<char[]> dataStreamSmartPtr(new char[dataStreamSize]);
+    auto* dataStream = dataStreamSmartPtr.get();
 
     // Read the data.
     uint64_t dataOffset = 0;
@@ -217,8 +225,8 @@ void StatisticsManager::loadFromFile()
     }
 
     utils::Hasher128 hasher;
-    auto computedFileHash = hasher(dataStream, dataStreamSize);
-    if (fileHash != computedFileHash)
+    auto computedDataHash = hasher(dataStream, dataStreamSize);
+    if (dataHash != computedDataHash)
         throw ios_base::failure("StatisticsManager::loadFromFile(): invalid file hash. ");
 
     uint64_t count = 0;
@@ -237,6 +245,14 @@ void StatisticsManager::loadFromFile()
         // Insert pair.
         keyTypes[oid] = keyType;
     }
+}
+
+uint64_t StatisticsManager::computeHashFromStats()
+{
+    utils::Hasher128 hasher;
+    uint64_t dataStreamSize = 0;
+    std::unique_ptr<char[]> dataStreamSmartPtr = convertStatsToDataStream(dataStreamSize);
+    return hasher(dataStreamSmartPtr.get(), dataStreamSize);
 }
 
 void StatisticsManager::serialize(messageqcpp::ByteStream& bs)
@@ -279,45 +295,69 @@ void StatisticsDistributor::distributeStatistics()
 {
     try
     {
-        std::lock_guard<std::mutex> lock(mut);
-#ifdef DEBUG_STATISTICS
-        std::cout << "Distribute statistics from ExeMgr(Server) to ExeMgr(Clients) " << std::endl;
-#endif
-        messageqcpp::ByteStream msg, statsBs;
-        messageqcpp::ByteStream::quadbyte qb = ANALYZE_TABLE_REC_STATS;
-        msg << qb;
-        statistics::StatisticsManager::instance()->serialize(statsBs);
-
-        for (uint32_t i = 0; i < clientsCount; ++i)
+        countClients();
         {
-            auto exeMgrID = "ExeMgr" + std::to_string(i + 2);
-            // Create a client.
-            std::unique_ptr<messageqcpp::MessageQueueClient> exemgrClient(
-                new messageqcpp::MessageQueueClient(exeMgrID));
+            std::lock_guard<std::mutex> lock(mut);
+#ifdef DEBUG_STATISTICS
+            std::cout << "Distribute statistics from ExeMgr(Server) to ExeMgr(Clients) "
+                      << std::endl;
+#endif
+            messageqcpp::ByteStream msg, statsHash, statsBs;
+            messageqcpp::ByteStream::quadbyte qb = ANALYZE_TABLE_REC_STATS;
+            msg << qb;
+            // Current hash.
+            statsHash << statistics::StatisticsManager::instance()->computeHashFromStats();
+            // Statistics.
+            statistics::StatisticsManager::instance()->serialize(statsBs);
+
+            for (uint32_t i = 0; i < clientsCount; ++i)
+            {
+                auto exeMgrID = "ExeMgr" + std::to_string(i + 2);
+                // Create a client.
+                std::unique_ptr<messageqcpp::MessageQueueClient> exemgrClient(
+                    new messageqcpp::MessageQueueClient(exeMgrID));
 
 #ifdef DEBUG_STATISTICS
-            std::cout
-                << "Write flag ANALYZE_TABLE_REC_STATS from ExeMgr(Server) to ExeMgr(Clients) "
-                << std::endl;
+                std::cout
+                    << "Write flag ANALYZE_TABLE_REC_STATS from ExeMgr(Server) to ExeMgr(Clients) "
+                    << std::endl;
 #endif
-            // Write a flag to client ExeMgr.
-            exemgrClient->write(msg);
+                // Write a flag to client ExeMgr.
+                exemgrClient->write(msg);
 
 #ifdef DEBUG_STATISTICS
-            std::cout << "Write statistics from ExeMgr(Server) to ExeMgr(Clients) " << std::endl;
+                std::cout << "Write statistics hash from ExeMgr(Server) to ExeMgr(Clients) "
+                          << std::endl;
 #endif
-            // Write a statistics to client ExeMgr.
-            exemgrClient->write(statsBs);
+                // Write a hash of the stats.
+                exemgrClient->write(statsHash);
 
-            msg.restart();
-            // Read the flag back from the client ExeMgr.
-            msg = exemgrClient->read();
+                msg.restart();
+                // Read the state from Client.
+                msg = exemgrClient->read();
 
-            if (msg.length() == 0)
-                throw runtime_error("Lost conection to ExeMgr.");
+                msg >> qb;
+                // Do not need a stats.
+                if (qb == ANALYZE_TABLE_SUCCESS)
+                    return;
+
 #ifdef DEBUG_STATISTICS
-            std::cout << "Read flag on ExeMgr(Server) from ExeMgr(Client) " << std::endl;
+                std::cout << "Write statistics bytestream from ExeMgr(Server) to ExeMgr(Clients) "
+                          << std::endl;
 #endif
+                // Write a statistics to client ExeMgr.
+                exemgrClient->write(statsBs);
+
+                msg.restart();
+                // Read the flag back from the client ExeMgr.
+                msg = exemgrClient->read();
+
+                if (msg.length() == 0)
+                    throw runtime_error("Lost conection to ExeMgr.");
+#ifdef DEBUG_STATISTICS
+                std::cout << "Read flag on ExeMgr(Server) from ExeMgr(Client) " << std::endl;
+#endif
+            }
         }
     }
     catch (std::exception& e)
@@ -332,13 +372,12 @@ void StatisticsDistributor::distributeStatistics()
 
 void StatisticsDistributor::countClients()
 {
-    std::lock_guard<std::mutex> lock(mut);
 #ifdef DEBUG_STATISTICS
     std::cout << "count clients to distribute statistics " << std::endl;
 #endif
     auto* config = config::Config::makeConfig();
     // Starting from the ExeMgr2, since the Server starts on the ExeMgr1.
-    uint32_t exeMgrNumber = 2;
+    std::atomic<uint32_t> exeMgrNumber(2);
 
     try
     {

@@ -23,14 +23,16 @@
 #include "hasher.h"
 #include "IDBPolicy.h"
 
-#include <unordered_map>
+#include <map>
 #include <unordered_set>
 #include <mutex>
 
 // Represents a commands for `ExeMgr`.
 #define ANALYZE_TABLE_EXECUTE 6
 #define ANALYZE_TABLE_REC_STATS 7
-#define ANALYZE_TABLE_SUCCESS 8
+#define ANALYZE_TABLE_NEED_STATS 8
+#define ANALYZE_TABLE_SUCCESS 9
+// #define DEBUG_STATISTICS
 
 using namespace idbdatafile;
 
@@ -58,7 +60,7 @@ struct StatisticsFileHeader
 {
     uint64_t version;
     uint64_t epoch;
-    uint64_t fileHash;
+    uint64_t dataHash;
     uint64_t dataSize;
     uint8_t offset[1024];
 };
@@ -84,10 +86,14 @@ class StatisticsManager
     void serialize(messageqcpp::ByteStream& bs);
     // Unserialize stats from the given `bs`.
     void unserialize(messageqcpp::ByteStream& bs);
+    // Computes hash from the current statistics data.
+    uint64_t computeHashFromStats();
 
   private:
-    std::unordered_map<uint32_t, KeyType> keyTypes;
+    std::map<uint32_t, KeyType> keyTypes;
     StatisticsManager() : epoch(0), version(1) { IDBPolicy::init(true, false, "", 0); }
+    std::unique_ptr<char[]> convertStatsToDataStream(uint64_t& dataStreamSize);
+
     std::mutex mut;
     uint32_t epoch;
     uint32_t version;
@@ -103,13 +109,13 @@ class StatisticsDistributor
     // Returns the instance of this class, static initialization happens only once.
     static StatisticsDistributor* instance();
 
-    // Count the number of clients by reading config file and evaluating `ExeMgr` fields.
-    void countClients();
     // Distribute stats across all `ExeMgr` in cluster by connecting to them using config file.
     void distributeStatistics();
 
   private:
     StatisticsDistributor() : clientsCount(0) {}
+    // Count the number of clients by reading config file and evaluating `ExeMgr` fields.
+    void countClients();
     uint32_t clientsCount;
     std::mutex mut;
 };

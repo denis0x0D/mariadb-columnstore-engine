@@ -1991,6 +1991,38 @@ void makeUnionJobSteps(CalpontSelectExecutionPlan* csep, JobInfo& jobInfo,
 namespace
 {
 
+void handleException(std::exception_ptr e, JobList* jl, JobInfo& jobInfo, unsigned& errCode,
+                     string& emsg)
+{
+    try
+    {
+        std::rethrow_exception(e);
+    }
+    catch (IDBExcept& iex)
+    {
+        jobInfo.errorInfo->errCode = iex.errorCode();
+        errCode = iex.errorCode();
+        exceptionHandler(jl, jobInfo, iex.what(), LOG_TYPE_DEBUG);
+        emsg = iex.what();
+    }
+    catch (const std::exception& ex)
+    {
+        jobInfo.errorInfo->errCode = makeJobListErr;
+        errCode = makeJobListErr;
+        exceptionHandler(jl, jobInfo, ex.what());
+        emsg = ex.what();
+    }
+    catch (...)
+    {
+        jobInfo.errorInfo->errCode = makeJobListErr;
+        errCode = makeJobListErr;
+        exceptionHandler(jl, jobInfo, "an exception");
+        emsg = "An unknown internal joblist error";
+    }
+    delete jl;
+    jl = nullptr;
+}
+
 SJLP makeJobList_(
     CalpontExecutionPlan* cplan,
     ResourceManager* rm,
@@ -2258,6 +2290,7 @@ SJLP makeJobList_(
             if (!querySteps.size())
             {
                 delete jl;
+                // Indicates that query steps is empty.
                 errCode = -1;
                 jl = nullptr;
                 goto out;
@@ -2270,35 +2303,9 @@ SJLP makeJobList_(
 
             dynamic_cast<TupleJobList*>(jl)->setDeliveryFlag(true);
         }
-        catch (IDBExcept& iex)
-        {
-            jobInfo.errorInfo->errCode = iex.errorCode();
-            errCode = iex.errorCode();
-            exceptionHandler(jl, jobInfo, iex.what(), LOG_TYPE_DEBUG);
-            emsg = iex.what();
-            delete jl;
-            jl = nullptr;
-            goto out;
-        }
-        catch (const std::exception& ex)
-        {
-            jobInfo.errorInfo->errCode = makeJobListErr;
-            errCode = makeJobListErr;
-            exceptionHandler(jl, jobInfo, ex.what());
-            emsg = ex.what();
-            delete jl;
-            jl = nullptr;
-            goto out;
-        }
         catch (...)
         {
-            jobInfo.errorInfo->errCode = makeJobListErr;
-            errCode = makeJobListErr;
-            exceptionHandler(jl, jobInfo, "an exception");
-            emsg = "An unknown internal joblist error";
-            delete jl;
-            jl = nullptr;
-            goto out;
+            handleException(std::current_exception(), jl, jobInfo, errCode, emsg);
         }
 
     out:

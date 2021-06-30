@@ -1905,6 +1905,101 @@ inline bool isSupportedToAnalyze(const execplan::CalpontSystemCatalog::ColType& 
     return colType.isUnsignedInteger() || colType.isSignedInteger();
 }
 
+// Initializes `cal_connection_info` using given `thd` and `sessionID`.
+bool initializeCalConnectionInfo(cal_connection_info* ci, THD* thd,
+                                 boost::shared_ptr<execplan::CalpontSystemCatalog> csc,
+                                 uint32_t sessionID, bool localQuery)
+{
+    ci->stats.reset();
+    ci->stats.setStartTime();
+
+    if (thd->main_security_ctx.user)
+    {
+        ci->stats.fUser = thd->main_security_ctx.user;
+    }
+    else
+    {
+        ci->stats.fUser = "";
+    }
+
+    if (thd->main_security_ctx.host)
+        ci->stats.fHost = thd->main_security_ctx.host;
+    else if (thd->main_security_ctx.host_or_ip)
+        ci->stats.fHost = thd->main_security_ctx.host_or_ip;
+    else
+        ci->stats.fHost = "unknown";
+
+    try
+    {
+        ci->stats.userPriority(ci->stats.fHost, ci->stats.fUser);
+    }
+    catch (std::exception& e)
+    {
+        string msg = string("Columnstore User Priority - ") + e.what();
+        ci->warningMsg = msg;
+    }
+
+    if (ci->queryState != 0)
+    {
+        sm::sm_cleanup(ci->cal_conn_hndl);
+        ci->cal_conn_hndl = 0;
+    }
+
+    sm::sm_init(sessionID, &ci->cal_conn_hndl, localQuery);
+    idbassert(ci->cal_conn_hndl != 0);
+    ci->cal_conn_hndl->csc = csc;
+    idbassert(ci->cal_conn_hndl->exeMgr != 0);
+
+    try
+    {
+        ci->cal_conn_hndl->connect();
+    }
+    catch (...)
+    {
+        setError(thd, ER_INTERNAL_ERROR, IDBErrorInfo::instance()->errorMsg(ERR_LOST_CONN_EXEMGR));
+        CalpontSystemCatalog::removeCalpontSystemCatalog(sessionID);
+        return false;
+    }
+
+    return true;
+}
+
+bool sendExecutionPlanToExeMgr(sm::cpsm_conhdl_t* hndl, ByteStream::quadbyte qb,
+                               std::shared_ptr<execplan::MCSAnalyzeTableExecutionPlan> caep,
+                               cal_connection_info* ci, THD* thd)
+{
+    ByteStream msg;
+    try
+    {
+        msg << qb;
+        hndl->exeMgr->write(msg);
+        msg.restart();
+        caep->rmParms(ci->rmParms);
+
+        // Send the execution plan.
+        caep->serialize(msg);
+        hndl->exeMgr->write(msg);
+
+        // Get the status from ExeMgr.
+        msg.restart();
+        msg = hndl->exeMgr->read();
+
+        // Any return code is ok for now.
+        if (msg.length() == 0)
+        {
+            auto emsg = "Lost connection to ExeMgr. Please contact your administrator";
+            setError(thd, ER_INTERNAL_ERROR, emsg);
+            return false;
+        }
+    }
+    catch (...)
+    {
+        return false;
+    }
+
+    return true;
+}
+
 } //anon namespace
 
 int ha_mcs_impl_analyze(THD* thd, TABLE* table)
@@ -1958,7 +2053,7 @@ int ha_mcs_impl_analyze(THD* thd, TABLE* table)
     }
 
     // Create execution plan and initialize it with `returned columns` and `column map`.
-    std::unique_ptr<execplan::MCSAnalyzeTableExecutionPlan> caep(
+    std::shared_ptr<execplan::MCSAnalyzeTableExecutionPlan> caep(
         new execplan::MCSAnalyzeTableExecutionPlan(returnedColumnList, columnMap));
 
     caep->schemaName(table->s->db.str, lower_case_table_names);
@@ -2017,94 +2112,19 @@ int ha_mcs_impl_analyze(THD* thd, TABLE* table)
     bool localQuery = (get_local_query(thd) > 0 ? true : false);
     caep->localQuery(localQuery);
 
-    {
-        ci->stats.reset();
-        ci->stats.setStartTime();
+    // Try to initialize connection.
+    if (!initializeCalConnectionInfo(ci, thd, csc, sessionID, localQuery))
+        goto error;
 
-        if (thd->main_security_ctx.user)
-        {
-            ci->stats.fUser = thd->main_security_ctx.user;
-        }
-        else
-        {
-            ci->stats.fUser = "";
-        }
-
-        if (thd->main_security_ctx.host)
-            ci->stats.fHost = thd->main_security_ctx.host;
-        else if (thd->main_security_ctx.host_or_ip)
-            ci->stats.fHost = thd->main_security_ctx.host_or_ip;
-        else
-            ci->stats.fHost = "unknown";
-
-        try
-        {
-            ci->stats.userPriority(ci->stats.fHost, ci->stats.fUser);
-        }
-        catch (std::exception& e)
-        {
-            string msg = string("Columnstore User Priority - ") + e.what();
-            ci->warningMsg = msg;
-        }
-
-        if (ci->queryState != 0)
-        {
-            sm::sm_cleanup(ci->cal_conn_hndl);
-            ci->cal_conn_hndl = 0;
-        }
-
-        sm::sm_init(sessionID, &ci->cal_conn_hndl, localQuery);
-        idbassert(ci->cal_conn_hndl != 0);
-        ci->cal_conn_hndl->csc = csc;
-        idbassert(ci->cal_conn_hndl->exeMgr != 0);
-
-        try
-        {
-            ci->cal_conn_hndl->connect();
-        }
-        catch (...)
-        {
-            setError(thd, ER_INTERNAL_ERROR,
-                     IDBErrorInfo::instance()->errorMsg(ERR_LOST_CONN_EXEMGR));
-            CalpontSystemCatalog::removeCalpontSystemCatalog(sessionID);
-            goto error;
-        }
-    }
     hndl = ci->cal_conn_hndl;
 
     if (caep->traceOn())
         std::cout << caep->toString() << std::endl;
-
     {
-        ByteStream msg;
-        try
-        {
-            ByteStream::quadbyte qb = ANALYZE_TABLE_EXECUTE;
-            msg << qb;
-            hndl->exeMgr->write(msg);
-            msg.restart();
-            caep->rmParms(ci->rmParms);
-
-            // Send the execution plan.
-            caep->serialize(msg);
-            hndl->exeMgr->write(msg);
-
-            // Get the status from ExeMgr.
-            msg.restart();
-            msg = hndl->exeMgr->read();
-
-            // Any return code is ok for now.
-            if (msg.length() == 0)
-            {
-                auto emsg = "Lost connection to ExeMgr. Please contact your administrator";
-                setError(thd, ER_INTERNAL_ERROR, emsg);
-                return ER_INTERNAL_ERROR;
-            }
-        }
-        catch (...)
-        {
+        ByteStream::quadbyte qb = ANALYZE_TABLE_EXECUTE;
+        // Serialize and the send the `anlyze table` execution plan.
+        if (!sendExecutionPlanToExeMgr(hndl, qb, caep, ci, thd))
             goto error;
-        }
     }
 
     ci->rmParms.clear();
@@ -2119,6 +2139,7 @@ error:
         sm::sm_cleanup(ci->cal_conn_hndl);
         ci->cal_conn_hndl = 0;
     }
+
     return ER_INTERNAL_ERROR;
 }
 
