@@ -2005,6 +2005,7 @@ bool sendExecutionPlanToExeMgr(sm::cpsm_conhdl_t* hndl, ByteStream::quadbyte qb,
 
 int ha_mcs_impl_analyze(THD* thd, TABLE* table)
 {
+    DBUG_ENTER("ha_mcs::analyze");
     uint32_t sessionID = execplan::CalpontSystemCatalog::idb_tid2sid(thd->thread_id);
     boost::shared_ptr<execplan::CalpontSystemCatalog> csc =
         execplan::CalpontSystemCatalog::makeCalpontSystemCatalog(sessionID);
@@ -2098,7 +2099,6 @@ int ha_mcs_impl_analyze(THD* thd, TABLE* table)
         push_warning(thd, Sql_condition::WARN_LEVEL_WARN, 9999, msg.c_str());
     }
 
-    // FIXME: Should we send a message to ExeMgr?
     if (thd->killed == KILL_QUERY || thd->killed == KILL_QUERY_HARD)
     {
         force_close_fep_conn(thd, ci);

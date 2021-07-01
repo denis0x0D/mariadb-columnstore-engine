@@ -150,7 +150,7 @@ void StatisticsManager::saveToFile()
     fileHeader.dataHash = hasher(dataStreamSmartPtr.get(), dataStreamSize);
 
     // Write statistics file header.
-    int64_t size = out->write(reinterpret_cast<char*>(&fileHeader), headerSize);
+    uint64_t size = out->write(reinterpret_cast<char*>(&fileHeader), headerSize);
     if (size != headerSize)
     {
         auto rc = IDBPolicy::remove(fileName);

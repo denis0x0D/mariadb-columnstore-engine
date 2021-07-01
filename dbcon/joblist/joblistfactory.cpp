@@ -2269,7 +2269,7 @@ SJLP makeJobList_(
         jobInfo.csc = csc;
         jobInfo.trace = caep->traceOn();
         jobInfo.isExeMgr = isExeMgr;
-        // TODO: Implement it when we have a dict columnt.
+        // TODO: Implement it when we have a dict column.
         jobInfo.stringScanThreshold = 20;
         jobInfo.errorInfo = errorInfo;
         jobInfo.keyInfo = keyInfo;
@@ -2291,12 +2291,12 @@ SJLP makeJobList_(
             {
                 delete jl;
                 // Indicates that query steps is empty.
-                errCode = -1;
+                errCode = logging::statisticsJobListEmpty;
                 jl = nullptr;
                 goto out;
             }
 
-            auto stepNo = numberSteps(querySteps, 0, jobInfo.traceFlags);
+            numberSteps(querySteps, 0, jobInfo.traceFlags);
 
             jl->addQuery(querySteps);
             jl->addDelivery(deliverySteps);

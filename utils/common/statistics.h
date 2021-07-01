@@ -97,8 +97,6 @@ class StatisticsManager
     std::mutex mut;
     uint32_t epoch;
     uint32_t version;
-    // FIXME:
-    // Should we put it to the config file?
     std::string statsFile = "/var/lib/columnstore/local/statistics";
 };
 
