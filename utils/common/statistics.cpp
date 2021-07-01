@@ -293,29 +293,47 @@ StatisticsDistributor* StatisticsDistributor::instance()
 
 void StatisticsDistributor::distributeStatistics()
 {
-    try
+    countClients();
     {
-        countClients();
-        {
-            std::lock_guard<std::mutex> lock(mut);
-#ifdef DEBUG_STATISTICS
-            std::cout << "Distribute statistics from ExeMgr(Server) to ExeMgr(Clients) "
-                      << std::endl;
-#endif
-            messageqcpp::ByteStream msg, statsHash, statsBs;
-            messageqcpp::ByteStream::quadbyte qb = ANALYZE_TABLE_REC_STATS;
-            msg << qb;
-            // Current hash.
-            statsHash << statistics::StatisticsManager::instance()->computeHashFromStats();
-            // Statistics.
-            statistics::StatisticsManager::instance()->serialize(statsBs);
+        std::lock_guard<std::mutex> lock(mut);
+        // No clients.
+        if (clientsCount == 0)
+            return;
 
-            for (uint32_t i = 0; i < clientsCount; ++i)
+#ifdef DEBUG_STATISTICS
+        std::cout << "Distribute statistics from ExeMgr(Server) to ExeMgr(Clients) " << std::endl;
+#endif
+
+        messageqcpp::ByteStream msg, statsHash, statsBs;
+        // Current hash.
+        statsHash << statistics::StatisticsManager::instance()->computeHashFromStats();
+        // Statistics.
+        statistics::StatisticsManager::instance()->serialize(statsBs);
+
+        for (uint32_t i = 0; i < clientsCount; ++i)
+        {
+            try
             {
+                messageqcpp::ByteStream::quadbyte qb = ANALYZE_TABLE_REC_STATS;
+                msg << qb;
+
                 auto exeMgrID = "ExeMgr" + std::to_string(i + 2);
                 // Create a client.
                 std::unique_ptr<messageqcpp::MessageQueueClient> exemgrClient(
                     new messageqcpp::MessageQueueClient(exeMgrID));
+
+#ifdef DEBUG_STATISTICS
+                std::cout << "Try to connect to " << exeMgrID << std::endl;
+#endif
+                // Try to connect to the client.
+                if (!exemgrClient->connect())
+                {
+                    msg.restart();
+#ifdef DEBUG_STATISTICS
+                    std::cout << "Unable to connect to " << exeMgrID << std::endl;
+#endif
+                    continue;
+                }
 
 #ifdef DEBUG_STATISTICS
                 std::cout
@@ -332,14 +350,17 @@ void StatisticsDistributor::distributeStatistics()
                 // Write a hash of the stats.
                 exemgrClient->write(statsHash);
 
-                msg.restart();
                 // Read the state from Client.
+                msg.restart();
                 msg = exemgrClient->read();
-
                 msg >> qb;
+
                 // Do not need a stats.
                 if (qb == ANALYZE_TABLE_SUCCESS)
-                    return;
+                {
+                    msg.restart();
+                    continue;
+                }
 
 #ifdef DEBUG_STATISTICS
                 std::cout << "Write statistics bytestream from ExeMgr(Server) to ExeMgr(Clients) "
@@ -348,8 +369,8 @@ void StatisticsDistributor::distributeStatistics()
                 // Write a statistics to client ExeMgr.
                 exemgrClient->write(statsBs);
 
-                msg.restart();
                 // Read the flag back from the client ExeMgr.
+                msg.restart();
                 msg = exemgrClient->read();
 
                 if (msg.length() == 0)
@@ -357,16 +378,19 @@ void StatisticsDistributor::distributeStatistics()
 #ifdef DEBUG_STATISTICS
                 std::cout << "Read flag on ExeMgr(Server) from ExeMgr(Client) " << std::endl;
 #endif
+                msg.restart();
+            }
+            catch (std::exception& e)
+            {
+                msg.restart();
+                std::cerr << "distributeStatistics() failed with error: " << e.what() << std::endl;
+            }
+            catch (...)
+            {
+                msg.restart();
+                std::cerr << "distributeStatistics() failed with unknown error." << std::endl;
             }
         }
-    }
-    catch (std::exception& e)
-    {
-        std::cerr << "distributeStatistics() failed with error: " << e.what() << std::endl;
-    }
-    catch (...)
-    {
-        std::cerr << "distributeStatistics() failed with unknown error." << std::endl;
     }
 }
 
