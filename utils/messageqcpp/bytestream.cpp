@@ -59,6 +59,8 @@ void ByteStream::doCopy(const ByteStream& rhs)
     memcpy(fBuf + ISSOverhead, rhs.fCurOutPtr, rlen);
     fCurInPtr = fBuf + ISSOverhead + rlen;
     fCurOutPtr = fBuf + ISSOverhead;
+    // Copy `longStrings` as well.
+    longStrings = rhs.longStrings;
 }
 
 ByteStream::ByteStream(const ByteStream& rhs) :
@@ -87,6 +89,8 @@ ByteStream& ByteStream::operator=(const ByteStream& rhs)
             delete [] fBuf;
             fBuf = fCurInPtr = fCurOutPtr = 0;
             fMaxLen = 0;
+            // Clear `longStrings`.
+            longStrings.clear();
         }
     }
 
