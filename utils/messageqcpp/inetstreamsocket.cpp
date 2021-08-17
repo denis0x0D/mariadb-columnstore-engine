@@ -471,6 +471,13 @@ retry:
     return true;
 }
 
+struct MemChunk
+{
+    uint32_t currentSize;
+    uint32_t capacity;
+    uint8_t data[];
+};
+
 const SBS InetStreamSocket::read(const struct ::timespec* timeout, bool* isTimeOut, Stats* stats) const
 {
     long msecs = -1;
@@ -752,6 +759,91 @@ const SBS InetStreamSocket::read(const struct ::timespec* timeout, bool* isTimeO
         stats->dataRecvd(msglen);
 
     res->advanceInputPtr(msglen);
+
+    for (uint32_t i = 0; i < longStringLen; ++i)
+    {
+        // read mem chunk
+        MemChunk memChunk;
+        uint32_t mlread = 0;
+        uint8_t* memChunkP = reinterpret_cast<uint8_t*>(&memChunk);
+
+        while (mlread < sizeof(MemChunk))
+        {
+            ssize_t t;
+
+            if (timeout != NULL)
+            {
+                int err;
+
+                pfd[0].revents = 0;
+                err = poll(pfd, 1, msecs);
+
+                if (err < 0 || pfd[0].revents & (POLLERR | POLLHUP | POLLNVAL))
+                {
+                    ostringstream oss;
+                    oss << "InetStreamSocket::read: I/O error1: " << strerror(errno);
+                    throw runtime_error(oss.str());
+                }
+
+                if (err == 0) // timeout
+                {
+                    if (isTimeOut)
+                        *isTimeOut = true;
+
+                    logIoError("InetStreamSocket::read: timeout during first poll", 0);
+                    return SBS(new ByteStream(0));
+                }
+            }
+
+#ifdef _MSC_VER
+            t = ::recv(fSocketParms.sd(), (char*) (memChunkP + mlread), sizeof(MemChunk) - mlread,
+                       0);
+#else
+            t = ::read(fSocketParms.sd(), memChunkP + mlread, sizeof(MemChunk) - mlread);
+#endif
+
+            if (t == 0)
+            {
+                if (timeout == NULL)
+                {
+                    logIoError("InetStreamSocket::read: timeout during first read", 0);
+                    return SBS(new ByteStream(0)); // don't return an incomplete message
+                }
+                else
+                    throw SocketClosed("InetStreamSocket::read: Remote is closed");
+            }
+
+            if (t < 0)
+            {
+                int e = errno;
+
+                if (e == EINTR)
+                {
+                    continue;
+                }
+
+                if (e == KERR_ERESTARTSYS)
+                {
+                    logIoError("InetStreamSocket::read: I/O error2", e);
+                    continue;
+                }
+
+                ostringstream oss;
+                oss << "InetStreamSocket::read: I/O error2: " << strerror(e);
+                throw runtime_error(oss.str());
+            }
+
+            mlread += t;
+        }
+
+        if (stats)
+            stats->dataRecvd(sizeof(MemChunk));
+
+        std::cout << "mem chunk current size " << memChunk.currentSize << std::endl;
+
+        //        res.longStrings.push_back();
+    }
+
     return res;
 }
 
@@ -793,8 +885,23 @@ void InetStreamSocket::do_write(const ByteStream& msg, uint32_t whichMagic, Stat
         throw runtime_error(errorMsg);
     }
 
+    try 
+    {
+        for (uint32_t i = 0; i < msg.longStrings.size(); ++i)
+        {
+            written(fSocketParms.sd(), (const uint8_t*) msg.longStrings[i].get(), sizeof(MemChunk));
+        }
+    }
+    catch (std::exception& ex)
+    {
+        string errorMsg(ex.what());
+        errorMsg += " -- write from " + toString();
+        throw runtime_error(errorMsg);
+    }
+
     if (stats)
-        stats->dataSent(msglen + sizeof(uint32_t) + sizeof(msglen) + sizeof(magic));
+        stats->dataSent(msglen + sizeof(MemChunk) + sizeof(uint32_t) + sizeof(msglen) +
+                        sizeof(magic));
 }
 
 void InetStreamSocket::write(const ByteStream& msg, Stats* stats)
