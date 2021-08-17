@@ -489,6 +489,7 @@ const SBS InetStreamSocket::read(const struct ::timespec* timeout, bool* isTimeO
 
     if (readToMagic(msecs, isTimeOut, stats) == false)	//indicates a timeout or EOF
     {
+        std::cout << "read to magic failed " << std::endl;
         // MCOL-480 The connector calls with timeout in a loop so that
         // it can check a killed flag. This means that for a long running query,
         // the following fills the warning log.
@@ -498,6 +499,8 @@ const SBS InetStreamSocket::read(const struct ::timespec* timeout, bool* isTimeO
 //		}
         return SBS(new ByteStream(0));
     }
+
+    std::cout << "read to magic succeded " << std::endl;
 
     //FIXME: This seems like a lot of work to read 4 bytes...
     while (mlread < sizeof(msglen))
@@ -667,6 +670,9 @@ const SBS InetStreamSocket::read(const struct ::timespec* timeout, bool* isTimeO
         nread += t;
     }
 
+    uint32_t* value = reinterpret_cast<uint32_t*>(bufp);
+    std::cout << "value writtent to the bytestream " << *value << std::endl;
+
     if (stats)
         stats->dataRecvd(msglen);
 
@@ -698,6 +704,7 @@ void InetStreamSocket::do_write(const ByteStream& msg, uint32_t whichMagic, Stat
     realBuf -= 2;
     realBuf[0] = magic;
     realBuf[1] = msglen;
+//    realBuf[2] = 13;
 
     try
     {
