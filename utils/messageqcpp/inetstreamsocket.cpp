@@ -576,6 +576,84 @@ const SBS InetStreamSocket::read(const struct ::timespec* timeout, bool* isTimeO
     if (stats)
         stats->dataRecvd(sizeof(msglen));
 
+    mlread = 0;
+    uint32_t longStringLen;
+    uint8_t* lenp = reinterpret_cast<uint8_t*>(&longStringLen);
+
+    while (mlread < sizeof(longStringLen))
+    {
+        ssize_t t;
+
+        if (timeout != NULL)
+        {
+            int err;
+
+            pfd[0].revents = 0;
+            err = poll(pfd, 1, msecs);
+
+            if (err < 0 || pfd[0].revents & (POLLERR | POLLHUP | POLLNVAL))
+            {
+                ostringstream oss;
+                oss << "InetStreamSocket::read: I/O error1: " <<
+                    strerror(errno);
+                throw runtime_error(oss.str());
+            }
+
+            if (err == 0)  // timeout
+            {
+                if (isTimeOut)
+                    *isTimeOut = true;
+
+                logIoError("InetStreamSocket::read: timeout during first poll", 0);
+                return SBS(new ByteStream(0));
+            }
+        }
+
+#ifdef _MSC_VER
+        t = ::recv(fSocketParms.sd(), (char*) (lenp + mlread), sizeof(longStringLen) - mlread, 0);
+#else
+        t = ::read(fSocketParms.sd(), lenp + mlread, sizeof(longStringLen) - mlread);
+#endif
+
+        if (t == 0)
+        {
+            if (timeout == NULL)
+            {
+                logIoError("InetStreamSocket::read: timeout during first read", 0);
+                return SBS(new ByteStream(0));  // don't return an incomplete message
+            }
+            else
+                throw SocketClosed("InetStreamSocket::read: Remote is closed");
+        }
+
+        if (t < 0)
+        {
+            int e = errno;
+
+            if (e == EINTR)
+            {
+                continue;
+            }
+
+            if (e == KERR_ERESTARTSYS)
+            {
+                logIoError("InetStreamSocket::read: I/O error2", e);
+                continue;
+            }
+
+            ostringstream oss;
+            oss << "InetStreamSocket::read: I/O error2: " <<
+                strerror(e);
+            throw runtime_error(oss.str());
+        }
+
+        mlread += t;
+    }
+
+    if (stats)
+        stats->dataRecvd(sizeof(msglen));
+
+    std::cout << "long string len " << longStringLen << std::endl;
     SBS res(new ByteStream(msglen));
     uint8_t* bufp = res->getInputPtr();
 
@@ -670,9 +748,6 @@ const SBS InetStreamSocket::read(const struct ::timespec* timeout, bool* isTimeO
         nread += t;
     }
 
-    uint32_t* value = reinterpret_cast<uint32_t*>(bufp);
-    std::cout << "value writtent to the bytestream " << *value << std::endl;
-
     if (stats)
         stats->dataRecvd(msglen);
 
@@ -701,14 +776,15 @@ void InetStreamSocket::do_write(const ByteStream& msg, uint32_t whichMagic, Stat
     /* buf.fCurOutPtr points to the data to send; ByteStream guarantees that there
        are at least 8 bytes before that for the magic & length fields */
     realBuf = (uint32_t*)msg.buf();
-    realBuf -= 2;
+    realBuf -= 3;
     realBuf[0] = magic;
     realBuf[1] = msglen;
-//    realBuf[2] = 13;
+    realBuf[2] = 13;
 
     try
     {
-        written(fSocketParms.sd(), (const uint8_t*)realBuf, msglen + sizeof(msglen) + sizeof(magic));
+        written(fSocketParms.sd(), (const uint8_t*) realBuf,
+                msglen + sizeof(uint32_t) + sizeof(msglen) + sizeof(magic));
     }
     catch (std::exception& ex)
     {
@@ -718,7 +794,7 @@ void InetStreamSocket::do_write(const ByteStream& msg, uint32_t whichMagic, Stat
     }
 
     if (stats)
-        stats->dataSent(msglen + sizeof(msglen) + sizeof(magic));
+        stats->dataSent(msglen + sizeof(uint32_t) + sizeof(msglen) + sizeof(magic));
 }
 
 void InetStreamSocket::write(const ByteStream& msg, Stats* stats)
