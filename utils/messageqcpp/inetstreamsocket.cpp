@@ -653,7 +653,7 @@ const SBS InetStreamSocket::read(const struct ::timespec* timeout, bool* isTimeO
     if (stats)
         stats->dataRecvd(sizeof(msglen));
 
-    std::cout << "long string len " << longStringLen << std::endl;
+    std::cout << "long strings size: " << longStringLen << std::endl;
     SBS res(new ByteStream(msglen));
     uint8_t* bufp = res->getInputPtr();
 
@@ -779,7 +779,7 @@ void InetStreamSocket::do_write(const ByteStream& msg, uint32_t whichMagic, Stat
     realBuf -= 3;
     realBuf[0] = magic;
     realBuf[1] = msglen;
-    realBuf[2] = 13;
+    realBuf[2] = msg.longStrings.size();
 
     try
     {
