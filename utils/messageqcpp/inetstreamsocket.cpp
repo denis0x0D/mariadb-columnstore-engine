@@ -84,6 +84,8 @@ using namespace std;
 #include <boost/scoped_array.hpp>
 using boost::scoped_array;
 
+#include <boost/shared_array.hpp>
+
 #define INETSTREAMSOCKET_DLLEXPORT
 #include "inetstreamsocket.h"
 #undef INETSTREAMSOCKET_DLLEXPORT
@@ -842,7 +844,8 @@ const SBS InetStreamSocket::read(const struct ::timespec* timeout, bool* isTimeO
         std::cout << "mem chunk current size " << memChunk.currentSize << std::endl;
 
         mlread = 0;
-        uint8_t* buffer = new uint8_t[memChunk.currentSize];
+        uint8_t* buffer = new uint8_t[sizeof(MemChunk) + memChunk.currentSize];
+//        uint8_t* buffer = (reinterpret_cast<MemChunk*>(temp))->data;
 
         while (mlread < sizeof(memChunk.currentSize))
         {
@@ -917,10 +920,11 @@ const SBS InetStreamSocket::read(const struct ::timespec* timeout, bool* isTimeO
             stats->dataRecvd(memChunk.currentSize);
 
         std::cout << "read data with size " << memChunk.currentSize << std::endl;
-
-        //        res.longStrings.push_back();
+        boost::shared_array<uint8_t> data(buffer);
+        res->longStrings.push_back(data);
     }
 
+    std::cout << "after read long strings count : " << res->longStrings.size() << std::endl;
     return res;
 }
 

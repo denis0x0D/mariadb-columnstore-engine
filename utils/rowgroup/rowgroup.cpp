@@ -161,6 +161,7 @@ uint64_t StringStore::storeString(const uint8_t* data, uint32_t len)
 void StringStore::serialize(ByteStream& bs) const
 {
     bs.longStrings = longStrings;
+    std::cout << "serialize long string count " << longStrings.size() << std::endl;
 
     uint64_t i;
     MemChunk* mc;
@@ -189,6 +190,7 @@ void StringStore::serialize(ByteStream& bs) const
 void StringStore::deserialize(ByteStream& bs)
 {
     longStrings = bs.longStrings;
+    std::cout << "deserialize long string count: " << longStrings.size() << std::endl;
     uint64_t i;
     uint64_t count;
     uint64_t size;
