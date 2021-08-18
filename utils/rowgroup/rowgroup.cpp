@@ -119,6 +119,7 @@ uint64_t StringStore::storeString(const uint8_t* data, uint32_t len)
         // High bit to mark a long string
         ret = 0x8000000000000000;
         ret += longStrings.size() - 1;
+        std::cout << "StringStore size " << len + 4 << std::endl;
     }
     else
     {
