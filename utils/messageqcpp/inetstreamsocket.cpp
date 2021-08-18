@@ -844,8 +844,11 @@ const SBS InetStreamSocket::read(const struct ::timespec* timeout, bool* isTimeO
         std::cout << "mem chunk current size " << memChunk.currentSize << std::endl;
 
         mlread = 0;
-        uint8_t* buffer = new uint8_t[sizeof(MemChunk) + memChunk.currentSize];
-//        uint8_t* buffer = (reinterpret_cast<MemChunk*>(temp))->data;
+        uint8_t* temp = new uint8_t[sizeof(MemChunk) + memChunk.currentSize];
+        MemChunk* mcc = reinterpret_cast<MemChunk*>(temp);
+        mcc->currentSize = memChunk.currentSize;
+        mcc->capacity = memChunk.capacity;
+        uint8_t* buffer = mcc->data;
 
         while (mlread < sizeof(memChunk.currentSize))
         {
@@ -920,7 +923,7 @@ const SBS InetStreamSocket::read(const struct ::timespec* timeout, bool* isTimeO
             stats->dataRecvd(memChunk.currentSize);
 
         std::cout << "read data with size " << memChunk.currentSize << std::endl;
-        boost::shared_array<uint8_t> data(buffer);
+        boost::shared_array<uint8_t> data(temp);
         res->longStrings.push_back(data);
     }
 

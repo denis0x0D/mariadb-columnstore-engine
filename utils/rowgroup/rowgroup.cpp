@@ -191,6 +191,15 @@ void StringStore::deserialize(ByteStream& bs)
 {
     longStrings = bs.longStrings;
     std::cout << "deserialize long string count: " << longStrings.size() << std::endl;
+
+    if (longStrings.size())
+    { 
+        std::cout << "deserialize memchunk " << std::endl;
+        MemChunk* mc = reinterpret_cast<MemChunk*>(longStrings[0].get());
+        std::cout << "current size " << mc->currentSize << std::endl;
+        std::cout << "capacity " << mc->capacity << std::endl;
+    }
+
     uint64_t i;
     uint64_t count;
     uint64_t size;
