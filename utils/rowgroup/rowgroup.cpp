@@ -173,7 +173,7 @@ void StringStore::serialize(ByteStream& bs) const
         bs.append(mc->data, mc->currentSize);
     }
 
-    bs.longStrings = longStrings;
+    bs.setLongStrings(longStrings);
 }
 
 void StringStore::deserialize(ByteStream& bs)
@@ -204,7 +204,7 @@ void StringStore::deserialize(ByteStream& bs)
         bs.advance(size);
     }
 
-    longStrings = bs.longStrings;
+    longStrings = bs.getLongStrings();
     return;
 }
 

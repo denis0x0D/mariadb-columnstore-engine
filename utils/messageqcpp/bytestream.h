@@ -449,8 +449,17 @@ public:
     EXPORT static const uint32_t ISSOverhead =
         3 * sizeof(uint32_t); // space for the BS magic & length & number of long strings.
 
+    EXPORT std::vector<boost::shared_array<uint8_t>>& getLongStrings() { return longStrings; }
+    EXPORT const std::vector<boost::shared_array<uint8_t>>& getLongStrings() const
+    {
+        return longStrings;
+    }
+    EXPORT void setLongStrings(const std::vector<boost::shared_array<uint8_t>>& other)
+    {
+        longStrings = other;
+    }
+
     friend class ::ByteStreamTestSuite;
-    std::vector<boost::shared_array<uint8_t>> longStrings;
 
 protected:
     /**
@@ -467,11 +476,11 @@ protected:
     void doCopy(const ByteStream& rhs);
 
 private:
-
     uint8_t* fBuf; ///the start of the allocated buffer
     uint8_t* fCurInPtr; //the point in fBuf where data is inserted next
     uint8_t* fCurOutPtr; //the point in fBuf where data is extracted from next
     uint32_t fMaxLen; //how big fBuf is currently
+    std::vector<boost::shared_array<uint8_t>> longStrings;
 };
 
 // type descriptors to let ByteStream point out protocol errors, WIP

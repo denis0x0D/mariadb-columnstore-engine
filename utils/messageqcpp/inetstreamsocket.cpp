@@ -600,6 +600,9 @@ const SBS InetStreamSocket::read(const struct ::timespec* timeout, bool* isTimeO
             return SBS(new ByteStream(0));
         res->advanceInputPtr(msglen);
 
+        std::vector<boost::shared_array<uint8_t>> longStrings;
+        longStrings.reserve(longStringSize);
+
         for (uint32_t i = 0; i < longStringSize; ++i)
         {
             // Read `MemChunk`.
@@ -623,8 +626,10 @@ const SBS InetStreamSocket::read(const struct ::timespec* timeout, bool* isTimeO
                                    timeout, isTimeOut, stats, msecs))
                 return SBS(new ByteStream(0));
 
-            res->longStrings.push_back(longString);
+            longStrings.push_back(longString);
         }
+
+        res->setLongStrings(longStrings);
 
         return res;
     }
@@ -654,22 +659,23 @@ void InetStreamSocket::do_write(const ByteStream& msg, uint32_t whichMagic, Stat
 
     if (msglen == 0) return;
 
+    const auto& longStrings = msg.getLongStrings();
     /* buf.fCurOutPtr points to the data to send; ByteStream guarantees that there
        are at least 12 bytes before that for the magic & length fields */
     realBuf = (uint32_t*)msg.buf();
     realBuf -= 3;
     realBuf[0] = magic;
     realBuf[1] = msglen;
-    realBuf[2] = msg.longStrings.size();
+    realBuf[2] = longStrings.size();
 
     try
     {
         auto bytesToWrite = sizeof(msglen) + sizeof(magic) + sizeof(uint32_t) + msglen;
         written(fSocketParms.sd(), (const uint8_t*) realBuf, bytesToWrite);
 
-        for (const auto& longString : msg.longStrings)
+        for (const auto& longString : longStrings)
         {
-            StringStore::MemChunk* memChunk =
+            const StringStore::MemChunk* memChunk =
                 reinterpret_cast<StringStore::MemChunk*>(longString.get());
             written(fSocketParms.sd(), (const uint8_t*) longString.get(),
                     memChunk->currentSize + sizeof(StringStore::MemChunk));
