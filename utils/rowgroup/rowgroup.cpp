@@ -177,6 +177,7 @@ void StringStore::serialize(ByteStream& bs) const
         bs.append(mc->data, mc->currentSize);
     }
 
+    /*
     bs << (uint64_t) longStrings.size();
 
     for (i = 0; i < longStrings.size(); i++)
@@ -185,6 +186,7 @@ void StringStore::serialize(ByteStream& bs) const
         bs << (uint64_t) mc->currentSize;
         bs.append(mc->data, mc->currentSize);
     }
+    */
 }
 
 void StringStore::deserialize(ByteStream& bs)
@@ -226,6 +228,7 @@ void StringStore::deserialize(ByteStream& bs)
         bs.advance(size);
     }
 
+    /*
     bs >> count;
     longStrings.resize(count);
 
@@ -239,6 +242,7 @@ void StringStore::deserialize(ByteStream& bs)
         memcpy(mc->data, buf, size);
         bs.advance(size);
     }
+    */
 
     return;
 }
