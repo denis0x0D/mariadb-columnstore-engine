@@ -29,6 +29,8 @@
 #include <boost/thread.hpp>
 #include <boost/shared_ptr.hpp>
 #include <boost/shared_array.hpp>
+#include <atomic>
+#include <oneapi/tbb/concurrent_queue.h>
 
 #if defined(_MSC_VER) && !defined(_WIN64)
 #  ifndef InterlockedAdd
@@ -36,6 +38,7 @@
 #    define InterlockedAdd(x, y) ((x) + (y))
 #  endif
 #endif
+
 
 namespace joblist
 {
@@ -349,7 +352,165 @@ private:
     uint32_t zeroCount;   // counts the # of times read_some returned 0
 };
 
-}
+template <typename T> class ThreadSafeQueueTBB
+{
+  public:
+    typedef T value_type;
+
+    /** @brief constructor
+     *
+     * @warning this class takes ownership of the passed-in pointers.
+     */
+    ThreadSafeQueueTBB()
+    {
+        fShutdown.store(false, std::memory_order_relaxed);
+        bytes.store(0, std::memory_order_relaxed);
+        zeroCount.store(0, std::memory_order_relaxed);
+    }
+    /** @brief destructor
+     *
+     */
+    ~ThreadSafeQueueTBB() = default;
+    /** @brief put an item on the end of the queue
+     *
+     * Signals all threads waiting in front() to continue.
+     */
+    TSQSize_t push(const T& v)
+    {
+        TSQSize_t ret = {0, 0};
+
+        if (fShutdown.load(std::memory_order_acquire))
+            return ret;
+
+        uint32_t length = v->lengthWithHdrOverhead();
+        fImpl.push(v);
+        size_t queueLengthBytes = bytes.fetch_add(length, std::memory_order_release);
+        ret.size = queueLengthBytes + length;
+        ret.count = static_cast<uint32_t>(fImpl.unsafe_size());
+        return ret;
+    }
+
+    std::pair<bool, TSQSize_t> pop_one(T* out)
+    {
+        TSQSize_t ret = {0, 0};
+        if (fShutdown.load(std::memory_order_acquire))
+        {
+            *out = fBs0;
+            return std::make_pair(false, ret);
+        }
+
+        // use move semantics here if BS can do it.
+        if (fImpl.try_pop(*out))
+        {
+            ret.count = static_cast<uint32_t>(fImpl.unsafe_size());
+            uint32_t length = (*out)->lengthWithHdrOverhead();
+            size_t queueLengthBytes = bytes.fetch_sub(length, std::memory_order_release);
+            ret.size = queueLengthBytes - length;
+            return std::make_pair(true, ret);
+        }
+
+        if (fShutdown.load(std::memory_order_acquire))
+            *out = fBs0;
+        return std::make_pair(false, ret);
+    }
+
+    /* If there are less than min elements in the queue, this fcn will return nothing
+     * for up to 10 consecutive calls (poor man's timer).  On the 11th, it will return
+     * the entire queue.  Note, the zeroCount var is non-critical.  Not a big deal if
+     * it gets fudged now and then. */
+    TSQSize_t pop_some(uint32_t divisor, std::vector<T>& t, uint32_t min = 1)
+    {
+        uint32_t curSize, workSize;
+        TSQSize_t ret = {0, 0};
+
+        if (!t.empty())
+            t.clear();
+
+        if (fShutdown.load(std::memory_order_seq_cst))
+            return ret;
+
+        curSize = fImpl.unsafe_size();
+
+        if (curSize < min)
+        {
+            workSize = 0;
+            zeroCount++;
+        }
+        else if (curSize / divisor <= min)
+        {
+            workSize = min;
+            zeroCount.store(0, std::memory_order_release);
+        }
+        else
+        {
+            workSize = curSize / divisor;
+            zeroCount.store(0, std::memory_order_release);
+        }
+
+        if (zeroCount.load(std::memory_order_acquire) > 10)
+        {
+            workSize = curSize;
+            zeroCount.store(0, std::memory_order_release);
+        }
+
+        for (uint32_t i = 0; i < workSize; ++i)
+        {
+            T element;
+            if (fImpl.try_pop(element))
+            {
+                t.push_back(element);
+                uint32_t length = element->lengthWithHdrOverhead();
+                bytes.fetch_sub(length, std::memory_order_release);
+            }
+            ret.count = fImpl.unsafe_size();
+        }
+        ret.size = bytes.load(std::memory_order_acquire);
+
+        return ret;
+    }
+
+    inline void pop_all(std::vector<T>& t) { pop_some(1, t); }
+
+    /** @brief is the queue empty
+     *
+     */
+    bool empty() const { return fImpl.empty(); }
+    /** @brief how many items are in the queue
+     *
+     */
+    TSQSize_t size() const
+    {
+        return {bytes.load(std::memory_order_acquire), (uint32_t) fImpl.unsafe_size()};
+    }
+
+    /** @brief shutdown the queue
+     *
+     * cause all readers blocked in front() to return a default-constructed T
+     */
+    void shutdown()
+    {
+        fShutdown.store(true, std::memory_order_seq_cst);
+        return;
+    }
+
+    void clear()
+    {
+        // use atomic_flag to defend this thread-unsafe method
+        fImpl.clear();
+        bytes.store(0, std::memory_order_seq_cst);
+        return;
+    }
+
+  private:
+    using impl_type = tbb::concurrent_queue<T>;
+
+    impl_type fImpl;
+    std::atomic_bool fShutdown;
+    T fBs0;
+    std::atomic_ullong bytes;
+    std::atomic_ulong zeroCount; // counts the # of times read_some returned 0
+};
+} // namespace joblist
 
 #endif
 
