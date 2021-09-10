@@ -465,7 +465,7 @@ void DistributedEngineComm::addQueue(uint32_t key, bool sendACKs)
     uint32_t firstPMInterleavedConnectionId = key % (fPmConnections.size() / pmCount) * fDECConnectionsPerQuery * pmCount % fPmConnections.size();
     boost::shared_ptr<MQE> mqe(new MQE(pmCount, firstPMInterleavedConnectionId));
 
-    mqe->queue = StepMsgQueue(lock, cond);
+    //    mqe->queue = StepMsgQueue(lock, cond);
     mqe->sendACKs = sendACKs;
     mqe->throttled = false;
 
@@ -525,8 +525,15 @@ void DistributedEngineComm::read(uint32_t key, SBS& bs)
     lk.unlock();
 
     //this method can block: you can't hold any locks here...
-    TSQSize_t queueSize = mqe->queue.pop(&bs);
+    const auto rc = mqe->queue.pop_one(&bs);
+    if (!rc.second)
+    {
+        std::cout << "Q is empry " << std::endl;
+        //        bs.reset(new ByteStream());
+        return;
+    }
 
+    const auto queueSize = rc.first;
     if (bs && mqe->sendACKs)
     {
         boost::mutex::scoped_lock lk(ackLock);
@@ -563,8 +570,15 @@ const ByteStream DistributedEngineComm::read(uint32_t key)
     mqe = map_tok->second;
     lk.unlock();
 
-    TSQSize_t queueSize = mqe->queue.pop(&sbs);
+    const auto rc = mqe->queue.pop_one(&sbs);
+    if (!rc.second)
+    {
+        std::cout << "Q is empty " << std::endl;
+        // sbs.reset(new ByteStream());
+        return sbs;
+    }
 
+    const auto queueSize = rc.first;
     if (sbs && mqe->sendACKs)
     {
         boost::mutex::scoped_lock lk(ackLock);
