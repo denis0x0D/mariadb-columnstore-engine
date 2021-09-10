@@ -611,9 +611,16 @@ void pDictionaryScan::receivePrimitiveMessages()
                 break;
             }
 
-            mutex.unlock();
+            std::cout << "dict scan step read " << std::endl;
+            if (!fDec->read(uniqueID, bs))
+            {
+                mutex.unlock();
+                usleep(2000);
+                mutex.lock();
+                continue;
+            }
 
-            fDec->read(uniqueID, bs);
+            mutex.unlock();
 
             if (fOid >= 3000 && traceOn() && dlTimes.FirstReadTime().tv_sec == 0)
                 dlTimes.setFirstReadTime();

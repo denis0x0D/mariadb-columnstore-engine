@@ -377,6 +377,8 @@ template <typename T> class ThreadSafeQueueV2
      */
     TSQSize_t push(const T& v)
     {
+        std::cout << " TSQSize_t push(const T& v) " << std::endl;
+
         TSQSize_t ret = {0, 0};
 
         if (fShutdown.load(std::memory_order_acquire))
@@ -393,6 +395,8 @@ template <typename T> class ThreadSafeQueueV2
 
     std::pair<TSQSize_t, bool> pop_one(T* out)
     {
+        std::cout << " std::pair<TSQSize_t, bool> pop_one(T* out) " << std::endl;
+
         TSQSize_t ret = {0, 0};
         bool queueIsEmpty = false;
         if (fShutdown.load(std::memory_order_acquire))

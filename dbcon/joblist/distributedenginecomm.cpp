@@ -380,8 +380,12 @@ void DistributedEngineComm::Listen(boost::shared_ptr<MessageQueueClient> client,
             {
                 addDataToOutput(sbs, connIndex, &stats);
             }
-            else // got zero bytes on read, nothing more will come
+            else
+            { // got zero bytes on read, nothing more will come{
+
+                std::cout << "listen error " << std::endl;
                 goto Error;
+            }
         }
 
         return;
@@ -465,7 +469,7 @@ void DistributedEngineComm::addQueue(uint32_t key, bool sendACKs)
     uint32_t firstPMInterleavedConnectionId = key % (fPmConnections.size() / pmCount) * fDECConnectionsPerQuery * pmCount % fPmConnections.size();
     boost::shared_ptr<MQE> mqe(new MQE(pmCount, firstPMInterleavedConnectionId));
 
-    //    mqe->queue = StepMsgQueue(lock, cond);
+    // mqe->queue = StepMsgQueue(lock, cond);
     mqe->sendACKs = sendACKs;
     mqe->throttled = false;
 
@@ -505,8 +509,11 @@ void DistributedEngineComm::shutdownQueue(uint32_t key)
     map_tok->second->queue.clear();
 }
 
-void DistributedEngineComm::read(uint32_t key, SBS& bs)
+bool DistributedEngineComm::read(uint32_t key, SBS& bs)
 {
+
+    std::cout << "bool DistributedEngineComm::read(uint32_t key, SBS& bs) " << std::endl;
+
     boost::shared_ptr<MQE> mqe;
 
     //Find the StepMsgQueueList for this session
@@ -530,10 +537,13 @@ void DistributedEngineComm::read(uint32_t key, SBS& bs)
     {
         std::cout << "Q is empry " << std::endl;
         //        bs.reset(new ByteStream());
-        return;
+        return false;
     }
 
     const auto queueSize = rc.first;
+
+    // auto queueSize = mqe->queue.pop(&bs);
+
     if (bs && mqe->sendACKs)
     {
         boost::mutex::scoped_lock lk(ackLock);
@@ -548,6 +558,8 @@ void DistributedEngineComm::read(uint32_t key, SBS& bs)
 
     if (!bs)
         bs.reset(new ByteStream());
+
+    return true;
 }
 
 const ByteStream DistributedEngineComm::read(uint32_t key)
@@ -577,8 +589,9 @@ const ByteStream DistributedEngineComm::read(uint32_t key)
         // sbs.reset(new ByteStream());
         return sbs;
     }
-
     const auto queueSize = rc.first;
+
+    //  auto queueSize = mqe->queue.pop(&sbs);
     if (sbs && mqe->sendACKs)
     {
         boost::mutex::scoped_lock lk(ackLock);
@@ -626,6 +639,10 @@ void DistributedEngineComm::read_all(uint32_t key, vector<SBS>& v)
 void DistributedEngineComm::read_some(uint32_t key, uint32_t divisor, vector<SBS>& v,
                                       bool* flowControlOn)
 {
+    std::cout
+        << "void DistributedEngineComm::read_some(uint32_t key, uint32_t divisor, vector<SBS>& v, "
+        << std::endl;
+
     boost::shared_ptr<MQE> mqe;
 
     boost::mutex::scoped_lock lk(fMlock);
@@ -941,6 +958,10 @@ void DistributedEngineComm::StartClientListener(boost::shared_ptr<MessageQueueCl
 
 void DistributedEngineComm::addDataToOutput(SBS sbs, uint32_t connIndex, Stats* stats)
 {
+    std::cout
+        << "void DistributedEngineComm::addDataToOutput(SBS sbs, uint32_t connIndex, Stats* stats) "
+        << std::endl;
+
     ISMPacketHeader* hdr = (ISMPacketHeader*)(sbs->buf());
     PrimitiveHeader* p = (PrimitiveHeader*)(hdr + 1);
     uint32_t uniqueId = p->UniqueID;

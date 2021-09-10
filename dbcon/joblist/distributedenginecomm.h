@@ -124,7 +124,7 @@ public:
      * @param bs A pointer to the ByteStream to fill in.
      * @note: saves a copy vs read(uint32_t, uint32_t).
      */
-    EXPORT void read(uint32_t key, messageqcpp::SBS&);
+    EXPORT bool read(uint32_t key, messageqcpp::SBS&);
 
     /** @brief read a primitve response
      *
