@@ -229,8 +229,8 @@ IF (MASK_LONGDOUBLE)
     MY_CHECK_AND_SET_COMPILER_FLAG("-DMASK_LONGDOUBLE")
 ENDIF()
 
-SET(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -O0 -ggdb -g3 -fno-omit-frame-pointer")
-SET(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -O0 -ggdb -g3 -fno-omit-frame-pointer")
+#SET(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -O0 -ggdb -g3 -fno-omit-frame-pointer")
+#SET(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -O0 -ggdb -g3 -fno-omit-frame-pointer")
 
 SET (ENGINE_LDFLAGS    "-Wl,--no-as-needed -Wl,--add-needed")
 SET (ENGINE_DT_LIB datatypes)
