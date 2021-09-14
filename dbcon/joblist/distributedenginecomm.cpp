@@ -481,7 +481,7 @@ void DistributedEngineComm::addQueue(uint32_t key, bool sendACKs)
 
 void DistributedEngineComm::removeQueue(uint32_t key)
 {
-    boost::mutex::scoped_lock lk(fMlock);
+//    boost::mutex::scoped_lock lk(fMlock);
     MessageQueueMap::accessor accessor;
     if (!fSessionMessages.find(accessor, key))
         return;
@@ -494,7 +494,7 @@ void DistributedEngineComm::removeQueue(uint32_t key)
 
 void DistributedEngineComm::shutdownQueue(uint32_t key)
 {
-    boost::mutex::scoped_lock lk(fMlock);
+ //   boost::mutex::scoped_lock lk(fMlock);
     MessageQueueMap::accessor accessor;
     if (!fSessionMessages.find(accessor, key))
         return;
@@ -509,12 +509,11 @@ bool DistributedEngineComm::read(uint32_t key, SBS& bs)
     boost::shared_ptr<MQE> mqe;
 
     //Find the StepMsgQueueList for this session
-    boost::mutex::scoped_lock lk(fMlock);
+    //    boost::mutex::scoped_lock lk(fMlock);
 
     MessageQueueMap::const_accessor accessor;
     if (!fSessionMessages.find(accessor, key))
     {
-        std::cout << "Cannot read " << std::endl;
         ostringstream os;
 
         os << "DEC: attempt to read(bs) from a nonexistent queue\n";
@@ -523,7 +522,7 @@ bool DistributedEngineComm::read(uint32_t key, SBS& bs)
 
     mqe = accessor->second;
     accessor.release();
-    lk.unlock();
+    //lk.unlock();
 
     //this method can block: you can't hold any locks here...
     const auto rc = mqe->queue.pop_one(&bs);
@@ -555,7 +554,7 @@ const ByteStream DistributedEngineComm::read(uint32_t key)
     boost::shared_ptr<MQE> mqe;
 
     //Find the StepMsgQueueList for this session
-    boost::mutex::scoped_lock lk(fMlock);
+//    boost::mutex::scoped_lock lk(fMlock);
     MessageQueueMap::const_accessor accessor;
     if (!fSessionMessages.find(accessor, key))
     {
@@ -566,7 +565,7 @@ const ByteStream DistributedEngineComm::read(uint32_t key)
 
     mqe = accessor->second;
     accessor.release();
-    lk.unlock();
+    //lk.unlock();
 
     const auto rc = mqe->queue.pop_one(&sbs);
     if (!rc.first)
@@ -598,7 +597,7 @@ void DistributedEngineComm::read_all(uint32_t key, vector<SBS>& v)
 {
     boost::shared_ptr<MQE> mqe;
 
-    boost::mutex::scoped_lock lk(fMlock);
+ //   boost::mutex::scoped_lock lk(fMlock);
     MessageQueueMap::const_accessor accessor;
     if (!fSessionMessages.find(accessor, key))
     {
@@ -609,7 +608,7 @@ void DistributedEngineComm::read_all(uint32_t key, vector<SBS>& v)
 
     mqe = accessor->second;
     accessor.release();
-    lk.unlock();
+    //lk.unlock();
 
     mqe->queue.pop_all(v);
 
@@ -625,7 +624,7 @@ void DistributedEngineComm::read_some(uint32_t key, uint32_t divisor, vector<SBS
 {
     boost::shared_ptr<MQE> mqe;
 
-    boost::mutex::scoped_lock lk(fMlock);
+    //  boost::mutex::scoped_lock lk(fMlock);
     MessageQueueMap::const_accessor accessor;
     if (!fSessionMessages.find(accessor, key))
     {
@@ -637,7 +636,7 @@ void DistributedEngineComm::read_some(uint32_t key, uint32_t divisor, vector<SBS
 
     mqe = accessor->second;
     accessor.release();
-    lk.unlock();
+    //lk.unlock();
 
     const auto queueSize = mqe->queue.pop_some(divisor, v, 1); // need to play with the min #
 
@@ -910,13 +909,13 @@ void DistributedEngineComm::write(messageqcpp::ByteStream& msg, uint32_t connect
     PrimitiveHeader* pm = (PrimitiveHeader*) (ism + 1);
     uint32_t senderID = pm->UniqueID;
 
-    boost::mutex::scoped_lock lk(fMlock, boost::defer_lock_t());
+//    boost::mutex::scoped_lock lk(fMlock, boost::defer_lock_t());
     MessageQueueMap::iterator it;
     // This keeps mqe's stats from being freed until end of function
     boost::shared_ptr<MQE> mqe;
     Stats* senderStats = NULL;
 
-    lk.lock();
+//    lk.lock();
 
     MessageQueueMap::accessor accessor;
     if (fSessionMessages.find(accessor, senderID))
@@ -926,7 +925,7 @@ void DistributedEngineComm::write(messageqcpp::ByteStream& msg, uint32_t connect
     }
     accessor.release();
 
-    lk.unlock();
+ //   lk.unlock();
 
     newClients[connection]->write(msg, NULL, senderStats);
 }
@@ -939,16 +938,12 @@ void DistributedEngineComm::StartClientListener(boost::shared_ptr<MessageQueueCl
 
 void DistributedEngineComm::addDataToOutput(SBS sbs, uint32_t connIndex, Stats* stats)
 {
-    std::cout
-        << "void DistributedEngineComm::addDataToOutput(SBS sbs, uint32_t connIndex, Stats* stats) "
-        << std::endl;
-
     ISMPacketHeader* hdr = (ISMPacketHeader*)(sbs->buf());
     PrimitiveHeader* p = (PrimitiveHeader*)(hdr + 1);
     uint32_t uniqueId = p->UniqueID;
     boost::shared_ptr<MQE> mqe;
 
-    boost::mutex::scoped_lock lk(fMlock);
+//    boost::mutex::scoped_lock lk(fMlock);
     MessageQueueMap::accessor accessor;
     if (!fSessionMessages.find(accessor, uniqueId))
     {
@@ -959,7 +954,7 @@ void DistributedEngineComm::addDataToOutput(SBS sbs, uint32_t connIndex, Stats* 
 
     mqe = accessor->second;
     accessor.release();
-    lk.unlock();
+//    lk.unlock();
 
     if (pmCount > 0)
     {
@@ -1085,7 +1080,7 @@ int DistributedEngineComm::writeToClient(size_t aPMIndex, const ByteStream& bs, 
 
 uint32_t DistributedEngineComm::size(uint32_t key)
 {
-    boost::mutex::scoped_lock lk(fMlock);
+//    boost::mutex::scoped_lock lk(fMlock);
     MessageQueueMap::accessor accessor;
     if (!fSessionMessages.find(accessor, key))
     {
@@ -1095,7 +1090,7 @@ uint32_t DistributedEngineComm::size(uint32_t key)
     boost::shared_ptr<MQE> mqe = accessor->second;
     accessor.release();
     //TODO: should probably check that this is a valid iter...
-    lk.unlock();
+    //     lk.unlock();
     return mqe->queue.size().count;
 }
 
@@ -1120,7 +1115,7 @@ void DistributedEngineComm::removeDECEventListener(DECEventListener* l)
 
 Stats DistributedEngineComm::getNetworkStats(uint32_t uniqueID)
 {
-    boost::mutex::scoped_lock lk(fMlock);
+//    boost::mutex::scoped_lock lk(fMlock);
     MessageQueueMap::iterator it;
     Stats empty;
     MessageQueueMap::accessor accessor;
