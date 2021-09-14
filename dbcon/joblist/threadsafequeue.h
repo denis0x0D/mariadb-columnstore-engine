@@ -352,7 +352,7 @@ private:
     uint32_t zeroCount;   // counts the # of times read_some returned 0
 };
 
-template <typename T> class ThreadSafeQueueV2
+template <typename T> class ThreadSafeQueueTBB
 {
   public:
     typedef T value_type;
@@ -361,7 +361,7 @@ template <typename T> class ThreadSafeQueueV2
      *
      * @warning this class takes ownership of the passed-in pointers.
      */
-    ThreadSafeQueueV2()
+    ThreadSafeQueueTBB()
     {
         fShutdown.store(false, std::memory_order_relaxed);
         bytes.store(0, std::memory_order_relaxed);
@@ -370,21 +370,18 @@ template <typename T> class ThreadSafeQueueV2
     /** @brief destructor
      *
      */
-    ~ThreadSafeQueueV2() {}
+    ~ThreadSafeQueueTBB() = default;
     /** @brief put an item on the end of the queue
      *
      * Signals all threads waiting in front() to continue.
      */
     TSQSize_t push(const T& v)
     {
-        std::cout << " TSQSize_t push(const T& v) " << std::endl;
-
         TSQSize_t ret = {0, 0};
 
         if (fShutdown.load(std::memory_order_acquire))
             return ret;
 
-        //        std::unique_lock<std::mutex> lk(*fPimplLock);
         uint32_t length = v->lengthWithHdrOverhead();
         fImpl.push(v);
         size_t queueLengthBytes = bytes.fetch_add(length, std::memory_order_release);
@@ -393,30 +390,14 @@ template <typename T> class ThreadSafeQueueV2
         return ret;
     }
 
-    std::pair<TSQSize_t, bool> pop_one(T* out)
+    std::pair<bool, TSQSize_t> pop_one(T* out)
     {
-        std::cout << " std::pair<TSQSize_t, bool> pop_one(T* out) " << std::endl;
-
         TSQSize_t ret = {0, 0};
-        bool queueIsEmpty = false;
         if (fShutdown.load(std::memory_order_acquire))
         {
             *out = fBs0;
-            return std::make_pair(ret, queueIsEmpty);
+            return std::make_pair(false, ret);
         }
-
-        // std::unique_lock<std::mutex> lk(*fPimplLock);
-        /*
-        if (fImpl.empty())
-        {
-            if (fShutdown.load(std::memory_order_acquire))
-            {
-                *out = fBs0;
-                return std::make_pair(ret, queueIsEmpty);
-            }
-            queueIsEmpty = true;
-            return std::make_pair(ret, queueIsEmpty);
-        }*/
 
         // use move semantics here if BS can do it.
         if (fImpl.try_pop(*out))
@@ -425,19 +406,12 @@ template <typename T> class ThreadSafeQueueV2
             uint32_t length = (*out)->lengthWithHdrOverhead();
             size_t queueLengthBytes = bytes.fetch_sub(length, std::memory_order_release);
             ret.size = queueLengthBytes - length;
-        }
-        else
-        {
-            if (fShutdown.load(std::memory_order_acquire))
-            {
-                *out = fBs0;
-                return std::make_pair(ret, queueIsEmpty);
-            }
-            queueIsEmpty = true;
-            return std::make_pair(ret, queueIsEmpty);
+            return std::make_pair(true, ret);
         }
 
-        return std::make_pair(ret, queueIsEmpty);
+        if (fShutdown.load(std::memory_order_acquire))
+            *out = fBs0;
+        return std::make_pair(false, ret);
     }
 
     /* If there are less than min elements in the queue, this fcn will return nothing
@@ -455,7 +429,6 @@ template <typename T> class ThreadSafeQueueV2
         if (fShutdown.load(std::memory_order_seq_cst))
             return ret;
 
-        // std::unique_lock<std::mutex> lk(*fPimplLock);
         curSize = fImpl.unsafe_size();
 
         if (curSize < min)

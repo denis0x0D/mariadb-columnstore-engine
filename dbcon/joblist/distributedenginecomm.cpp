@@ -511,9 +511,6 @@ void DistributedEngineComm::shutdownQueue(uint32_t key)
 
 bool DistributedEngineComm::read(uint32_t key, SBS& bs)
 {
-
-    std::cout << "bool DistributedEngineComm::read(uint32_t key, SBS& bs) " << std::endl;
-
     boost::shared_ptr<MQE> mqe;
 
     //Find the StepMsgQueueList for this session
@@ -533,17 +530,10 @@ bool DistributedEngineComm::read(uint32_t key, SBS& bs)
 
     //this method can block: you can't hold any locks here...
     const auto rc = mqe->queue.pop_one(&bs);
-    if (!rc.second)
-    {
-        std::cout << "Q is empry " << std::endl;
-        //        bs.reset(new ByteStream());
+    if (!rc.first)
         return false;
-    }
 
-    const auto queueSize = rc.first;
-
-    // auto queueSize = mqe->queue.pop(&bs);
-
+    const auto queueSize = rc.second;
     if (bs && mqe->sendACKs)
     {
         boost::mutex::scoped_lock lk(ackLock);
@@ -583,15 +573,13 @@ const ByteStream DistributedEngineComm::read(uint32_t key)
     lk.unlock();
 
     const auto rc = mqe->queue.pop_one(&sbs);
-    if (!rc.second)
+    if (!rc.first)
     {
-        std::cout << "Q is empty " << std::endl;
-        // sbs.reset(new ByteStream());
+        sbs.reset(new ByteStream());
         return sbs;
     }
-    const auto queueSize = rc.first;
 
-    //  auto queueSize = mqe->queue.pop(&sbs);
+    const auto queueSize = rc.second;
     if (sbs && mqe->sendACKs)
     {
         boost::mutex::scoped_lock lk(ackLock);
@@ -639,10 +627,6 @@ void DistributedEngineComm::read_all(uint32_t key, vector<SBS>& v)
 void DistributedEngineComm::read_some(uint32_t key, uint32_t divisor, vector<SBS>& v,
                                       bool* flowControlOn)
 {
-    std::cout
-        << "void DistributedEngineComm::read_some(uint32_t key, uint32_t divisor, vector<SBS>& v, "
-        << std::endl;
-
     boost::shared_ptr<MQE> mqe;
 
     boost::mutex::scoped_lock lk(fMlock);
@@ -659,7 +643,7 @@ void DistributedEngineComm::read_some(uint32_t key, uint32_t divisor, vector<SBS
     mqe = map_tok->second;
     lk.unlock();
 
-    TSQSize_t queueSize = mqe->queue.pop_some(divisor, v, 1);   // need to play with the min #
+    const auto queueSize = mqe->queue.pop_some(divisor, v, 1); // need to play with the min #
 
     if (flowControlOn)
         *flowControlOn = false;

@@ -212,7 +212,7 @@ private:
     typedef std::vector<boost::shared_ptr<messageqcpp::MessageQueueClient> > ClientList;
 
     //A queue of ByteStreams coming in from PrimProc heading for a JobStep
-    typedef ThreadSafeQueueV2<messageqcpp::SBS> StepMsgQueue;
+    typedef ThreadSafeQueueTBB<messageqcpp::SBS> StepMsgQueue;
 
     /* To keep some state associated with the connection.  These aren't copyable. */
     struct MQE : public boost::noncopyable
