@@ -2089,7 +2089,6 @@ void TupleBPS::receiveMultiPrimitiveMessages(uint32_t threadID)
                 break;
 
             bool flowControlOn;
-            std::cout << "TupleBPS::read_some() " << std::endl;
             fDec->read_some(uniqueID, fNumThreads, bsv, &flowControlOn);
             size = bsv.size();
 

@@ -611,7 +611,6 @@ void pDictionaryScan::receivePrimitiveMessages()
                 break;
             }
 
-            std::cout << "dict scan step read " << std::endl;
             if (!fDec->read(uniqueID, bs))
             {
                 mutex.unlock();
