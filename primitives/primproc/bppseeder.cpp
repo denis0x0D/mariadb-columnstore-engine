@@ -141,7 +141,7 @@ int BPPSeeder::operator()()
     PTLogs_t* logFD = NULL;
     int ret = 0;
     pthread_t tid = 0;
-    boost::mutex::scoped_lock scoped(bppLock, boost::defer_lock_t());
+    // boost::mutex::scoped_lock scoped(bppLock, boost::defer_lock_t());
 
 
     try
@@ -168,7 +168,7 @@ int BPPSeeder::operator()()
 
             //if (!(sessionID & 0x80000000))
             //cout << "got request for <" << sessionID <<", " << stepID << ">\n";
-            scoped.lock();
+            //      scoped.lock();
 
             if (!bppv)
             {
@@ -176,7 +176,7 @@ int BPPSeeder::operator()()
                 if (!bppMap.find(accessor, uniqueID))
                 {
                     /* mitigate a small race between creation and use */
-                    scoped.unlock();
+             //       scoped.unlock();
 
                     if (boost::posix_time::second_clock::universal_time() > dieTime)
                     {
@@ -213,7 +213,7 @@ int BPPSeeder::operator()()
                 return 0;
 
             bpp = bppv->next();
-            scoped.unlock();
+            //            scoped.unlock();
 
             if (!bpp)
             {

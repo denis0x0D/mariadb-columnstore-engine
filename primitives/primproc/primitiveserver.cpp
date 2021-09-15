@@ -1289,9 +1289,9 @@ struct BPPHandler
 
     ~BPPHandler()
     {
-        boost::mutex::scoped_lock scoped(bppLock);
+        //        boost::mutex::scoped_lock scoped(bppLock);
 
-        for (bppKeysIt = bppKeys.begin() ; bppKeysIt != bppKeys.end(); ++bppKeysIt)
+        for (bppKeysIt = bppKeys.begin(); bppKeysIt != bppKeys.end(); ++bppKeysIt)
         {
             uint32_t key = *bppKeysIt;
 
@@ -1307,7 +1307,7 @@ struct BPPHandler
             OOBPool->removeJobs(key);
         }
 
-        scoped.unlock();
+        //       scoped.unlock();
     }
 
     struct BPPHandlerFunctor : public PriorityThreadPool::Functor
@@ -1397,13 +1397,14 @@ struct BPPHandler
         {
             bppKeys.erase(bppKeysIt);
         }
+        scoped.unlock();
 
         BPPMap::accessor accessor;
         if (bppMap.find(accessor, key))
         {
             accessor->second->abort();
             bppMap.erase(accessor);
-                    }
+        }
         else
         {
             bs.rewind();
@@ -1415,7 +1416,6 @@ struct BPPHandler
         }
         accessor.release();
 
-        scoped.unlock();
         fPrimitiveServerPtr->getProcessorThreadPool()->removeJobs(key);
         OOBPool->removeJobs(key);
         return 0;
@@ -1508,7 +1508,7 @@ struct BPPHandler
         */
         SBPPV ret;
 
-        boost::mutex::scoped_lock scoped(bppLock);
+        //    boost::mutex::scoped_lock scoped(bppLock);
         BPPMap::accessor accessor;
 
         if (bppMap.find(accessor, uniqueID))
@@ -1660,14 +1660,14 @@ struct BPPHandler
         }
 
         boost::unique_lock<shared_mutex> lk(getDJLock(uniqueID));
-        boost::mutex::scoped_lock scoped(bppLock);
-
+        //boost::mutex::scoped_lock scoped(bppLock);
         bppKeysIt = std::find(bppKeys.begin(), bppKeys.end(), uniqueID);
 
         if (bppKeysIt != bppKeys.end())
         {
             bppKeys.erase(bppKeysIt);
         }
+        lk.unlock();
 
         BPPMap::accessor accessor;
         if (bppMap.find(accessor, uniqueID))
@@ -1718,7 +1718,6 @@ struct BPPHandler
         */
         fPrimitiveServerPtr->getProcessorThreadPool()->removeJobs(uniqueID);
         OOBPool->removeJobs(uniqueID);
-        lk.unlock();
         deleteDJLock(uniqueID);
         return 0;
     }
