@@ -1294,15 +1294,14 @@ struct BPPHandler
         for (bppKeysIt = bppKeys.begin() ; bppKeysIt != bppKeys.end(); ++bppKeysIt)
         {
             uint32_t key = *bppKeysIt;
-            BPPMap::iterator it;
 
-            it = bppMap.find(key);
-
-            if (it != bppMap.end())
+            BPPMap::accessor accessor;
+            if (bppMap.find(accessor, key))
             {
-                it->second->abort();
-                bppMap.erase(it);
+                accessor->second->abort();
+                bppMap.erase(accessor);
             }
+            accessor.release();
 
             fPrimitiveServerPtr->getProcessorThreadPool()->removeJobs(key);
             OOBPool->removeJobs(key);
@@ -1378,7 +1377,6 @@ struct BPPHandler
     int doAbort(ByteStream& bs, const posix_time::ptime& dieTime)
     {
         uint32_t key;
-        BPPMap::iterator it;
 
         try
         {
@@ -1400,13 +1398,12 @@ struct BPPHandler
             bppKeys.erase(bppKeysIt);
         }
 
-        it = bppMap.find(key);
-
-        if (it != bppMap.end())
+        BPPMap::accessor accessor;
+        if (bppMap.find(accessor, key))
         {
-            it->second->abort();
-            bppMap.erase(it);
-        }
+            accessor->second->abort();
+            bppMap.erase(accessor);
+                    }
         else
         {
             bs.rewind();
@@ -1416,6 +1413,7 @@ struct BPPHandler
             else
                 return -1;
         }
+        accessor.release();
 
         scoped.unlock();
         fPrimitiveServerPtr->getProcessorThreadPool()->removeJobs(key);
@@ -1487,12 +1485,10 @@ struct BPPHandler
         boost::mutex::scoped_lock scoped(bppLock);
         key = bpp->getUniqueID();
         bppKeys.push_back(key);
-        bool newInsert;
-        newInsert = bppMap.insert(pair<uint32_t, SBPPV>(key, bppv)).second;
-        //cout << "creating BPP # " << key << endl;
+        // cout << "creating BPP # " << key << endl;
         scoped.unlock();
 
-        if (!newInsert)
+        if (!bppMap.insert(pair<uint32_t, SBPPV>(key, bppv)))
         {
             if (bpp->getSessionID() & 0x80000000)
                 cerr << "warning: createBPP() tried to clobber a BPP with duplicate sessionID & stepID. sessionID=" <<
@@ -1506,20 +1502,22 @@ struct BPPHandler
 
     inline SBPPV grabBPPs(uint32_t uniqueID)
     {
-        BPPMap::iterator it;
-        /*
+                /*
         		uint32_t failCount = 0;
         		uint32_t maxFailCount = (fatal ? 500 : 5000);
         */
         SBPPV ret;
 
         boost::mutex::scoped_lock scoped(bppLock);
-        it = bppMap.find(uniqueID);
+        BPPMap::accessor accessor;
 
-        if (it != bppMap.end())
-            return it->second;
+        if (bppMap.find(accessor, uniqueID))
+            ret = accessor->second;
         else
-            return SBPPV();
+            ret = SBPPV();
+
+        accessor.release();
+        return ret;
 
         /*
         		do
@@ -1645,7 +1643,6 @@ struct BPPHandler
     int destroyBPP(ByteStream& bs, const posix_time::ptime& dieTime)
     {
         uint32_t uniqueID, sessionID, stepID;
-        BPPMap::iterator it;
 
         try
         {
@@ -1672,16 +1669,15 @@ struct BPPHandler
             bppKeys.erase(bppKeysIt);
         }
 
-        it = bppMap.find(uniqueID);
-
-        if (it != bppMap.end())
+        BPPMap::accessor accessor;
+        if (bppMap.find(accessor, uniqueID))
         {
-            boost::shared_ptr<BPPV> bppv = it->second;
+            boost::shared_ptr<BPPV> bppv = accessor->second;
 
             if (bppv->joinDataReceived)
             {
                 bppv->abort();
-                bppMap.erase(it);
+                bppMap.erase(accessor);
             }
             else
             {
@@ -1690,6 +1686,7 @@ struct BPPHandler
                 // We're not ready for a destroy. Reschedule.
                 return -1;
             }
+            accessor.release();
         }
         else
         {

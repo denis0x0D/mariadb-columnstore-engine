@@ -172,9 +172,8 @@ int BPPSeeder::operator()()
 
             if (!bppv)
             {
-                it = bppMap.find(uniqueID);
-
-                if (it == bppMap.end())
+                BPPMap::accessor accessor;
+                if (!bppMap.find(accessor, uniqueID))
                 {
                     /* mitigate a small race between creation and use */
                     scoped.unlock();
@@ -206,7 +205,8 @@ int BPPSeeder::operator()()
 //				}
                 }
 
-                bppv = it->second;
+                bppv = accessor->second;
+                accessor.release();
             }
 
             if (bppv->aborted())
