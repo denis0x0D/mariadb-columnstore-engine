@@ -184,10 +184,7 @@ void TupleBPS::initializeConfigParms()
     if (fRequestSize >= fMaxOutstandingRequests)
         fRequestSize = 1;
 
-    if ((fSessionId & 0x80000000) == 0)
-        fMaxNumThreads = fRm->getJlNumScanReceiveThreads();
-    else
-        fMaxNumThreads = 1;
+    fMaxNumThreads = 1;
 
     // Reserve the max number of thread space. A bit of an optimization.
     fProducerThreads.clear();
@@ -871,9 +868,6 @@ void TupleBPS::startAggregationThread()
 //             fProducerThreads.push_back(jobstepThreadPool.invoke(TupleBPSAggregators(this, i)));
 
 //  This block of code starts one thread at a time
-    if (fNumThreads >= fMaxNumThreads)
-        return;
-
     fNumThreads++;
     fProducerThreads.push_back(jobstepThreadPool.invoke(TupleBPSAggregators(this, fNumThreads - 1)));
 }
@@ -2088,8 +2082,7 @@ void TupleBPS::receiveMultiPrimitiveMessages(uint32_t threadID)
             if (msgsSent == msgsRecvd && finishedSending)
                 break;
 
-            bool flowControlOn;
-            fDec->read_some(uniqueID, fNumThreads, bsv, &flowControlOn);
+            fDec->read_some(uniqueID, fNumThreads, bsv);
             size = bsv.size();
 
             // @bug 4562
@@ -2102,25 +2095,6 @@ void TupleBPS::receiveMultiPrimitiveMessages(uint32_t threadID)
                 sts.total_units_of_work = totalMsgs;
                 postStepStartTele(sts);
             }
-
-            /* This is a simple ramp-up of the TBPS msg processing threads.
-            One thread is created by run(), and add'l threads are created
-            as needed.  Right now, "as needed" means that flow control
-            is on, which means that the UM is not keeping up by definition,
-            or size > 5.  We found that using flow control alone was not aggressive
-            enough when the messages were small.  The 'size' parameter checks
-            the number of msgs waiting in the DEC buffers.  Since each
-            message can be processed independently of the others, they can all
-            be processed in different threads.  In benchmarking we found that
-            there was no end-to-end performance difference between using 1
-            and 20 msgs as the threshold.  Erring on the side of aggressiveness,
-            we chose '5'.
-            '5' still preserves the original goal of not starting MAX threads
-            for small queries or when the UM can keep up with the PMs with
-            fewer threads.  Tweak as necessary. */
-
-            if ((size > 5 || flowControlOn) && fNumThreads < fMaxNumThreads)
-                startAggregationThread();
 
             for (uint32_t z = 0; z < size; z++)
             {
@@ -2150,7 +2124,7 @@ void TupleBPS::receiveMultiPrimitiveMessages(uint32_t threadID)
             if (size == 0)
             {
                 tplLock.unlock();
-                usleep(2000 * fNumThreads);
+                usleep(2000);
                 tplLock.lock();
                 continue;
             }

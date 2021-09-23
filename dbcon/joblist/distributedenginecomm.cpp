@@ -606,8 +606,7 @@ void DistributedEngineComm::read_all(uint32_t key, vector<SBS>& v)
     }
 }
 
-void DistributedEngineComm::read_some(uint32_t key, uint32_t divisor, vector<SBS>& v,
-                                      bool* flowControlOn)
+void DistributedEngineComm::read_some(uint32_t key, uint32_t divisor, vector<SBS>& v)
 {
     boost::shared_ptr<MQE> mqe;
 
@@ -625,9 +624,6 @@ void DistributedEngineComm::read_some(uint32_t key, uint32_t divisor, vector<SBS
 
     const auto queueSize = mqe->queue.pop_some(divisor, v, 1); // need to play with the min #
 
-    if (flowControlOn)
-        *flowControlOn = false;
-
     if (mqe->sendACKs)
     {
         boost::mutex::scoped_lock lk(ackLock);
@@ -636,9 +632,6 @@ void DistributedEngineComm::read_some(uint32_t key, uint32_t divisor, vector<SBS
             setFlowControl(false, key, mqe);
 
         sendAcks(key, v, mqe, queueSize.size);
-
-        if (flowControlOn)
-            *flowControlOn = mqe->throttled;
     }
 }
 
