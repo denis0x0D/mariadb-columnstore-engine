@@ -1283,7 +1283,7 @@ void TupleBPS::sendError(uint16_t status)
 
     fBPP->reset();
     finishedSending = true;
-    condvar.notify_all();
+    // condvar.notify_all();
     condvarWakeupProducer.notify_all();
 }
 
@@ -1396,8 +1396,8 @@ void TupleBPS::sendJobs(const vector<Job>& jobs)
         tplLock.lock();
         msgsSent += jobs[i].expectedResponses;
 
-        if (recvWaiting)
-            condvar.notify_all();
+        //if (recvWaiting)
+         //   condvar.notify_all();
 
         while ((msgsSent - msgsRecvd > fMaxOutstandingRequests << LOGICAL_EXTENT_CONVERTER)
                 && !fDie)
@@ -1873,7 +1873,7 @@ void TupleBPS::sendPrimitiveMessages()
 abort:
     boost::unique_lock<boost::mutex> tplLock(tplMutex);
     finishedSending = true;
-    condvar.notify_all();
+    //condvar.notify_all();
     tplLock.unlock();
 }
 
@@ -2071,6 +2071,8 @@ void TupleBPS::receiveMultiPrimitiveMessages(uint32_t threadID)
 
         while (1)
         {
+
+          /*
             // sync with the send side
             while (!finishedSending && msgsSent == msgsRecvd)
             {
@@ -2078,6 +2080,7 @@ void TupleBPS::receiveMultiPrimitiveMessages(uint32_t threadID)
                 condvar.wait(tplLock);
                 recvWaiting--;
             }
+            */
 
             if (msgsSent == msgsRecvd && finishedSending)
                 break;
@@ -3360,7 +3363,7 @@ void TupleBPS::abort_nolock()
     }
 
     condvarWakeupProducer.notify_all();
-    condvar.notify_all();
+    //condvar.notify_all();
 }
 
 void TupleBPS::abort()
