@@ -134,8 +134,7 @@ public:
     EXPORT void read_all(uint32_t key, std::vector<messageqcpp::SBS>& v);
 
     /** reads queuesize/divisor msgs */
-    EXPORT void read_some(uint32_t key, uint32_t divisor, std::vector<messageqcpp::SBS>& v,
-                          bool* flowControlOn = NULL);
+    EXPORT void read_some(uint32_t key, uint32_t divisor, std::vector<messageqcpp::SBS>& v);
 
     /** @brief Write a primitive message
      *
