@@ -62,6 +62,8 @@ add_library(joblist SHARED ${joblist_LIB_SRCS})
 
 add_dependencies(joblist loggingcpp)
 
+target_link_libraries(joblist ${TBB_LIBRARIES})
+
 install(TARGETS joblist DESTINATION ${ENGINE_LIBDIR} COMPONENT columnstore-engine)
 
 if (WITH_ORDERBY_UT)
