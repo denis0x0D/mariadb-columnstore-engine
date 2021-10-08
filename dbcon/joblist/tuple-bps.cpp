@@ -1883,28 +1883,53 @@ abort:
     tplLock.unlock();
 }
 
-struct _CPInfo
-{
-    _CPInfo(int64_t MIN, int64_t MAX, uint64_t l, bool val) : min(MIN), max(MAX), LBID(l), valid(val) { };
-    _CPInfo(int128_t BIGMIN, int128_t BIGMAX, uint64_t l, bool val) : bigMin(BIGMIN), bigMax(BIGMAX), LBID(l), valid(val) { };
-    union
-    {
-        int128_t bigMin;
-        int64_t min;
-    };
-    union
-    {
-        int128_t bigMax;
-        int64_t max;
-    };
-    uint64_t LBID;
-    bool valid;
-};
+// Debug, put it back
+#if 0
+
+            if (threadID == 0)
+            {
+                /* Some rowgroup debugging stuff. */
+                uint8_t* tmp8;
+                tmp8 = local_primRG.getData();
+                local_primRG.setData(NULL);
+                cout << "large-side RG: " << local_primRG.toString() << endl;
+                local_primRG.setData(tmp8);
+
+                for (i = 0; i < smallSideCount; i++)
+                {
+                    tmp8 = joinerMatchesRGs[i].getData();
+                    joinerMatchesRGs[i].setData(NULL);
+                    cout << "small-side[" << i << "] RG: " << joinerMatchesRGs[i].toString() << endl;
+                }
+
+                tmp8 = local_outputRG.getData();
+                local_outputRG.setData(NULL);
+                cout << "output RG: " << local_outputRG.toString() << endl;
+                local_outputRG.setData(tmp8);
+
+                cout << "large mapping:\n";
+
+                for (i = 0; i < local_primRG.getColumnCount(); i++)
+                    cout << largeMapping[i] << " ";
+
+                cout << endl;
+
+                for (uint32_t z = 0; z < smallSideCount; z++)
+                {
+                    cout << "small mapping[" << z << "] :\n";
+
+                    for (i = 0; i < joinerMatchesRGs[z].getColumnCount(); i++)
+                        cout << smallMappings[z][i] << " ";
+
+                    cout << endl;
+                }
+            }
+
+#endif
 
 void TupleBPS::process(vector<boost::shared_ptr<ByteStream>>& bsv, RowGroupDL* dlp, StepTeleStats& sts,
-                       uint32_t threadID)
+                       vector<_CPInfo>& cpv, uint32_t threadID)
 {
-  /*
     size_t size = bsv.size();
     RGData rgData;
     vector<RGData> rgDatav;
@@ -1915,7 +1940,6 @@ void TupleBPS::process(vector<boost::shared_ptr<ByteStream>>& bsv, RowGroupDL* d
     int128_t min;
     int128_t max;
     uint64_t lbid;
-    vector<_CPInfo> cpv;
     uint32_t cachedIO;
     uint32_t physIO;
     uint32_t touchedBlocks;
@@ -1930,17 +1954,17 @@ void TupleBPS::process(vector<boost::shared_ptr<ByteStream>>& bsv, RowGroupDL* d
     bool didEOF = false;
     bool unused;
 
-    vector<vector<Row::Pointer> > joinerOutput;   // clean usage
-    Row largeSideRow, joinedBaseRow, largeNull, joinFERow;  // LSR clean
+    vector<vector<Row::Pointer>> joinerOutput;             // clean usage
+    Row largeSideRow, joinedBaseRow, largeNull, joinFERow; // LSR clean
     scoped_array<Row> smallSideRows, smallNulls;
     scoped_array<uint8_t> joinedBaseRowData;
     scoped_array<uint8_t> joinFERowData;
     shared_array<int> largeMapping;
-    vector<shared_array<int> > smallMappings;
-    vector<shared_array<int> > fergMappings;
+    vector<shared_array<int>> smallMappings;
+    vector<shared_array<int>> fergMappings;
     RGData joinedData;
     scoped_array<uint8_t> largeNullMemory;
-    scoped_array<shared_array<uint8_t> > smallNullMemory;
+    scoped_array<shared_array<uint8_t>> smallNullMemory;
     uint32_t matchCount;
 
     Row postJoinRow; // postJoinRow is also used for joins
@@ -2068,7 +2092,7 @@ void TupleBPS::process(vector<boost::shared_ptr<ByteStream>>& bsv, RowGroupDL* d
                     local_primRG.getRowCount(); // TODO need the pre-join count even on PM joins... later
 
                 // TupleHashJoinStep::joinOneRG() is a port of the main join loop here.  Any
-                // changes made here should also be made there and vice versa. 
+                // changes made here should also be made there and vice versa.
                 if (hasUMJoin || !fBPP->pmSendsFinalResult())
                 {
                     joinedData = RGData(local_outputRG);
@@ -2085,200 +2109,226 @@ void TupleBPS::process(vector<boost::shared_ptr<ByteStream>>& bsv, RowGroupDL* d
                         {
                             tjoiners[j]->match(largeSideRow, k, threadID, &joinerOutput[j]);
 #ifdef JLF_DEBUG
-                        // Debugging code to print the matches
-                        Row r;
-                        joinerMatchesRGs[j].initRow(&r);
-                        cout << joinerOutput[j].size() << " matches: \n";
-                        for (uint32_t z = 0; z < joinerOutput[j].size(); z++)
-                        {
-                            r.setPointer(joinerOutput[j][z]);
-                            cout << "  " << r.toString() << endl;
-                        }
-#endif
-                        matchCount = joinerOutput[j].size();
-
-                        if (tjoiners[j]->inUM())
-                        {
-                            // Count the # of rows that pass the join filter 
-                            if (tjoiners[j]->hasFEFilter() && matchCount > 0)
+                            // Debugging code to print the matches
+                            Row r;
+                            joinerMatchesRGs[j].initRow(&r);
+                            cout << joinerOutput[j].size() << " matches: \n";
+                            for (uint32_t z = 0; z < joinerOutput[j].size(); z++)
                             {
-                                vector<Row::Pointer> newJoinerOutput;
-                                applyMapping(fergMappings[smallSideCount], largeSideRow, &joinFERow);
+                                r.setPointer(joinerOutput[j][z]);
+                                cout << "  " << r.toString() << endl;
+                            }
+#endif
+                            matchCount = joinerOutput[j].size();
 
-                                for (uint32_t z = 0; z < joinerOutput[j].size(); z++)
+                            if (tjoiners[j]->inUM())
+                            {
+                                // Count the # of rows that pass the join filter
+                                if (tjoiners[j]->hasFEFilter() && matchCount > 0)
                                 {
-                                    smallSideRows[j].setPointer(joinerOutput[j][z]);
-                                    applyMapping(fergMappings[j], smallSideRows[j], &joinFERow);
+                                    vector<Row::Pointer> newJoinerOutput;
+                                    applyMapping(fergMappings[smallSideCount], largeSideRow, &joinFERow);
 
-                                    if (!tjoiners[j]->evaluateFilter(joinFERow, threadID))
-                                        matchCount--;
-                                    else
+                                    for (uint32_t z = 0; z < joinerOutput[j].size(); z++)
                                     {
-                                        // The first match includes it in a SEMI join result and excludes it from an
-                                        // ANTI join result.  If it's SEMI & SCALAR however, it needs to continue.
-                                        newJoinerOutput.push_back(joinerOutput[j][z]);
+                                        smallSideRows[j].setPointer(joinerOutput[j][z]);
+                                        applyMapping(fergMappings[j], smallSideRows[j], &joinFERow);
 
-                                        if (tjoiners[j]->antiJoin() ||
-                                            (tjoiners[j]->semiJoin() && !tjoiners[j]->scalar()))
-                                            break;
+                                        if (!tjoiners[j]->evaluateFilter(joinFERow, threadID))
+                                            matchCount--;
+                                        else
+                                        {
+                                            // The first match includes it in a SEMI join result and excludes it from an
+                                            // ANTI join result.  If it's SEMI & SCALAR however, it needs to continue.
+                                            newJoinerOutput.push_back(joinerOutput[j][z]);
+
+                                            if (tjoiners[j]->antiJoin() ||
+                                                (tjoiners[j]->semiJoin() && !tjoiners[j]->scalar()))
+                                                break;
+                                        }
                                     }
+
+                                    // the filter eliminated all matches, need to join with the NULL row
+                                    if (matchCount == 0 && tjoiners[j]->largeOuterJoin())
+                                    {
+                                        newJoinerOutput.push_back(Row::Pointer(smallNullMemory[j].get()));
+                                        matchCount = 1;
+                                    }
+
+                                    joinerOutput[j].swap(newJoinerOutput);
                                 }
 
-                                // the filter eliminated all matches, need to join with the NULL row
-                                if (matchCount == 0 && tjoiners[j]->largeOuterJoin())
+                                // XXXPAT: This has gone through enough revisions it would benefit
+                                // from refactoring
+
+                                // If anti-join, reverse the result
+                                if (tjoiners[j]->antiJoin())
                                 {
-                                    newJoinerOutput.push_back(Row::Pointer(smallNullMemory[j].get()));
+                                    matchCount = (matchCount ? 0 : 1);
+                                }
+
+                                if (matchCount == 0)
+                                {
+                                    joinerOutput[j].clear();
+                                    break;
+                                }
+                                else if (!tjoiners[j]->scalar() && (tjoiners[j]->antiJoin() || tjoiners[j]->semiJoin()))
+                                {
+                                    joinerOutput[j].clear();
+                                    joinerOutput[j].push_back(Row::Pointer(smallNullMemory[j].get()));
                                     matchCount = 1;
                                 }
+                            } // UM join end
 
-                                joinerOutput[j].swap(newJoinerOutput);
-                            }
-
-                            // XXXPAT: This has gone through enough revisions it would benefit
-                            // from refactoring
-
-                            // If anti-join, reverse the result 
-                            if (tjoiners[j]->antiJoin())
-                            {
-                                matchCount = (matchCount ? 0 : 1);
-                            }
-
-                            if (matchCount == 0)
-                            {
-                                joinerOutput[j].clear();
+                            if (matchCount == 0 && tjoiners[j]->innerJoin())
                                 break;
-                            }
-                            else if (!tjoiners[j]->scalar() && (tjoiners[j]->antiJoin() || tjoiners[j]->semiJoin()))
+
+                            // Scalar check
+                            if (tjoiners[j]->scalar() && matchCount > 1)
                             {
-                                joinerOutput[j].clear();
-                                joinerOutput[j].push_back(Row::Pointer(smallNullMemory[j].get()));
-                                matchCount = 1;
+                                errorMessage(IDBErrorInfo::instance()->errorMsg(ERR_MORE_THAN_1_ROW));
+                                status(ERR_MORE_THAN_1_ROW);
+                                abort();
+                            }
+
+                            if (tjoiners[j]->smallOuterJoin())
+                                tjoiners[j]->markMatches(threadID, joinerOutput[j]);
+                        }
+
+                        if (matchCount > 0)
+                        {
+                            applyMapping(largeMapping, largeSideRow, &joinedBaseRow);
+                            joinedBaseRow.setRid(largeSideRow.getRelRid());
+                            generateJoinResultSet(joinerOutput, joinedBaseRow, smallMappings, 0, local_outputRG,
+                                                  joinedData, &rgDatav, smallSideRows, postJoinRow);
+
+                            // Bug 3510: Don't let the join results buffer get out of control.  Need
+                            // to refactor this.  All post-join processing needs to go here AND below
+                            // for now.
+                            if (rgDatav.size() * local_outputRG.getMaxDataSize() > 50000000)
+                            {
+                                RowGroup out(local_outputRG);
+
+                                if (fe2 && !runFEonPM)
+                                {
+                                    processFE2(out, local_fe2Output, postJoinRow, local_fe2OutRow, &rgDatav,
+                                               &local_fe2);
+                                    rgDataVecToDl(rgDatav, local_fe2Output, dlp);
+                                }
+                                else
+                                    rgDataVecToDl(rgDatav, out, dlp);
                             }
                         }
+                    } // end of the for-loop in the join code
 
-                        if (matchCount == 0 && tjoiners[j]->innerJoin())
-                            break;
-
-                        // Scalar check 
-                        if (tjoiners[j]->scalar() && matchCount > 1)
-                        {
-                            errorMessage(IDBErrorInfo::instance()->errorMsg(ERR_MORE_THAN_1_ROW));
-                            status(ERR_MORE_THAN_1_ROW);
-                            abort();
-                        }
-
-                        if (tjoiners[j]->smallOuterJoin())
-                            tjoiners[j]->markMatches(threadID, joinerOutput[j]);
-                    }
-
-                    if (matchCount > 0)
+                    if (local_outputRG.getRowCount() > 0)
                     {
-                        applyMapping(largeMapping, largeSideRow, &joinedBaseRow);
-                        joinedBaseRow.setRid(largeSideRow.getRelRid());
-                        generateJoinResultSet(joinerOutput, joinedBaseRow, smallMappings, 0, local_outputRG, joinedData,
-                                              &rgDatav, smallSideRows, postJoinRow);
-
-                        //Bug 3510: Don't let the join results buffer get out of control.  Need
-                        //to refactor this.  All post-join processing needs to go here AND below
-                        //for now. 
-                        if (rgDatav.size() * local_outputRG.getMaxDataSize() > 50000000)
-                        {
-                            RowGroup out(local_outputRG);
-
-                            if (fe2 && !runFEonPM)
-                            {
-                                processFE2(out, local_fe2Output, postJoinRow, local_fe2OutRow, &rgDatav, &local_fe2);
-                                rgDataVecToDl(rgDatav, local_fe2Output, dlp);
-                            }
-                            else
-                                rgDataVecToDl(rgDatav, out, dlp);
-                        }
+                        rgDatav.push_back(joinedData);
                     }
-                } // end of the for-loop in the join code
+                }
+                else
+                {
+                    rgDatav.push_back(rgData);
+                }
+
+                // Execute UM F & E group 2 on rgDatav
+                if (fe2 && !runFEonPM && rgDatav.size() > 0 && !cancelled())
+                {
+                    processFE2(local_outputRG, local_fe2Output, postJoinRow, local_fe2OutRow, &rgDatav, &local_fe2);
+                    rgDataVecToDl(rgDatav, local_fe2Output, dlp);
+                }
+
+                cachedIO_Thread += cachedIO;
+                physIO_Thread += physIO;
+                touchedBlocks_Thread += touchedBlocks;
+
+                if (fOid >= 3000 && ffirstStepType == SCAN && bop == BOP_AND)
+                {
+                    if (fColType.colWidth <= 8)
+                    {
+                        cpv.push_back(_CPInfo((int64_t) min, (int64_t) max, lbid, validCPData));
+                    }
+                    else if (fColType.colWidth == 16)
+                    {
+                        cpv.push_back(_CPInfo(min, max, lbid, validCPData));
+                    }
+                }
+            } // end of the per-rowgroup processing loop
+
+            // insert the resulting rowgroup data from a single bytestream into dlp
+            if (rgDatav.size() > 0)
+            {
+                if (fe2 && runFEonPM)
+                    rgDataVecToDl(rgDatav, local_fe2Output, dlp);
+                else
+                    rgDataVecToDl(rgDatav, local_outputRG, dlp);
+            }
+
+        } // end of the per-bytestream loop
+
+    out:
+
+        vector<Row::Pointer> unmatched;
+        if (++recvExited == fNumThreads)
+        {
+            if (doJoin && smallOuterJoiner != -1 && !cancelled())
+            {
+                tplLock.unlock();
+                // If this was a left outer join, this needs to put the unmatched
+                //  rows from the joiner into the output
+                // XXXPAT: This might be a problem if later steps depend
+                // on sensible rids and/or sensible ordering
+#ifdef JLF_DEBUG
+                cout << "finishing small-outer join output\n";
+#endif
+                i = smallOuterJoiner;
+                tjoiners[i]->getUnmarkedRows(&unmatched);
+                joinedData = RGData(local_outputRG);
+                local_outputRG.setData(&joinedData);
+                local_outputRG.resetRowGroup(-1);
+                local_outputRG.getRow(0, &joinedBaseRow);
+
+                for (j = 0; j < unmatched.size(); j++)
+                {
+                    smallSideRows[i].setPointer(unmatched[j]);
+
+                    for (k = 0; k < smallSideCount; k++)
+                    {
+                        if (i == k)
+                            applyMapping(smallMappings[i], smallSideRows[i], &joinedBaseRow);
+                        else
+                            applyMapping(smallMappings[k], smallNulls[k], &joinedBaseRow);
+                    }
+
+                    applyMapping(largeMapping, largeNull, &joinedBaseRow);
+                    joinedBaseRow.setRid(0);
+                    joinedBaseRow.nextRow();
+                    local_outputRG.incRowCount();
+
+                    if (local_outputRG.getRowCount() == 8192)
+                    {
+                        if (fe2)
+                        {
+                            rgDatav.push_back(joinedData);
+                            processFE2(local_outputRG, local_fe2Output, postJoinRow, local_fe2OutRow, &rgDatav,
+                                       &local_fe2);
+
+                            if (rgDatav.size() > 0)
+                                rgDataToDl(rgDatav[0], local_fe2Output, dlp);
+
+                            rgDatav.clear();
+                        }
+                        else
+                            rgDataToDl(joinedData, local_outputRG, dlp);
+
+                        joinedData = RGData(local_outputRG);
+                        local_outputRG.setData(&joinedData);
+                        local_outputRG.resetRowGroup(-1);
+                        local_outputRG.getRow(0, &joinedBaseRow);
+                    }
+                }
 
                 if (local_outputRG.getRowCount() > 0)
-                {
-                    rgDatav.push_back(joinedData);
-                }
-            }
-            else
-            {
-                rgDatav.push_back(rgData);
-            }
-
-            // Execute UM F & E group 2 on rgDatav 
-            if (fe2 && !runFEonPM && rgDatav.size() > 0 && !cancelled())
-            {
-                processFE2(local_outputRG, local_fe2Output, postJoinRow, local_fe2OutRow, &rgDatav, &local_fe2);
-                rgDataVecToDl(rgDatav, local_fe2Output, dlp);
-            }
-
-            cachedIO_Thread += cachedIO;
-            physIO_Thread += physIO;
-            touchedBlocks_Thread += touchedBlocks;
-
-            if (fOid >= 3000 && ffirstStepType == SCAN && bop == BOP_AND)
-            {
-                if (fColType.colWidth <= 8)
-                {
-                    cpv.push_back(_CPInfo((int64_t) min, (int64_t) max, lbid, validCPData));
-                }
-                else if (fColType.colWidth == 16)
-                {
-                    cpv.push_back(_CPInfo(min, max, lbid, validCPData));
-                }
-            }
-        } // end of the per-rowgroup processing loop
-
-        // insert the resulting rowgroup data from a single bytestream into dlp
-        if (rgDatav.size() > 0)
-        {
-            if (fe2 && runFEonPM)
-                rgDataVecToDl(rgDatav, local_fe2Output, dlp);
-            else
-                rgDataVecToDl(rgDatav, local_outputRG, dlp);
-        }
-
-    } // end of the per-bytestream loop
-
-out:
-    if (++recvExited == fNumThreads)
-    {
-        if (doJoin && smallOuterJoiner != -1 && !cancelled())
-        {
-            tplLock.unlock();
-            // If this was a left outer join, this needs to put the unmatched
-             //  rows from the joiner into the output
-              // XXXPAT: This might be a problem if later steps depend
-              // on sensible rids and/or sensible ordering
-#ifdef JLF_DEBUG
-            cout << "finishing small-outer join output\n";
-#endif
-            i = smallOuterJoiner;
-            tjoiners[i]->getUnmarkedRows(&unmatched);
-            joinedData = RGData(local_outputRG);
-            local_outputRG.setData(&joinedData);
-            local_outputRG.resetRowGroup(-1);
-            local_outputRG.getRow(0, &joinedBaseRow);
-
-            for (j = 0; j < unmatched.size(); j++)
-            {
-                smallSideRows[i].setPointer(unmatched[j]);
-
-                for (k = 0; k < smallSideCount; k++)
-                {
-                    if (i == k)
-                        applyMapping(smallMappings[i], smallSideRows[i], &joinedBaseRow);
-                    else
-                        applyMapping(smallMappings[k], smallNulls[k], &joinedBaseRow);
-                }
-
-                applyMapping(largeMapping, largeNull, &joinedBaseRow);
-                joinedBaseRow.setRid(0);
-                joinedBaseRow.nextRow();
-                local_outputRG.incRowCount();
-
-                if (local_outputRG.getRowCount() == 8192)
                 {
                     if (fe2)
                     {
@@ -2292,193 +2342,167 @@ out:
                     }
                     else
                         rgDataToDl(joinedData, local_outputRG, dlp);
-
-                    joinedData = RGData(local_outputRG);
-                    local_outputRG.setData(&joinedData);
-                    local_outputRG.resetRowGroup(-1);
-                    local_outputRG.getRow(0, &joinedBaseRow);
                 }
+
+                tplLock.lock();
             }
 
-            if (local_outputRG.getRowCount() > 0)
+            if (traceOn() && fOid >= 3000)
             {
-                if (fe2)
+                //...Casual partitioning could cause us to do no processing.  In that
+                //...case these time stamps did not get set.  So we set them here.
+                if (dlTimes.FirstReadTime().tv_sec == 0)
                 {
-                    rgDatav.push_back(joinedData);
-                    processFE2(local_outputRG, local_fe2Output, postJoinRow, local_fe2OutRow, &rgDatav, &local_fe2);
-
-                    if (rgDatav.size() > 0)
-                        rgDataToDl(rgDatav[0], local_fe2Output, dlp);
-
-                    rgDatav.clear();
+                    dlTimes.setFirstReadTime();
+                    dlTimes.setLastReadTime();
+                    dlTimes.setFirstInsertTime();
                 }
-                else
-                    rgDataToDl(joinedData, local_outputRG, dlp);
+
+                dlTimes.setEndOfInputTime();
             }
 
-            tplLock.lock();
-        }
+            ByteStream bs;
 
-        if (traceOn() && fOid >= 3000)
-        {
-            //...Casual partitioning could cause us to do no processing.  In that
-            //...case these time stamps did not get set.  So we set them here.
-            if (dlTimes.FirstReadTime().tv_sec == 0)
+            try
             {
-                dlTimes.setFirstReadTime();
-                dlTimes.setLastReadTime();
-                dlTimes.setFirstInsertTime();
+                if (BPPIsAllocated)
+                {
+                    fDec->removeDECEventListener(this);
+                    fBPP->destroyBPP(bs);
+                    fDec->write(uniqueID, bs);
+                    BPPIsAllocated = false;
+                }
             }
-
-            dlTimes.setEndOfInputTime();
-        }
-
-        ByteStream bs;
-
-        try
-        {
-            if (BPPIsAllocated)
+            // catch and do nothing. Let it continue with the clean up and profiling
+            catch (const std::exception& e)
             {
-                fDec->removeDECEventListener(this);
-                fBPP->destroyBPP(bs);
-                fDec->write(uniqueID, bs);
-                BPPIsAllocated = false;
+                cerr << "tuple-bps caught: " << e.what() << endl;
             }
-        }
-        // catch and do nothing. Let it continue with the clean up and profiling
-        catch (const std::exception& e)
-        {
-            cerr << "tuple-bps caught: " << e.what() << endl;
-        }
-        catch (...)
-        {
-            cerr << "tuple-bps caught unknown exception" << endl;
-        }
-
-        Stats stats = fDec->getNetworkStats(uniqueID);
-        fMsgBytesIn = stats.dataRecvd();
-        fMsgBytesOut = stats.dataSent();
-        fDec->removeQueue(uniqueID);
-        tjoiners.clear();
-
-        lastThread = true;
-    }
-
-    //@Bug 1099
-    ridsReturned += ridsReturned_Thread;
-    fPhysicalIO += physIO_Thread;
-    fCacheIO += cachedIO_Thread;
-    fBlockTouched += touchedBlocks_Thread;
-    tplLock.unlock();
-
-    if (fTableOid >= 3000 && lastThread)
-    {
-        struct timeval tvbuf;
-        gettimeofday(&tvbuf, 0);
-        FIFO<boost::shared_array<uint8_t> >* pFifo = 0;
-        uint64_t totalBlockedReadCount  = 0;
-        uint64_t totalBlockedWriteCount = 0;
-
-        //...Sum up the blocked FIFO reads for all input associations
-        size_t inDlCnt  = fInputJobStepAssociation.outSize();
-
-        for (size_t iDataList = 0; iDataList < inDlCnt; iDataList++)
-        {
-            pFifo = dynamic_cast<FIFO<boost::shared_array<uint8_t> > *>(
-                        fInputJobStepAssociation.outAt(iDataList)->rowGroupDL());
-
-            if (pFifo)
+            catch (...)
             {
-                totalBlockedReadCount += pFifo->blockedReadCount();
+                cerr << "tuple-bps caught unknown exception" << endl;
             }
+
+            Stats stats = fDec->getNetworkStats(uniqueID);
+            fMsgBytesIn = stats.dataRecvd();
+            fMsgBytesOut = stats.dataSent();
+            fDec->removeQueue(uniqueID);
+            tjoiners.clear();
+
+            lastThread = true;
         }
 
-        //...Sum up the blocked FIFO writes for all output associations
-        size_t outDlCnt = fOutputJobStepAssociation.outSize();
+        //@Bug 1099
+        ridsReturned += ridsReturned_Thread;
+        fPhysicalIO += physIO_Thread;
+        fCacheIO += cachedIO_Thread;
+        fBlockTouched += touchedBlocks_Thread;
+        tplLock.unlock();
 
-        for (size_t iDataList = 0; iDataList < outDlCnt; iDataList++)
+        if (fTableOid >= 3000 && lastThread)
         {
-            pFifo = dynamic_cast<FIFO<boost::shared_array<uint8_t> > *>(dlp);
+            struct timeval tvbuf;
+            gettimeofday(&tvbuf, 0);
+            FIFO<boost::shared_array<uint8_t>>* pFifo = 0;
+            uint64_t totalBlockedReadCount = 0;
+            uint64_t totalBlockedWriteCount = 0;
 
-            if (pFifo)
+            //...Sum up the blocked FIFO reads for all input associations
+            size_t inDlCnt = fInputJobStepAssociation.outSize();
+
+            for (size_t iDataList = 0; iDataList < inDlCnt; iDataList++)
             {
-                totalBlockedWriteCount += pFifo->blockedWriteCount();
+                pFifo = dynamic_cast<FIFO<boost::shared_array<uint8_t>>*>(
+                    fInputJobStepAssociation.outAt(iDataList)->rowGroupDL());
+
+                if (pFifo)
+                {
+                    totalBlockedReadCount += pFifo->blockedReadCount();
+                }
             }
-        }
 
-        //...Roundoff msg byte counts to nearest KB for display
-        uint64_t msgBytesInKB  = fMsgBytesIn >> 10;
-        uint64_t msgBytesOutKB = fMsgBytesOut >> 10;
+            //...Sum up the blocked FIFO writes for all output associations
+            size_t outDlCnt = fOutputJobStepAssociation.outSize();
 
-        if (fMsgBytesIn & 512)
-            msgBytesInKB++;
+            for (size_t iDataList = 0; iDataList < outDlCnt; iDataList++)
+            {
+                pFifo = dynamic_cast<FIFO<boost::shared_array<uint8_t>>*>(dlp);
 
-        if (fMsgBytesOut & 512)
-            msgBytesOutKB++;
+                if (pFifo)
+                {
+                    totalBlockedWriteCount += pFifo->blockedWriteCount();
+                }
+            }
 
-        if (traceOn())
-        {
-            // @bug 828
-            ostringstream logStr;
-            logStr << "ses:" << fSessionId << " st: " << fStepId << " finished at " <<
-                   JSTimeStamp::format(tvbuf) << "; PhyI/O-" << fPhysicalIO << "; CacheI/O-"  <<
-                   fCacheIO << "; MsgsSent-" << msgsSent << "; MsgsRvcd-" << msgsRecvd <<
-                   "; BlocksTouched-" << fBlockTouched <<
-                   "; BlockedFifoIn/Out-" << totalBlockedReadCount <<
-                   "/" << totalBlockedWriteCount <<
-                   "; output size-" << ridsReturned << endl <<
-                   "\tPartitionBlocksEliminated-" << fNumBlksSkipped <<
-                   "; MsgBytesIn-"  << msgBytesInKB  << "KB" <<
-                   "; MsgBytesOut-" << msgBytesOutKB << "KB" <<
-                   "; TotalMsgs-" << totalMsgs << endl  <<
-                   "\t1st read " << dlTimes.FirstReadTimeString() <<
-                   "; EOI " << dlTimes.EndOfInputTimeString() << "; runtime-" <<
-                   JSTimeStamp::tsdiffstr(dlTimes.EndOfInputTime(), dlTimes.FirstReadTime()) <<
-                   "s\n\tUUID " << uuids::to_string(fStepUuid) <<
-                   "\n\tQuery UUID " << uuids::to_string(queryUuid()) <<
-                   "\n\tJob completion status " << status() << endl;
-            logEnd(logStr.str().c_str());
+            //...Roundoff msg byte counts to nearest KB for display
+            uint64_t msgBytesInKB = fMsgBytesIn >> 10;
+            uint64_t msgBytesOutKB = fMsgBytesOut >> 10;
 
-            syslogReadBlockCounts(16,      // exemgr sybsystem
-                                  fPhysicalIO,               // # blocks read from disk
-                                  fCacheIO,                  // # blocks read from cache
-                                  fNumBlksSkipped);          // # casual partition block hits
-            syslogProcessingTimes(16,      // exemgr subsystem
-                                  dlTimes.FirstReadTime(),   // first datalist read
-                                  dlTimes.LastReadTime(),    // last  datalist read
-                                  dlTimes.FirstInsertTime(), // first datalist write
-                                  dlTimes.EndOfInputTime()); // last (endOfInput) datalist write
-            syslogEndStep(16,              // exemgr subsystem
-                          totalBlockedReadCount,     // blocked datalist input
-                          totalBlockedWriteCount,    // blocked datalist output
-                          fMsgBytesIn,               // incoming msg byte count
-                          fMsgBytesOut);             // outgoing msg byte count
-            fExtendedInfo += toString() + logStr.str();
-            formatMiniStats();
-        }
+            if (fMsgBytesIn & 512)
+                msgBytesInKB++;
 
-        if (lastThread && fOid >= 3000)
-        {
-            sts.msg_type = StepTeleStats::ST_SUMMARY;
-            sts.phy_io = fPhysicalIO;
-            sts.cache_io = fCacheIO;
-            sts.msg_rcv_cnt = sts.total_units_of_work = sts.units_of_work_completed = msgsRecvd;
-            sts.cp_blocks_skipped = fNumBlksSkipped;
-            sts.msg_bytes_in = fMsgBytesIn;
-            sts.msg_bytes_out = fMsgBytesOut;
-            sts.rows = ridsReturned;
-            postStepSummaryTele(sts);
-        }
+            if (fMsgBytesOut & 512)
+                msgBytesOutKB++;
 
-        if (ffirstStepType == SCAN && bop == BOP_AND && !cancelled())
-        {
-            cpMutex.lock();
-            lbidList->UpdateAllPartitionInfo(fColType);
-            cpMutex.unlock();
+            if (traceOn())
+            {
+                // @bug 828
+                ostringstream logStr;
+                logStr << "ses:" << fSessionId << " st: " << fStepId << " finished at " << JSTimeStamp::format(tvbuf)
+                       << "; PhyI/O-" << fPhysicalIO << "; CacheI/O-" << fCacheIO << "; MsgsSent-" << msgsSent
+                       << "; MsgsRvcd-" << msgsRecvd << "; BlocksTouched-" << fBlockTouched << "; BlockedFifoIn/Out-"
+                       << totalBlockedReadCount << "/" << totalBlockedWriteCount << "; output size-" << ridsReturned
+                       << endl
+                       << "\tPartitionBlocksEliminated-" << fNumBlksSkipped << "; MsgBytesIn-" << msgBytesInKB << "KB"
+                       << "; MsgBytesOut-" << msgBytesOutKB << "KB"
+                       << "; TotalMsgs-" << totalMsgs << endl
+                       << "\t1st read " << dlTimes.FirstReadTimeString() << "; EOI " << dlTimes.EndOfInputTimeString()
+                       << "; runtime-" << JSTimeStamp::tsdiffstr(dlTimes.EndOfInputTime(), dlTimes.FirstReadTime())
+                       << "s\n\tUUID " << uuids::to_string(fStepUuid) << "\n\tQuery UUID "
+                       << uuids::to_string(queryUuid()) << "\n\tJob completion status " << status() << endl;
+                logEnd(logStr.str().c_str());
+
+                syslogReadBlockCounts(16,                        // exemgr sybsystem
+                                      fPhysicalIO,               // # blocks read from disk
+                                      fCacheIO,                  // # blocks read from cache
+                                      fNumBlksSkipped);          // # casual partition block hits
+                syslogProcessingTimes(16,                        // exemgr subsystem
+                                      dlTimes.FirstReadTime(),   // first datalist read
+                                      dlTimes.LastReadTime(),    // last  datalist read
+                                      dlTimes.FirstInsertTime(), // first datalist write
+                                      dlTimes.EndOfInputTime()); // last (endOfInput) datalist write
+                syslogEndStep(16,                                // exemgr subsystem
+                              totalBlockedReadCount,             // blocked datalist input
+                              totalBlockedWriteCount,            // blocked datalist output
+                              fMsgBytesIn,                       // incoming msg byte count
+                              fMsgBytesOut);                     // outgoing msg byte count
+                fExtendedInfo += toString() + logStr.str();
+                formatMiniStats();
+            }
+
+            if (lastThread && fOid >= 3000)
+            {
+                sts.msg_type = StepTeleStats::ST_SUMMARY;
+                sts.phy_io = fPhysicalIO;
+                sts.cache_io = fCacheIO;
+                sts.msg_rcv_cnt = sts.total_units_of_work = sts.units_of_work_completed = msgsRecvd;
+                sts.cp_blocks_skipped = fNumBlksSkipped;
+                sts.msg_bytes_in = fMsgBytesIn;
+                sts.msg_bytes_out = fMsgBytesOut;
+                sts.rows = ridsReturned;
+                postStepSummaryTele(sts);
+            }
+
+            if (ffirstStepType == SCAN && bop == BOP_AND && !cancelled())
+            {
+                cpMutex.lock();
+                lbidList->UpdateAllPartitionInfo(fColType);
+                cpMutex.unlock();
+            }
         }
     }
-    */
 }
+
 
 void TupleBPS::receiveMultiPrimitiveMessages(uint32_t threadID)
 {
@@ -2486,104 +2510,14 @@ void TupleBPS::receiveMultiPrimitiveMessages(uint32_t threadID)
     RowGroupDL* dlp = (fDelivery ? deliveryDL.get() : dl->rowGroupDL());
 
     uint32_t size = 0;
-    vector<boost::shared_ptr<ByteStream> > bsv;
+    vector<boost::shared_ptr<ByteStream>> bsv;
     StepTeleStats sts;
-
     vector<_CPInfo> cpv;
-
-    /*
-    RGData rgData;
-    vector<RGData> rgDatav;
-    vector<RGData> fromPrimProc;
-
-    bool validCPData;
-    bool hasBinaryColumn;
-    int128_t min;
-    int128_t max;
-    uint64_t lbid;
-    uint32_t cachedIO;
-    uint32_t physIO;
-    uint32_t touchedBlocks;
-    uint32_t cachedIO_Thread = 0;
-    uint32_t physIO_Thread = 0;
-    uint32_t touchedBlocks_Thread = 0;
-    int64_t ridsReturned_Thread = 0;
-    bool lastThread = false;
-    uint32_t i, j, k;
-    RowGroup local_primRG = primRowGroup;
-    RowGroup local_outputRG = outputRowGroup;
-    bool didEOF = false;
-    bool unused;
-
-    vector<vector<Row::Pointer> > joinerOutput;   // clean usage
-    Row largeSideRow, joinedBaseRow, largeNull, joinFERow;  // LSR clean
-    scoped_array<Row> smallSideRows, smallNulls;
-    scoped_array<uint8_t> joinedBaseRowData;
-    scoped_array<uint8_t> joinFERowData;
-    shared_array<int> largeMapping;
-    vector<shared_array<int> > smallMappings;
-    vector<shared_array<int> > fergMappings;
-    RGData joinedData;
-    scoped_array<uint8_t> largeNullMemory;
-    scoped_array<shared_array<uint8_t> > smallNullMemory;
-    uint32_t matchCount;
-
-    RowGroup local_fe2Output;
-    RGData local_fe2Data;
-    Row local_fe2OutRow;
-    funcexp::FuncExpWrapper local_fe2;
-        sts.query_uuid = fQueryUuid;
-    sts.step_uuid = fStepUuid;
-    */
     boost::unique_lock<boost::mutex> tplLock(tplMutex, boost::defer_lock);
 
     try
     {
-#if 0
-
-            if (threadID == 0)
-            {
-                /* Some rowgroup debugging stuff. */
-                uint8_t* tmp8;
-                tmp8 = local_primRG.getData();
-                local_primRG.setData(NULL);
-                cout << "large-side RG: " << local_primRG.toString() << endl;
-                local_primRG.setData(tmp8);
-
-                for (i = 0; i < smallSideCount; i++)
-                {
-                    tmp8 = joinerMatchesRGs[i].getData();
-                    joinerMatchesRGs[i].setData(NULL);
-                    cout << "small-side[" << i << "] RG: " << joinerMatchesRGs[i].toString() << endl;
-                }
-
-                tmp8 = local_outputRG.getData();
-                local_outputRG.setData(NULL);
-                cout << "output RG: " << local_outputRG.toString() << endl;
-                local_outputRG.setData(tmp8);
-
-                cout << "large mapping:\n";
-
-                for (i = 0; i < local_primRG.getColumnCount(); i++)
-                    cout << largeMapping[i] << " ";
-
-                cout << endl;
-
-                for (uint32_t z = 0; z < smallSideCount; z++)
-                {
-                    cout << "small mapping[" << z << "] :\n";
-
-                    for (i = 0; i < joinerMatchesRGs[z].getColumnCount(); i++)
-                        cout << smallMappings[z][i] << " ";
-
-                    cout << endl;
-                }
-            }
-
-#endif
-
         tplLock.lock();
-
         while (1)
         {
             // sync with the send side
@@ -2620,20 +2554,19 @@ void TupleBPS::receiveMultiPrimitiveMessages(uint32_t threadID)
 
             //@Bug 1424,1298
 
-            if (sendWaiting && ((msgsSent - msgsRecvd) <=
-                                (fMaxOutstandingRequests << LOGICAL_EXTENT_CONVERTER)))
+            if (sendWaiting && ((msgsSent - msgsRecvd) <= (fMaxOutstandingRequests << LOGICAL_EXTENT_CONVERTER)))
             {
                 condvarWakeupProducer.notify_one();
-                THROTTLEDEBUG << "receiveMultiPrimitiveMessages wakes up sending side .. " << "  msgsSent: " << msgsSent << "  msgsRecvd = " << msgsRecvd << endl;
+                THROTTLEDEBUG << "receiveMultiPrimitiveMessages wakes up sending side .. "
+                              << "  msgsSent: " << msgsSent << "  msgsRecvd = " << msgsRecvd << endl;
             }
 
             /* If there's an error and the joblist is being aborted, don't
-            	sit around forever waiting for responses.  */
+                sit around forever waiting for responses.  */
             if (cancelled())
             {
                 if (sendWaiting)
                     condvarWakeupProducer.notify_one();
-
                 break;
             }
 
@@ -2647,11 +2580,13 @@ void TupleBPS::receiveMultiPrimitiveMessages(uint32_t threadID)
 
             tplLock.unlock();
 
+            // process
+
             // @bug 4562
             if (traceOn() && fOid >= 3000)
                 dlTimes.setFirstInsertTime();
 
-            //update casual partition
+            // update casual partition
             size = cpv.size();
 
             if (size > 0 && !cancelled())
@@ -2662,13 +2597,11 @@ void TupleBPS::receiveMultiPrimitiveMessages(uint32_t threadID)
                 {
                     if (fColType.colWidth > 8)
                     {
-                        lbidList->UpdateMinMax(cpv[i].bigMin, cpv[i].bigMax, cpv[i].LBID, fColType,
-                                               cpv[i].valid);
+                        lbidList->UpdateMinMax(cpv[i].bigMin, cpv[i].bigMax, cpv[i].LBID, fColType, cpv[i].valid);
                     }
                     else
                     {
-                        lbidList->UpdateMinMax(cpv[i].min, cpv[i].max, cpv[i].LBID, fColType,
-                                               cpv[i].valid);
+                        lbidList->UpdateMinMax(cpv[i].min, cpv[i].max, cpv[i].LBID, fColType, cpv[i].valid);
                     }
                 }
 
@@ -2697,14 +2630,11 @@ void TupleBPS::receiveMultiPrimitiveMessages(uint32_t threadID)
 
         } // done reading
 
-    }//try
+    } // try
     catch (...)
     {
-        handleException(std::current_exception(),
-                        logging::ERR_TUPLE_BPS,
-                        logging::ERR_ALWAYS_CRITICAL,
-                        "st: " + std::to_string(fStepId) +
-                            " TupleBPS::receiveMultiPrimitiveMessages()");
+        handleException(std::current_exception(), logging::ERR_TUPLE_BPS, logging::ERR_ALWAYS_CRITICAL,
+                        "st: " + std::to_string(fStepId) + " TupleBPS::receiveMultiPrimitiveMessages()");
         abort_nolock();
     }
 

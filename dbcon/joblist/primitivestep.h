@@ -1078,6 +1078,24 @@ public:
     virtual void setFE23Output(const rowgroup::RowGroup& rg) = 0;
 };
 
+struct _CPInfo
+{
+    _CPInfo(int64_t MIN, int64_t MAX, uint64_t l, bool val) : min(MIN), max(MAX), LBID(l), valid(val){};
+    _CPInfo(int128_t BIGMIN, int128_t BIGMAX, uint64_t l, bool val)
+        : bigMin(BIGMIN), bigMax(BIGMAX), LBID(l), valid(val){};
+    union
+    {
+        int128_t bigMin;
+        int64_t min;
+    };
+    union
+    {
+        int128_t bigMax;
+        int64_t max;
+    };
+    uint64_t LBID;
+    bool valid;
+};
 
 /** @brief class TupleBPS
  *
@@ -1119,7 +1137,7 @@ public:
     void receiveMultiPrimitiveMessages(uint32_t threadID);
 
     void process(vector<boost::shared_ptr<messageqcpp::ByteStream>>& bsv, RowGroupDL* dlp, StepTeleStats& sts,
-                 uint32_t threadID);
+                 vector<_CPInfo>& cpv, uint32_t threadID);
 
     /** @brief Add a filter when the column is anything but a 4-byte float type.
      *
