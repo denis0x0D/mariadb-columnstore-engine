@@ -2489,6 +2489,9 @@ void TupleBPS::receiveMultiPrimitiveMessages(uint32_t threadID)
     vector<boost::shared_ptr<ByteStream> > bsv;
     StepTeleStats sts;
 
+    vector<_CPInfo> cpv;
+
+    /*
     RGData rgData;
     vector<RGData> rgDatav;
     vector<RGData> fromPrimProc;
@@ -2498,7 +2501,6 @@ void TupleBPS::receiveMultiPrimitiveMessages(uint32_t threadID)
     int128_t min;
     int128_t max;
     uint64_t lbid;
-    vector<_CPInfo> cpv;
     uint32_t cachedIO;
     uint32_t physIO;
     uint32_t touchedBlocks;
@@ -2513,7 +2515,6 @@ void TupleBPS::receiveMultiPrimitiveMessages(uint32_t threadID)
     bool didEOF = false;
     bool unused;
 
-    /* Join vars */
     vector<vector<Row::Pointer> > joinerOutput;   // clean usage
     Row largeSideRow, joinedBaseRow, largeNull, joinFERow;  // LSR clean
     scoped_array<Row> smallSideRows, smallNulls;
@@ -2527,7 +2528,6 @@ void TupleBPS::receiveMultiPrimitiveMessages(uint32_t threadID)
     scoped_array<shared_array<uint8_t> > smallNullMemory;
     uint32_t matchCount;
 
-    /*
     RowGroup local_fe2Output;
     RGData local_fe2Data;
     Row local_fe2OutRow;
@@ -2612,25 +2612,6 @@ void TupleBPS::receiveMultiPrimitiveMessages(uint32_t threadID)
                 postStepStartTele(sts);
             }
 
-            /* This is a simple ramp-up of the TBPS msg processing threads.
-            One thread is created by run(), and add'l threads are created
-            as needed.  Right now, "as needed" means that flow control
-            is on, which means that the UM is not keeping up by definition,
-            or size > 5.  We found that using flow control alone was not aggressive
-            enough when the messages were small.  The 'size' parameter checks
-            the number of msgs waiting in the DEC buffers.  Since each
-            message can be processed independently of the others, they can all
-            be processed in different threads.  In benchmarking we found that
-            there was no end-to-end performance difference between using 1
-            and 20 msgs as the threshold.  Erring on the side of aggressiveness,
-            we chose '5'.
-            '5' still preserves the original goal of not starting MAX threads
-            for small queries or when the UM can keep up with the PMs with
-            fewer threads.  Tweak as necessary. */
-
-            //            if ((size > 5 || flowControlOn) && fNumThreads < fMaxNumThreads)
-            //               startAggregationThread();
-
             for (uint32_t z = 0; z < size; z++)
             {
                 if (bsv[z]->length() > 0 && fBPP->countThisMsg(*(bsv[z])))
@@ -2677,7 +2658,7 @@ void TupleBPS::receiveMultiPrimitiveMessages(uint32_t threadID)
             {
                 cpMutex.lock();
 
-                for (i = 0; i < size; i++)
+                for (uint32_t i = 0; i < size; i++)
                 {
                     if (fColType.colWidth > 8)
                     {
@@ -2727,9 +2708,8 @@ void TupleBPS::receiveMultiPrimitiveMessages(uint32_t threadID)
         abort_nolock();
     }
 
-   // Bug 3136, let mini stats to be formatted if traceOn.
-    if (lastThread && !didEOF)
-        dlp->endOfInput();
+    // Bug 3136, let mini stats to be formatted if traceOn.
+    dlp->endOfInput();
 }
 
 const string TupleBPS::toString() const
