@@ -68,6 +68,9 @@
 #include "rowaggregation.h"
 #include "funcexpwrapper.h"
 
+#include "querytele.h"
+using namespace querytele;
+
 namespace joblist
 {
 
@@ -1114,6 +1117,9 @@ public:
      * The main loop for the receive-side thread.  Don't call it directly.
      */
     void receiveMultiPrimitiveMessages(uint32_t threadID);
+
+    void process(vector<boost::shared_ptr<messageqcpp::ByteStream>>& bsv, RowGroupDL* dlp, StepTeleStats& sts,
+                 uint32_t threadID);
 
     /** @brief Add a filter when the column is anything but a 4-byte float type.
      *
