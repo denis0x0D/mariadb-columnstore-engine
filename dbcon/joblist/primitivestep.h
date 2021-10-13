@@ -1133,6 +1133,9 @@ public:
      */
     void receiveMultiPrimitiveMessages(uint32_t threadID);
 
+    void process(vector<boost::shared_ptr<messageqcpp::ByteStream>>& bsv, vector<_CPInfo>& cpv, RowGroupDL* dlp,
+                 uint32_t threadID);
+
     /** @brief Add a filter when the column is anything but a 4-byte float type.
      *
      * Add a filter when the column is anything but a 4-byte float type, including
@@ -1370,7 +1373,8 @@ private:
 
   void startPrimitiveThread();
   void startAggregationThread();
-  void startProcessingThread();
+  void startProcessingThread(TupleBPS* tbps, vector<boost::shared_ptr<messageqcpp::ByteStream>>& bsv,
+                             vector<_CPInfo>& cpv, RowGroupDL* dlp, uint32_t threadID);
   void initializeConfigParms();
   uint64_t getFBO(uint64_t lbid);
   void checkDupOutputColumns(const rowgroup::RowGroup& rg);
@@ -1378,9 +1382,6 @@ private:
   void dupOutputColumns(rowgroup::RGData&, rowgroup::RowGroup&);
   void rgDataToDl(rowgroup::RGData&, rowgroup::RowGroup&, RowGroupDL*);
   void rgDataVecToDl(std::vector<rowgroup::RGData>&, rowgroup::RowGroup&, RowGroupDL*);
-  void process(vector<boost::shared_ptr<messageqcpp::ByteStream>>& bsv, vector<_CPInfo>& cpv, RowGroupDL* dlp,
-               uint32_t threadID);
-
   DistributedEngineComm* fDec;
   boost::shared_ptr<BatchPrimitiveProcessorJL> fBPP;
   uint16_t fNumSteps;

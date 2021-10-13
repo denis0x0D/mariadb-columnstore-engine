@@ -169,7 +169,11 @@ struct ByteStreamProcessor
     vector<_CPInfo>& cpv;
     RowGroupDL* dlp;
     uint32_t threadID;
-    void operator()() { utils::setThreadName("ByteStreamProcessor"); }
+    void operator()()
+    {
+        utils::setThreadName("ByteStreamProcessor");
+        tbps->process(bsv, cpv, dlp, threadID);
+    }
 };
 
 //------------------------------------------------------------------------------
@@ -894,9 +898,10 @@ void TupleBPS::startAggregationThread()
     fProducerThreads.push_back(jobstepThreadPool.invoke(TupleBPSAggregators(this, fNumThreads - 1)));
 }
 
-void TupleBPS::startProcessingThread()
+void TupleBPS::startProcessingThread(TupleBPS* tbps, vector<boost::shared_ptr<messageqcpp::ByteStream>>& bsv,
+                                     vector<_CPInfo>& cpv, RowGroupDL* dlp, uint32_t threadID)
 {
-    fProducerThreads.push_back(jobstepThreadPool.invoke(TupleBPSAggregators(this, fNumThreads - 1)));
+    fProcessorThreads.push_back(jobstepThreadPool.invoke(ByteStreamProcessor(tbps, bsv, cpv, dlp, threadID)));
 }
 
 void TupleBPS::serializeJoiner()
@@ -2033,6 +2038,8 @@ void TupleBPS::process(vector<boost::shared_ptr<messageqcpp::ByteStream>>& bsv, 
         // An error condition.  We are not going to do anymore.
         ISMPacketHeader* hdr = (ISMPacketHeader*) (bs->buf());
 
+        cout << "BS length: " << bs->length() << endl;
+
         if (bs->length() == 0 || hdr->Status > 0)
         {
             // PM errors mean this should abort right away instead of draining the PM backlog
@@ -2368,9 +2375,13 @@ void TupleBPS::receiveMultiPrimitiveMessages(uint32_t threadID)
 
             tplLock.unlock();
 
-            // process in thread.
-            process(bsv, cpv, dlp, threadID);
-            // join.
+            // Start processing thread.
+            startProcessingThread(this, bsv, cpv, dlp, threadID);
+            // Join threads.
+            for (int i = 0; i < fProcessorThreads.size(); ++i)
+            {
+                jobstepThreadPool.join(fProcessorThreads[i]);
+            }
 
             // @bug 4562
             if (traceOn() && fOid >= 3000)
