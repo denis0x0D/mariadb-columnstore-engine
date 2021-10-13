@@ -1075,6 +1075,25 @@ public:
     virtual void setFE23Output(const rowgroup::RowGroup& rg) = 0;
 };
 
+struct _CPInfo
+{
+    _CPInfo(int64_t MIN, int64_t MAX, uint64_t l, bool val) : min(MIN), max(MAX), LBID(l), valid(val){};
+    _CPInfo(int128_t BIGMIN, int128_t BIGMAX, uint64_t l, bool val)
+        : bigMin(BIGMIN), bigMax(BIGMAX), LBID(l), valid(val){};
+    union
+    {
+        int128_t bigMin;
+        int64_t min;
+    };
+    union
+    {
+        int128_t bigMax;
+        int64_t max;
+    };
+    uint64_t LBID;
+    bool valid;
+};
+
 /** @brief class TupleBPS
  *
  */
@@ -1347,7 +1366,6 @@ protected:
     void sendError(uint16_t status);
 
 private:
-  struct _CPInfo;
   void formatMiniStats();
 
   void startPrimitiveThread();
@@ -1376,6 +1394,7 @@ private:
   PrimitiveStepType ffirstStepType;
   bool isFilterFeeder;
   std::vector<uint64_t> fProducerThreads; // thread pool handles
+  std::vector<uint64_t> fProcessorThreads;
   messageqcpp::ByteStream fFilterString;
   uint32_t fFilterCount;
   execplan::CalpontSystemCatalog::ColType fColType;
@@ -1502,25 +1521,6 @@ private:
       uint32_t connectionNum;
       uint32_t expectedResponses;
       boost::shared_ptr<messageqcpp::ByteStream> msg;
-    };
-
-    struct _CPInfo
-    {
-        _CPInfo(int64_t MIN, int64_t MAX, uint64_t l, bool val) : min(MIN), max(MAX), LBID(l), valid(val){};
-        _CPInfo(int128_t BIGMIN, int128_t BIGMAX, uint64_t l, bool val)
-            : bigMin(BIGMIN), bigMax(BIGMAX), LBID(l), valid(val){};
-        union
-        {
-            int128_t bigMin;
-            int64_t min;
-        };
-        union
-        {
-            int128_t bigMax;
-            int64_t max;
-        };
-        uint64_t LBID;
-        bool valid;
     };
 
     void prepCasualPartitioning();

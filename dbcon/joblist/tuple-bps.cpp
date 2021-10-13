@@ -158,9 +158,9 @@ struct TupleBPSAggregators
 
 struct ByteStreamProcessor
 {
-    ByteStreamProcessor(TupleBPS* tbps, vector<boost::shared_ptr<messegeqcpp::ByteStream>>& bsv, vector<_CPInfo>& cpv,
+    ByteStreamProcessor(TupleBPS* tbps, vector<boost::shared_ptr<messageqcpp::ByteStream>>& bsv, vector<_CPInfo>& cpv,
                         RowGroupDL* dlp, uint32_t threadID)
-        : tbps(tbps), bsv(bsv), cpv(cpv), dlp(dlp), thread(threadID)
+        : tbps(tbps), bsv(bsv), cpv(cpv), dlp(dlp), threadID(threadID)
     {
     }
 
@@ -2368,7 +2368,9 @@ void TupleBPS::receiveMultiPrimitiveMessages(uint32_t threadID)
 
             tplLock.unlock();
 
+            // process in thread.
             process(bsv, cpv, dlp, threadID);
+            // join.
 
             // @bug 4562
             if (traceOn() && fOid >= 3000)
