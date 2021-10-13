@@ -1075,7 +1075,6 @@ public:
     virtual void setFE23Output(const rowgroup::RowGroup& rg) = 0;
 };
 
-
 /** @brief class TupleBPS
  *
  */
@@ -1102,6 +1101,8 @@ public:
 
     void abort();
     void abort_nolock();
+
+    void process(vector<boost::shared_ptr<messageqcpp::ByteStream>>& bsv, RowGroupDL* dlp, uint32_t threadID);
 
     /** @brief The main loop for the send-side thread
      *
@@ -1523,8 +1524,7 @@ private:
     bool compareRange(uint8_t COP, int64_t min, int64_t max, int64_t val) const;
     bool hasPCFilter, hasPMFilter, hasRIDFilter, hasSegmentFilter, hasDBRootFilter, hasSegmentDirFilter,
          hasPartitionFilter, hasMaxFilter, hasMinFilter, hasLBIDFilter, hasExtentIDFilter;
-
-};
+    };
 
 /** @brief class FilterStep
  *
