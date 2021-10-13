@@ -156,6 +156,22 @@ struct TupleBPSAggregators
     }
 };
 
+struct ByteStreamProcessor
+{
+    ByteStreamProcessor(TupleBPS* tbps, vector<boost::shared_ptr<messegeqcpp::ByteStream>>& bsv, vector<_CPInfo>& cpv,
+                        RowGroupDL* dlp, uint32_t threadID)
+        : tbps(tbps), bsv(bsv), cpv(cpv), dlp(dlp), thread(threadID)
+    {
+    }
+
+    TupleBPS* tbps;
+    vector<boost::shared_ptr<messageqcpp::ByteStream>>& bsv;
+    vector<_CPInfo>& cpv;
+    RowGroupDL* dlp;
+    uint32_t threadID;
+    void operator()() { utils::setThreadName("ByteStreamProcessor"); }
+};
+
 //------------------------------------------------------------------------------
 // Initialize configurable parameters
 //------------------------------------------------------------------------------
@@ -875,6 +891,11 @@ void TupleBPS::startAggregationThread()
         return;
 
     fNumThreads++;
+    fProducerThreads.push_back(jobstepThreadPool.invoke(TupleBPSAggregators(this, fNumThreads - 1)));
+}
+
+void TupleBPS::startProcessingThread()
+{
     fProducerThreads.push_back(jobstepThreadPool.invoke(TupleBPSAggregators(this, fNumThreads - 1)));
 }
 
@@ -1883,25 +1904,8 @@ abort:
     tplLock.unlock();
 }
 
-struct _CPInfo
-{
-    _CPInfo(int64_t MIN, int64_t MAX, uint64_t l, bool val) : min(MIN), max(MAX), LBID(l), valid(val) { };
-    _CPInfo(int128_t BIGMIN, int128_t BIGMAX, uint64_t l, bool val) : bigMin(BIGMIN), bigMax(BIGMAX), LBID(l), valid(val) { };
-    union
-    {
-        int128_t bigMin;
-        int64_t min;
-    };
-    union
-    {
-        int128_t bigMax;
-        int64_t max;
-    };
-    uint64_t LBID;
-    bool valid;
-};
-
-void TupleBPS::process(vector<boost::shared_ptr<messageqcpp::ByteStream>>& bsv, RowGroupDL* dlp, uint32_t threadID)
+void TupleBPS::process(vector<boost::shared_ptr<messageqcpp::ByteStream>>& bsv, vector<_CPInfo>& cpv, RowGroupDL* dlp,
+                       uint32_t threadID)
 {
     rowgroup::RGData rgData;
     vector<rowgroup::RGData> rgDatav;
@@ -1912,7 +1916,6 @@ void TupleBPS::process(vector<boost::shared_ptr<messageqcpp::ByteStream>>& bsv, 
     int128_t min;
     int128_t max;
     uint64_t lbid;
-    vector<_CPInfo> cpv;
     uint32_t cachedIO;
     uint32_t physIO;
     uint32_t touchedBlocks;
@@ -2271,7 +2274,6 @@ void TupleBPS::receiveMultiPrimitiveMessages(uint32_t threadID)
     uint32_t i, j, k;
     RowGroup local_primRG = primRowGroup;
     RowGroup local_outputRG = outputRowGroup;
-    bool didEOF = false;
     bool unused;
 
     /* Join vars */
@@ -2301,8 +2303,6 @@ void TupleBPS::receiveMultiPrimitiveMessages(uint32_t threadID)
 
     try
     {
-       
-
         tplLock.lock();
 
         while (1)
@@ -2368,7 +2368,7 @@ void TupleBPS::receiveMultiPrimitiveMessages(uint32_t threadID)
 
             tplLock.unlock();
 
-            process(bsv, dlp, threadID);
+            process(bsv, cpv, dlp, threadID);
 
             // @bug 4562
             if (traceOn() && fOid >= 3000)
@@ -2435,7 +2435,6 @@ out:
 
     if (++recvExited == fNumThreads)
     {
-
         if (doJoin && smallOuterJoiner != -1 && !cancelled())
         {
             tplLock.unlock();
@@ -2672,7 +2671,8 @@ out:
     }
 
     // Bug 3136, let mini stats to be formatted if traceOn.
-    if (lastThread && !didEOF)
+    // FIXME: How the comment above is related to the next lines of code?
+    if (lastThread)
         dlp->endOfInput();
 }
 
@@ -3405,5 +3405,5 @@ bool TupleBPS::compareSingleValue<int64_t>(uint8_t COP, int64_t val1, int64_t va
 template
 bool TupleBPS::compareSingleValue<int128_t>(uint8_t COP, int128_t val1, int128_t val2) const;
 
-}   //namespace
+} // namespace
 // vim:ts=4 sw=4:
