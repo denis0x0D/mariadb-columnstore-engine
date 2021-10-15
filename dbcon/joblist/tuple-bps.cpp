@@ -156,11 +156,51 @@ struct TupleBPSAggregators
     }
 };
 
+// Local data.
+struct DataP
+{
+    DataP(RowGroup primRowGroup, RowGroup outputRowGroup) : local_primRG(primRowGroup), local_outputRG(outputRowGroup)
+    {
+    }
+
+    uint32_t cachedIO_Thread = 0;
+    uint32_t physIO_Thread = 0;
+    uint32_t touchedBlocks_Thread = 0;
+    int64_t ridsReturned_Thread = 0;
+
+    RowGroup local_primRG;
+    RowGroup local_outputRG;
+
+    /* Join vars */
+    vector<vector<rowgroup::Row::Pointer>> joinerOutput;
+    rowgroup::Row largeSideRow;
+    rowgroup::Row joinedBaseRow;
+    rowgroup::Row largeNull;
+    rowgroup::Row joinFERow; // LSR clean
+    boost::scoped_array<rowgroup::Row> smallSideRows;
+    boost::scoped_array<rowgroup::Row> smallNulls;
+    boost::scoped_array<uint8_t> joinedBaseRowData;
+    boost::scoped_array<uint8_t> joinFERowData;
+    boost::shared_array<int> largeMapping;
+    vector<shared_array<int>> smallMappings;
+    vector<shared_array<int>> fergMappings;
+    rowgroup::RGData joinedData;
+    scoped_array<uint8_t> largeNullMemory;
+    scoped_array<shared_array<uint8_t>> smallNullMemory;
+    uint32_t matchCount;
+
+    Row postJoinRow;
+    RowGroup local_fe2Output;
+    RGData local_fe2Data;
+    Row local_fe2OutRow;
+    funcexp::FuncExpWrapper local_fe2;
+};
+
 struct ByteStreamProcessor
 {
     ByteStreamProcessor(TupleBPS* tbps, vector<boost::shared_ptr<messageqcpp::ByteStream>>& bsv, vector<_CPInfo>& cpv,
-                        RowGroupDL* dlp, uint32_t threadID)
-        : tbps(tbps), bsv(bsv), cpv(cpv), dlp(dlp), threadID(threadID)
+                        RowGroupDL* dlp, uint32_t threadID, DataP& data)
+        : tbps(tbps), bsv(bsv), cpv(cpv), dlp(dlp), threadID(threadID), data(data)
     {
     }
 
@@ -169,10 +209,11 @@ struct ByteStreamProcessor
     vector<_CPInfo>& cpv;
     RowGroupDL* dlp;
     uint32_t threadID;
+    DataP& data;
     void operator()()
     {
         utils::setThreadName("ByteStreamProcessor");
-        tbps->process(bsv, cpv, dlp, threadID);
+        tbps->process(bsv, cpv, dlp, threadID, data);
     }
 };
 
@@ -899,9 +940,9 @@ void TupleBPS::startAggregationThread()
 }
 
 void TupleBPS::startProcessingThread(TupleBPS* tbps, vector<boost::shared_ptr<messageqcpp::ByteStream>>& bsv,
-                                     vector<_CPInfo>& cpv, RowGroupDL* dlp, uint32_t threadID)
+                                     vector<_CPInfo>& cpv, RowGroupDL* dlp, uint32_t threadID, DataP& data)
 {
-    fProcessorThreads.push_back(jobstepThreadPool.invoke(ByteStreamProcessor(tbps, bsv, cpv, dlp, threadID)));
+    fProcessorThreads.push_back(jobstepThreadPool.invoke(ByteStreamProcessor(tbps, bsv, cpv, dlp, threadID, data)));
 }
 
 void TupleBPS::serializeJoiner()
@@ -1906,49 +1947,9 @@ abort:
     tplLock.unlock();
 }
 
-// Local data.
-struct DataP
-{
-    DataP(RowGroup primRowGroup, RowGroup outputRowGroup, boost::uuids::uuid queryUid, boost::uuids::uuid stepUid)
-        : local_primRG(primRowGroup), local_outputRG(outputRowGroup)
-    {
-        sts.query_uuid = queryUid;
-        sts.step_uuid = stepUid;
-    }
-
-    RowGroup local_primRG;
-    RowGroup local_outputRG;
-
-    /* Join vars */
-    vector<vector<rowgroup::Row::Pointer>> joinerOutput;
-    rowgroup::Row largeSideRow;
-    rowgroup::Row joinedBaseRow;
-    rowgroup::Row largeNull;
-    rowgroup::Row joinFERow; // LSR clean
-    boost::scoped_array<rowgroup::Row> smallSideRows;
-    boost::scoped_array<rowgroup::Row> smallNulls;
-    boost::scoped_array<uint8_t> joinedBaseRowData;
-    boost::scoped_array<uint8_t> joinFERowData;
-    boost::shared_array<int> largeMapping;
-    vector<shared_array<int>> smallMappings;
-    vector<shared_array<int>> fergMappings;
-    rowgroup::RGData joinedData;
-    scoped_array<uint8_t> largeNullMemory;
-    scoped_array<shared_array<uint8_t>> smallNullMemory;
-    uint32_t matchCount;
-
-    Row postJoinRow;
-    RowGroup local_fe2Output;
-    RGData local_fe2Data;
-    Row local_fe2OutRow;
-    funcexp::FuncExpWrapper local_fe2;
-    StepTeleStats sts;
-};
-
 void TupleBPS::process(vector<boost::shared_ptr<messageqcpp::ByteStream>>& bsv, vector<_CPInfo>& cpv, RowGroupDL* dlp,
-                       uint32_t threadID)
+                       uint32_t threadID, DataP& data)
 {
-    DataP data(primRowGroup, outputRowGroup, fQueryUuid, fStepUuid);
     rowgroup::RGData rgData;
     vector<rowgroup::RGData> rgDatav;
     vector<rowgroup::RGData> fromPrimProc;
@@ -1961,11 +1962,6 @@ void TupleBPS::process(vector<boost::shared_ptr<messageqcpp::ByteStream>>& bsv, 
     uint32_t cachedIO;
     uint32_t physIO;
     uint32_t touchedBlocks;
-    uint32_t cachedIO_Thread = 0;
-    uint32_t physIO_Thread = 0;
-    uint32_t touchedBlocks_Thread = 0;
-    int64_t ridsReturned_Thread = 0;
-    bool lastThread = false;
 
     if (doJoin || fe2)
     {
@@ -2083,7 +2079,7 @@ void TupleBPS::process(vector<boost::shared_ptr<messageqcpp::ByteStream>>& bsv, 
             fromPrimProc.pop_back();
 
             data.local_primRG.setData(&rgData);
-            ridsReturned_Thread +=
+            data.ridsReturned_Thread +=
                 data.local_primRG.getRowCount(); // TODO need the pre-join count even on PM joins... later
 
             // TupleHashJoinStep::joinOneRG() is a port of the main join loop here.  Any
@@ -2236,9 +2232,9 @@ void TupleBPS::process(vector<boost::shared_ptr<messageqcpp::ByteStream>>& bsv, 
                 rgDataVecToDl(rgDatav, data.local_fe2Output, dlp);
             }
 
-            cachedIO_Thread += cachedIO;
-            physIO_Thread += physIO;
-            touchedBlocks_Thread += touchedBlocks;
+            data.cachedIO_Thread += cachedIO;
+            data.physIO_Thread += physIO;
+            data.touchedBlocks_Thread += touchedBlocks;
 
             if (fOid >= 3000 && ffirstStepType == SCAN && bop == BOP_AND)
             {
@@ -2269,55 +2265,15 @@ void TupleBPS::receiveMultiPrimitiveMessages(uint32_t threadID)
     AnyDataListSPtr dl = fOutputJobStepAssociation.outAt(0);
     RowGroupDL* dlp = (fDelivery ? deliveryDL.get() : dl->rowGroupDL());
 
-    uint32_t size = 0;
-    vector<boost::shared_ptr<ByteStream> > bsv;
-
-    RGData rgData;
-    vector<RGData> rgDatav;
-    vector<RGData> fromPrimProc;
-
-    bool validCPData;
-    bool hasBinaryColumn;
-    int128_t min;
-    int128_t max;
-    uint64_t lbid;
-    vector<_CPInfo> cpv;
-    uint32_t cachedIO;
-    uint32_t physIO;
-    uint32_t touchedBlocks;
-    uint32_t cachedIO_Thread = 0;
-    uint32_t physIO_Thread = 0;
-    uint32_t touchedBlocks_Thread = 0;
-    int64_t ridsReturned_Thread = 0;
-    bool lastThread = false;
-    uint32_t i, j, k;
-    RowGroup local_primRG = primRowGroup;
-    RowGroup local_outputRG = outputRowGroup;
-    bool unused;
-
-    /* Join vars */
-    vector<vector<Row::Pointer> > joinerOutput;   // clean usage
-    Row largeSideRow, joinedBaseRow, largeNull, joinFERow;  // LSR clean
-    scoped_array<Row> smallSideRows, smallNulls;
-    scoped_array<uint8_t> joinedBaseRowData;
-    scoped_array<uint8_t> joinFERowData;
-    shared_array<int> largeMapping;
-    vector<shared_array<int> > smallMappings;
-    vector<shared_array<int> > fergMappings;
-    RGData joinedData;
-    scoped_array<uint8_t> largeNullMemory;
-    scoped_array<shared_array<uint8_t> > smallNullMemory;
-    uint32_t matchCount;
-
-    /* Thread-scoped F&E 2 var */
-    Row postJoinRow;    // postJoinRow is also used for joins
-    RowGroup local_fe2Output;
-    RGData local_fe2Data;
-    Row local_fe2OutRow;
-    funcexp::FuncExpWrapper local_fe2;
     StepTeleStats sts;
     sts.query_uuid = fQueryUuid;
     sts.step_uuid = fStepUuid;
+
+    uint32_t size = 0;
+    vector<boost::shared_ptr<ByteStream>> bsv;
+    vector<_CPInfo> cpv;
+    DataP data(primRowGroup, outputRowGroup);
+
     boost::unique_lock<boost::mutex> tplLock(tplMutex, boost::defer_lock);
 
     try
@@ -2388,12 +2344,10 @@ void TupleBPS::receiveMultiPrimitiveMessages(uint32_t threadID)
             tplLock.unlock();
 
             // Start processing thread.
-            startProcessingThread(this, bsv, cpv, dlp, threadID);
+            startProcessingThread(this, bsv, cpv, dlp, threadID, data);
             // Join threads.
-            for (int i = 0; i < fProcessorThreads.size(); ++i)
-            {
+            for (uint32_t i = 0; i < fProcessorThreads.size(); ++i)
                 jobstepThreadPool.join(fProcessorThreads[i]);
-            }
 
             // @bug 4562
             if (traceOn() && fOid >= 3000)
@@ -2406,7 +2360,7 @@ void TupleBPS::receiveMultiPrimitiveMessages(uint32_t threadID)
             {
                 cpMutex.lock();
 
-                for (i = 0; i < size; i++)
+                for (uint32_t i = 0; i < size; i++)
                 {
                     if (fColType.colWidth > 8)
                     {
@@ -2458,15 +2412,17 @@ void TupleBPS::receiveMultiPrimitiveMessages(uint32_t threadID)
 
 out:
 
+    bool lastThread = false;
     if (++recvExited == fNumThreads)
     {
+        /*
         if (doJoin && smallOuterJoiner != -1 && !cancelled())
         {
             tplLock.unlock();
-            /* If this was a left outer join, this needs to put the unmatched
-               rows from the joiner into the output
-               XXXPAT: This might be a problem if later steps depend
-               on sensible rids and/or sensible ordering */
+            // If this was a left outer join, this needs to put the unmatched
+            //  rows from the joiner into the output
+            // XXXPAT: This might be a problem if later steps depend
+            // on sensible rids and/or sensible ordering
             vector<Row::Pointer> unmatched;
 #ifdef JLF_DEBUG
             cout << "finishing small-outer join output\n";
@@ -2535,6 +2491,7 @@ out:
 
             tplLock.lock();
         }
+    */
 
         if (traceOn() && fOid >= 3000)
         {
@@ -2582,10 +2539,10 @@ out:
     }
 
     //@Bug 1099
-    ridsReturned += ridsReturned_Thread;
-    fPhysicalIO += physIO_Thread;
-    fCacheIO += cachedIO_Thread;
-    fBlockTouched += touchedBlocks_Thread;
+    ridsReturned += data.ridsReturned_Thread;
+    fPhysicalIO += data.physIO_Thread;
+    fCacheIO += data.cachedIO_Thread;
+    fBlockTouched += data.touchedBlocks_Thread;
     tplLock.unlock();
 
     if (fTableOid >= 3000 && lastThread)
