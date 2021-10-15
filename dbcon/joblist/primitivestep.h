@@ -1095,7 +1095,7 @@ struct _CPInfo
 };
 
 // FIXME: fix this.
-struct DataP;
+struct JoinLocalData;
 /** @brief class TupleBPS
  *
  */
@@ -1135,7 +1135,8 @@ public:
      */
     void receiveMultiPrimitiveMessages(uint32_t threadID);
 
-    void process(vector<boost::shared_ptr<messageqcpp::ByteStream>>& bsv, DataP& data);
+    // TODO: comment.
+    void process(boost::shared_ptr<messageqcpp::ByteStream>& bsp, JoinLocalData& data);
 
     /** @brief Add a filter when the column is anything but a 4-byte float type.
      *
@@ -1374,8 +1375,9 @@ private:
 
   void startPrimitiveThread();
   void startAggregationThread();
-  void startProcessingThread(TupleBPS* tbps,
-                             vector<boost::shared_ptr<messageqcpp::ByteStream>>& bsv, DataP& data);
+  // TODO: Comment.
+  void startProcessingThread(TupleBPS* tbps, boost::shared_ptr<messageqcpp::ByteStream>& bsp,
+                             JoinLocalData& data);
   void initializeConfigParms();
   uint64_t getFBO(uint64_t lbid);
   void checkDupOutputColumns(const rowgroup::RowGroup& rg);
