@@ -159,14 +159,13 @@ struct TupleBPSAggregators
 // Local data.
 struct JoinLocalData
 {
-    JoinLocalData(RowGroup primRowGroup, RowGroup outputRowGroup, RowGroupDL* dlp)
-        : local_primRG(primRowGroup), local_outputRG(outputRowGroup), dlp(dlp)
+    JoinLocalData(RowGroup primRowGroup, RowGroup outputRowGroup)
+        : local_primRG(primRowGroup), local_outputRG(outputRowGroup)
     {
     }
 
     RowGroup local_primRG;
     RowGroup local_outputRG;
-    RowGroupDL* dlp;
 
     uint32_t cachedIO_Thread = 0;
     uint32_t physIO_Thread = 0;
@@ -203,8 +202,8 @@ struct JoinLocalData
 struct ByteStreamProcessor
 {
     ByteStreamProcessor(TupleBPS* tbps, vector<boost::shared_ptr<messageqcpp::ByteStream>>& bsv,
-                        uint32_t begin, uint32_t end, JoinLocalData& data)
-        : tbps(tbps), bsv(bsv), begin(begin), end(end), data(data)
+                        uint32_t begin, uint32_t end, RowGroupDL* dlp)
+        : tbps(tbps), bsv(bsv), begin(begin), end(end), dlp(dlp)
     {
     }
 
@@ -212,12 +211,12 @@ struct ByteStreamProcessor
     vector<boost::shared_ptr<messageqcpp::ByteStream>>& bsv;
     uint32_t begin;
     uint32_t end;
-    JoinLocalData& data;
+    RowGroupDL* dlp;
 
     void operator()()
     {
         utils::setThreadName("ByteStreamProcessor");
-        tbps->process(bsv, begin, end, data);
+        tbps->process(bsv, begin, end, dlp);
     }
 };
 
@@ -945,10 +944,10 @@ void TupleBPS::startAggregationThread()
 
 void TupleBPS::startProcessingThread(TupleBPS* tbps,
                                      vector<boost::shared_ptr<messageqcpp::ByteStream>>& bsv,
-                                     uint32_t start, uint32_t end, JoinLocalData& data)
+                                     uint32_t start, uint32_t end, RowGroupDL* dlp)
 {
     fProcessorThreads.push_back(
-        jobstepThreadPool.invoke(ByteStreamProcessor(tbps, bsv, start, end, data)));
+        jobstepThreadPool.invoke(ByteStreamProcessor(tbps, bsv, start, end, dlp)));
 }
 
 void TupleBPS::serializeJoiner()
@@ -1954,14 +1953,83 @@ abort:
 }
 
 void TupleBPS::process(vector<boost::shared_ptr<messageqcpp::ByteStream>>& bsv, uint32_t begin,
-                       uint32_t end, JoinLocalData& data)
+                       uint32_t end, RowGroupDL* dlp)
 {
     // FIXME
     uint32_t threadID = 0;
     rowgroup::RGData rgData;
     vector<rowgroup::RGData> rgDatav;
     vector<rowgroup::RGData> fromPrimProc;
+    JoinLocalData data(primRowGroup, outputRowGroup);
 
+    // TODO: Put initialization into ctor.
+    if (doJoin || fe2)
+    {
+        data.local_outputRG.initRow(&data.postJoinRow);
+    }
+
+    if (fe2)
+    {
+        data.local_fe2Output = fe2Output;
+        data.local_fe2Output.initRow(&data.local_fe2OutRow);
+        data.local_fe2Data.reinit(fe2Output);
+        data.local_fe2Output.setData(&data.local_fe2Data);
+        // local_fe2OutRow = fe2OutRow;
+        data.local_fe2 = *fe2;
+    }
+
+    if (doJoin)
+    {
+        data.joinerOutput.resize(smallSideCount);
+        data.smallSideRows.reset(new Row[smallSideCount]);
+        data.smallNulls.reset(new Row[smallSideCount]);
+        data.smallMappings.resize(smallSideCount);
+        data.fergMappings.resize(smallSideCount + 1);
+        data.smallNullMemory.reset(new shared_array<uint8_t>[smallSideCount]);
+        data.local_primRG.initRow(&data.largeSideRow);
+        data.local_outputRG.initRow(&data.joinedBaseRow, true);
+        data.joinedBaseRowData.reset(new uint8_t[data.joinedBaseRow.getSize()]);
+        data.joinedBaseRow.setData(data.joinedBaseRowData.get());
+        data.joinedBaseRow.initToNull();
+        data.largeMapping = makeMapping(data.local_primRG, data.local_outputRG);
+
+        bool hasJoinFE = false;
+
+        for (int i = 0; i < smallSideCount; i++)
+        {
+            joinerMatchesRGs[i].initRow(&(data.smallSideRows[i]));
+            data.smallMappings[i] = makeMapping(joinerMatchesRGs[i], data.local_outputRG);
+
+            if (tjoiners[i]->hasFEFilter())
+            {
+                data.fergMappings[i] = makeMapping(joinerMatchesRGs[i], joinFERG);
+                hasJoinFE = true;
+            }
+        }
+
+        if (hasJoinFE)
+        {
+            joinFERG.initRow(&data.joinFERow, true);
+            data.joinFERowData.reset(new uint8_t[data.joinFERow.getSize()]);
+            memset(data.joinFERowData.get(), 0, data.joinFERow.getSize());
+            data.joinFERow.setData(data.joinFERowData.get());
+            data.fergMappings[smallSideCount] = makeMapping(data.local_primRG, joinFERG);
+        }
+
+        for (int i = 0; i < smallSideCount; i++)
+        {
+            joinerMatchesRGs[i].initRow(&(data.smallNulls[i]), true);
+            data.smallNullMemory[i].reset(new uint8_t[data.smallNulls[i].getSize()]);
+            data.smallNulls[i].setData(data.smallNullMemory[i].get());
+            data.smallNulls[i].initToNull();
+        }
+
+        data.local_primRG.initRow(&data.largeNull, true);
+        data.largeNullMemory.reset(new uint8_t[data.largeNull.getSize()]);
+        data.largeNull.setData(data.largeNullMemory.get());
+        data.largeNull.initToNull();
+    }
+ 
     bool validCPData;
     bool hasBinaryColumn;
     int128_t min;
@@ -1971,7 +2039,6 @@ void TupleBPS::process(vector<boost::shared_ptr<messageqcpp::ByteStream>>& bsv, 
     uint32_t physIO;
     uint32_t touchedBlocks;
     auto& cpv = data.cpv;
-    auto* dlp = data.dlp;
 
     for (uint32_t i = begin; i < end; ++i)
     {
@@ -2201,7 +2268,7 @@ void TupleBPS::process(vector<boost::shared_ptr<messageqcpp::ByteStream>>& bsv, 
                 rgDataVecToDl(rgDatav, data.local_outputRG, dlp);
         }
     }
-    }
+}
 
 void TupleBPS::receiveMultiPrimitiveMessages(uint32_t threadID)
 {
@@ -2213,7 +2280,7 @@ void TupleBPS::receiveMultiPrimitiveMessages(uint32_t threadID)
     sts.step_uuid = fStepUuid;
 
     uint32_t size = 0;
-    JoinLocalData data(primRowGroup, outputRowGroup, dlp);
+    JoinLocalData data(primRowGroup, outputRowGroup);
 
     // TODO: Put initialization into ctor.
     if (doJoin || fe2)
@@ -2356,7 +2423,7 @@ void TupleBPS::receiveMultiPrimitiveMessages(uint32_t threadID)
             cout << "BSV size: " << bsv.size() << endl;
 
             // FIXME: Choose the right threshold.
-            const uint32_t bsSizeThreshold = 8;
+            const uint32_t bsSizeThreshold = 2;
             const uint32_t maxThreadsNumForBS = 8;
             const uint32_t bsSizeForThread = size / maxThreadsNumForBS;
 
@@ -2375,8 +2442,9 @@ void TupleBPS::receiveMultiPrimitiveMessages(uint32_t threadID)
             while (start < size)
             {
                 cout << "start thread #: " << threadNumber++ << endl;
-                auto end = std::min(start + stepSize, size);
-                startProcessingThread(this, bsv, start, end, data);
+                uint32_t end = std::min(start + stepSize, size);
+                cout << "start " << start << " end " << end << endl;
+                startProcessingThread(this, bsv, start, end, dlp);
                 start = end;
             }
 
