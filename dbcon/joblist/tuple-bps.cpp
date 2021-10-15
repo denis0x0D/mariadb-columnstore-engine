@@ -2353,11 +2353,32 @@ void TupleBPS::receiveMultiPrimitiveMessages(uint32_t threadID)
 
             tplLock.unlock();
 
-            cout << "BSV: size: " << bsv.size() << endl;
+            cout << "BSV size: " << bsv.size() << endl;
 
-            uint32_t step = 16;
-            // Start processing thread.
-            startProcessingThread(this, bsv, 0, bsv.size(), data);
+            // FIXME: Choose the right threshold.
+            const uint32_t bsSizeThreshold = 8;
+            const uint32_t maxThreadsNumForBS = 8;
+            const uint32_t bsSizeForThread = size / maxThreadsNumForBS;
+
+            uint32_t stepSize = bsSizeForThread;
+            if (bsSizeForThread < bsSizeThreshold)
+            {
+                // Process all in one thread.
+                stepSize = size;
+            }
+
+            cout << "step size " << stepSize << endl;
+            uint32_t start = 0;
+            uint32_t threadNumber = 0;
+            //            stepSize = 16;
+
+            while (start < size)
+            {
+                cout << "start thread #: " << threadNumber++ << endl;
+                auto end = std::min(start + stepSize, size);
+                startProcessingThread(this, bsv, start, end, data);
+                start = end;
+            }
 
             // Join threads.
             for (uint32_t i = 0; i < fProcessorThreads.size(); ++i)
