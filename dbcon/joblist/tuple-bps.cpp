@@ -1894,11 +1894,8 @@ void TupleBPS::sendPrimitiveMessages()
     catch (...)
     {
         sendError(logging::ERR_TUPLE_BPS);
-        handleException(std::current_exception(),
-                        logging::ERR_TUPLE_BPS,
-                        logging::ERR_ALWAYS_CRITICAL,
-                        "st: " + std::to_string(fStepId) +
-                            " TupleBPS::sendPrimitiveMessages()");
+        handleException(std::current_exception(), logging::ERR_TUPLE_BPS, logging::ERR_ALWAYS_CRITICAL,
+                        "st: " + std::to_string(fStepId) + " TupleBPS::sendPrimitiveMessages()");
         abort_nolock();
     }
 
@@ -1908,6 +1905,63 @@ abort:
     condvar.notify_all();
     tplLock.unlock();
 }
+
+// Local data.
+struct DataP
+{
+    DataP(RowGroup primRowGroup, RowGroup outputRowGroup, boost::uuids::uuid queryUid, boost::uuids::uuid stepUid)
+        : local_primRG(primRowGroup), local_outputRG(outputRowGroup)
+    {
+        sts.query_uuid = queryUid;
+        sts.step_uuid = stepUid;
+    }
+
+    rowgroup::RGData rgData;
+    vector<rowgroup::RGData> rgDatav;
+    vector<rowgroup::RGData> fromPrimProc;
+
+    bool validCPData;
+    bool hasBinaryColumn;
+    int128_t min;
+    int128_t max;
+    uint64_t lbid;
+    uint32_t cachedIO;
+    uint32_t physIO;
+    uint32_t touchedBlocks;
+    uint32_t cachedIO_Thread = 0;
+    uint32_t physIO_Thread = 0;
+    uint32_t touchedBlocks_Thread = 0;
+    int64_t ridsReturned_Thread = 0;
+    bool lastThread = false;
+    RowGroup local_primRG;
+    RowGroup local_outputRG;
+    bool unused;
+
+    /* Join vars */
+    vector<vector<rowgroup::Row::Pointer>> joinerOutput;
+    rowgroup::Row largeSideRow;
+    rowgroup::Row joinedBaseRow;
+    rowgroup::Row largeNull;
+    rowgroup::Row joinFERow; // LSR clean
+    boost::scoped_array<rowgroup::Row> smallSideRows;
+    boost::scoped_array<rowgroup::Row> mallNulls;
+    boost::scoped_array<uint8_t> joinedBaseRowData;
+    boost::scoped_array<uint8_t> joinFERowData;
+    boost::shared_array<int> largeMapping;
+    vector<shared_array<int>> smallMappings;
+    vector<shared_array<int>> fergMappings;
+    rowgroup::RGData joinedData;
+    scoped_array<uint8_t> largeNullMemory;
+    scoped_array<shared_array<uint8_t>> smallNullMemory;
+    uint32_t matchCount;
+
+    Row postJoinRow;
+    RowGroup local_fe2Output;
+    RGData local_fe2Data;
+    Row local_fe2OutRow;
+    funcexp::FuncExpWrapper local_fe2;
+    StepTeleStats sts;
+};
 
 void TupleBPS::process(vector<boost::shared_ptr<messageqcpp::ByteStream>>& bsv, vector<_CPInfo>& cpv, RowGroupDL* dlp,
                        uint32_t threadID)
