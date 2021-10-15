@@ -2421,10 +2421,12 @@ out:
     bool lastThread = false;
     if (++recvExited == fNumThreads)
     {
-        /*
         if (doJoin && smallOuterJoiner != -1 && !cancelled())
         {
+            vector<rowgroup::RGData> rgDatav;
             tplLock.unlock();
+            // TODO: Outline this to separate function.
+
             // If this was a left outer join, this needs to put the unmatched
             //  rows from the joiner into the output
             // XXXPAT: This might be a problem if later steps depend
@@ -2433,71 +2435,73 @@ out:
 #ifdef JLF_DEBUG
             cout << "finishing small-outer join output\n";
 #endif
-            i = smallOuterJoiner;
+            uint32_t i = smallOuterJoiner;
             tjoiners[i]->getUnmarkedRows(&unmatched);
-            joinedData = RGData(local_outputRG);
-            local_outputRG.setData(&joinedData);
-            local_outputRG.resetRowGroup(-1);
-            local_outputRG.getRow(0, &joinedBaseRow);
+            data.joinedData = RGData(data.local_outputRG);
+            data.local_outputRG.setData(&data.joinedData);
+            data.local_outputRG.resetRowGroup(-1);
+            data.local_outputRG.getRow(0, &data.joinedBaseRow);
 
-            for (j = 0; j < unmatched.size(); j++)
+            for (uint32_t j = 0; j < unmatched.size(); j++)
             {
-                smallSideRows[i].setPointer(unmatched[j]);
+                data.smallSideRows[i].setPointer(unmatched[j]);
 
-                for (k = 0; k < smallSideCount; k++)
+                for (uint32_t k = 0; k < smallSideCount; k++)
                 {
                     if (i == k)
-                        applyMapping(smallMappings[i], smallSideRows[i], &joinedBaseRow);
+                        applyMapping(data.smallMappings[i], data.smallSideRows[i], &data.joinedBaseRow);
                     else
-                        applyMapping(smallMappings[k], smallNulls[k], &joinedBaseRow);
+                        applyMapping(data.smallMappings[k], data.smallNulls[k],
+                                     &data.joinedBaseRow);
                 }
 
-                applyMapping(largeMapping, largeNull, &joinedBaseRow);
-                joinedBaseRow.setRid(0);
-                joinedBaseRow.nextRow();
-                local_outputRG.incRowCount();
+                applyMapping(data.largeMapping, data.largeNull, &data.joinedBaseRow);
+                data.joinedBaseRow.setRid(0);
+                data.joinedBaseRow.nextRow();
+                data.local_outputRG.incRowCount();
 
-                if (local_outputRG.getRowCount() == 8192)
+                if (data.local_outputRG.getRowCount() == 8192)
                 {
                     if (fe2)
                     {
-                        rgDatav.push_back(joinedData);
-                        processFE2(local_outputRG, local_fe2Output, postJoinRow, local_fe2OutRow, &rgDatav, &local_fe2);
+                        rgDatav.push_back(data.joinedData);
+                        processFE2(data.local_outputRG, data.local_fe2Output, data.postJoinRow,
+                                   data.local_fe2OutRow, &rgDatav, &data.local_fe2);
 
                         if (rgDatav.size() > 0)
-                            rgDataToDl(rgDatav[0], local_fe2Output, dlp);
+                            rgDataToDl(rgDatav[0], data.local_fe2Output, dlp);
 
                         rgDatav.clear();
                     }
                     else
-                        rgDataToDl(joinedData, local_outputRG, dlp);
+                        rgDataToDl(data.joinedData, data.local_outputRG, dlp);
 
-                    joinedData = RGData(local_outputRG);
-                    local_outputRG.setData(&joinedData);
-                    local_outputRG.resetRowGroup(-1);
-                    local_outputRG.getRow(0, &joinedBaseRow);
+                    data.joinedData = RGData(data.local_outputRG);
+                    data.local_outputRG.setData(&data.joinedData);
+                    data.local_outputRG.resetRowGroup(-1);
+                    data.local_outputRG.getRow(0, &data.joinedBaseRow);
                 }
             }
 
-            if (local_outputRG.getRowCount() > 0)
+            if (data.local_outputRG.getRowCount() > 0)
             {
                 if (fe2)
                 {
-                    rgDatav.push_back(joinedData);
-                    processFE2(local_outputRG, local_fe2Output, postJoinRow, local_fe2OutRow, &rgDatav, &local_fe2);
+                    rgDatav.push_back(data.joinedData);
+                    processFE2(data.local_outputRG, data.local_fe2Output, data.postJoinRow,
+                               data.local_fe2OutRow, &rgDatav, &data.local_fe2);
 
                     if (rgDatav.size() > 0)
-                        rgDataToDl(rgDatav[0], local_fe2Output, dlp);
+                        rgDataToDl(rgDatav[0], data.local_fe2Output, dlp);
 
                     rgDatav.clear();
                 }
                 else
-                    rgDataToDl(joinedData, local_outputRG, dlp);
+                    rgDataToDl(data.joinedData, data.local_outputRG, dlp);
             }
 
             tplLock.lock();
         }
-    */
 
         if (traceOn() && fOid >= 3000)
         {
