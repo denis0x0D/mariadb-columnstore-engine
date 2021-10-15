@@ -1916,26 +1916,8 @@ struct DataP
         sts.step_uuid = stepUid;
     }
 
-    rowgroup::RGData rgData;
-    vector<rowgroup::RGData> rgDatav;
-    vector<rowgroup::RGData> fromPrimProc;
-
-    bool validCPData;
-    bool hasBinaryColumn;
-    int128_t min;
-    int128_t max;
-    uint64_t lbid;
-    uint32_t cachedIO;
-    uint32_t physIO;
-    uint32_t touchedBlocks;
-    uint32_t cachedIO_Thread = 0;
-    uint32_t physIO_Thread = 0;
-    uint32_t touchedBlocks_Thread = 0;
-    int64_t ridsReturned_Thread = 0;
-    bool lastThread = false;
     RowGroup local_primRG;
     RowGroup local_outputRG;
-    bool unused;
 
     /* Join vars */
     vector<vector<rowgroup::Row::Pointer>> joinerOutput;
@@ -1944,7 +1926,7 @@ struct DataP
     rowgroup::Row largeNull;
     rowgroup::Row joinFERow; // LSR clean
     boost::scoped_array<rowgroup::Row> smallSideRows;
-    boost::scoped_array<rowgroup::Row> mallNulls;
+    boost::scoped_array<rowgroup::Row> smallNulls;
     boost::scoped_array<uint8_t> joinedBaseRowData;
     boost::scoped_array<uint8_t> joinFERowData;
     boost::shared_array<int> largeMapping;
@@ -1966,6 +1948,7 @@ struct DataP
 void TupleBPS::process(vector<boost::shared_ptr<messageqcpp::ByteStream>>& bsv, vector<_CPInfo>& cpv, RowGroupDL* dlp,
                        uint32_t threadID)
 {
+    DataP data(primRowGroup, outputRowGroup, fQueryUuid, fStepUuid);
     rowgroup::RGData rgData;
     vector<rowgroup::RGData> rgDatav;
     vector<rowgroup::RGData> fromPrimProc;
@@ -1983,103 +1966,72 @@ void TupleBPS::process(vector<boost::shared_ptr<messageqcpp::ByteStream>>& bsv, 
     uint32_t touchedBlocks_Thread = 0;
     int64_t ridsReturned_Thread = 0;
     bool lastThread = false;
-    uint32_t j, k;
-    RowGroup local_primRG = primRowGroup;
-    RowGroup local_outputRG = outputRowGroup;
-    bool unused;
-
-    /* Join vars */
-    vector<vector<rowgroup::Row::Pointer>> joinerOutput;             // clean usage
-    rowgroup::Row largeSideRow, joinedBaseRow, largeNull, joinFERow; // LSR clean
-    boost::scoped_array<rowgroup::Row> smallSideRows, smallNulls;
-    boost::scoped_array<uint8_t> joinedBaseRowData;
-    boost::scoped_array<uint8_t> joinFERowData;
-    boost::shared_array<int> largeMapping;
-    vector<shared_array<int>> smallMappings;
-    vector<shared_array<int>> fergMappings;
-    rowgroup::RGData joinedData;
-    scoped_array<uint8_t> largeNullMemory;
-    scoped_array<shared_array<uint8_t>> smallNullMemory;
-    uint32_t matchCount;
-
-    /* Thread-scoped F&E 2 var */
-    Row postJoinRow; // postJoinRow is also used for joins
-    RowGroup local_fe2Output;
-    RGData local_fe2Data;
-    Row local_fe2OutRow;
-    funcexp::FuncExpWrapper local_fe2;
-    StepTeleStats sts;
-    sts.query_uuid = fQueryUuid;
-    sts.step_uuid = fStepUuid;
 
     if (doJoin || fe2)
     {
-        local_outputRG.initRow(&postJoinRow);
+        data.local_outputRG.initRow(&data.postJoinRow);
     }
 
     if (fe2)
     {
-        local_fe2Output = fe2Output;
-        local_fe2Output.initRow(&local_fe2OutRow);
-        local_fe2Data.reinit(fe2Output);
-        local_fe2Output.setData(&local_fe2Data);
+        data.local_fe2Output = fe2Output;
+        data.local_fe2Output.initRow(&data.local_fe2OutRow);
+        data.local_fe2Data.reinit(fe2Output);
+        data.local_fe2Output.setData(&data.local_fe2Data);
         // local_fe2OutRow = fe2OutRow;
-        local_fe2 = *fe2;
+        data.local_fe2 = *fe2;
     }
 
     if (doJoin)
     {
-        joinerOutput.resize(smallSideCount);
-        smallSideRows.reset(new Row[smallSideCount]);
-        smallNulls.reset(new Row[smallSideCount]);
-        smallMappings.resize(smallSideCount);
-        fergMappings.resize(smallSideCount + 1);
-        smallNullMemory.reset(new shared_array<uint8_t>[smallSideCount]);
-        local_primRG.initRow(&largeSideRow);
-        local_outputRG.initRow(&joinedBaseRow, true);
-        joinedBaseRowData.reset(new uint8_t[joinedBaseRow.getSize()]);
-        joinedBaseRow.setData(joinedBaseRowData.get());
-        joinedBaseRow.initToNull();
-        largeMapping = makeMapping(local_primRG, local_outputRG);
+        data.joinerOutput.resize(smallSideCount);
+        data.smallSideRows.reset(new Row[smallSideCount]);
+        data.smallNulls.reset(new Row[smallSideCount]);
+        data.smallMappings.resize(smallSideCount);
+        data.fergMappings.resize(smallSideCount + 1);
+        data.smallNullMemory.reset(new shared_array<uint8_t>[smallSideCount]);
+        data.local_primRG.initRow(&data.largeSideRow);
+        data.local_outputRG.initRow(&data.joinedBaseRow, true);
+        data.joinedBaseRowData.reset(new uint8_t[data.joinedBaseRow.getSize()]);
+        data.joinedBaseRow.setData(data.joinedBaseRowData.get());
+        data.joinedBaseRow.initToNull();
+        data.largeMapping = makeMapping(data.local_primRG, data.local_outputRG);
 
         bool hasJoinFE = false;
 
         for (int i = 0; i < smallSideCount; i++)
         {
-            joinerMatchesRGs[i].initRow(&smallSideRows[i]);
-            smallMappings[i] = makeMapping(joinerMatchesRGs[i], local_outputRG);
+            joinerMatchesRGs[i].initRow(&(data.smallSideRows[i]));
+            data.smallMappings[i] = makeMapping(joinerMatchesRGs[i], data.local_outputRG);
 
-            //			if (tjoiners[i]->semiJoin() || tjoiners[i]->antiJoin()) {
             if (tjoiners[i]->hasFEFilter())
             {
-                fergMappings[i] = makeMapping(joinerMatchesRGs[i], joinFERG);
+                data.fergMappings[i] = makeMapping(joinerMatchesRGs[i], joinFERG);
                 hasJoinFE = true;
             }
-
-            //			}
         }
 
         if (hasJoinFE)
         {
-            joinFERG.initRow(&joinFERow, true);
-            joinFERowData.reset(new uint8_t[joinFERow.getSize()]);
-            memset(joinFERowData.get(), 0, joinFERow.getSize());
-            joinFERow.setData(joinFERowData.get());
-            fergMappings[smallSideCount] = makeMapping(local_primRG, joinFERG);
+            joinFERG.initRow(&data.joinFERow, true);
+            data.joinFERowData.reset(new uint8_t[data.joinFERow.getSize()]);
+            memset(data.joinFERowData.get(), 0, data.joinFERow.getSize());
+            data.joinFERow.setData(data.joinFERowData.get());
+            data.fergMappings[smallSideCount] = makeMapping(data.local_primRG, joinFERG);
         }
 
         for (int i = 0; i < smallSideCount; i++)
         {
-            joinerMatchesRGs[i].initRow(&smallNulls[i], true);
-            smallNullMemory[i].reset(new uint8_t[smallNulls[i].getSize()]);
-            smallNulls[i].setData(smallNullMemory[i].get());
-            smallNulls[i].initToNull();
+            joinerMatchesRGs[i].initRow(&(data.smallNulls[i]), true);
+            data.smallNullMemory[i].reset(new uint8_t[data.smallNulls[i].getSize()]);
+            data.smallNulls[i].setData(data.smallNullMemory[i].get());
+            data.smallNulls[i].initToNull();
         }
 
-        local_primRG.initRow(&largeNull, true);
-        largeNullMemory.reset(new uint8_t[largeNull.getSize()]);
-        largeNull.setData(largeNullMemory.get());
-        largeNull.initToNull();
+        data.local_primRG.initRow(&data.largeNull, true);
+        data.largeNullMemory.reset(new uint8_t[data.largeNull.getSize()]);
+        data.largeNull.setData(data.largeNullMemory.get());
+        data.largeNull.initToNull();
     }
 
     size_t size = bsv.size();
@@ -2118,6 +2070,7 @@ void TupleBPS::process(vector<boost::shared_ptr<messageqcpp::ByteStream>>& bsv, 
             return;
         }
 
+        bool unused;
         fromPrimProc.clear();
         fBPP->getRowGroupData(*bs, &fromPrimProc, &validCPData, &lbid, &min, &max, &cachedIO, &physIO, &touchedBlocks,
                               &unused, threadID, &hasBinaryColumn, fColType);
@@ -2128,26 +2081,28 @@ void TupleBPS::process(vector<boost::shared_ptr<messageqcpp::ByteStream>>& bsv, 
             rgData = fromPrimProc.back();
             fromPrimProc.pop_back();
 
-            local_primRG.setData(&rgData);
-            ridsReturned_Thread += local_primRG.getRowCount(); // TODO need the pre-join count even on PM joins... later
+            data.local_primRG.setData(&rgData);
+            ridsReturned_Thread +=
+                data.local_primRG.getRowCount(); // TODO need the pre-join count even on PM joins... later
 
             // TupleHashJoinStep::joinOneRG() is a port of the main join loop here.  Any
             // changes made here should also be made there and vice versa.
             if (hasUMJoin || !fBPP->pmSendsFinalResult())
             {
-                joinedData = RGData(local_outputRG);
-                local_outputRG.setData(&joinedData);
-                local_outputRG.resetRowGroup(local_primRG.getBaseRid());
-                local_outputRG.setDBRoot(local_primRG.getDBRoot());
-                local_primRG.getRow(0, &largeSideRow);
+                data.joinedData = RGData(data.local_outputRG);
+                data.local_outputRG.setData(&data.joinedData);
+                data.local_outputRG.resetRowGroup(data.local_primRG.getBaseRid());
+                data.local_outputRG.setDBRoot(data.local_primRG.getDBRoot());
+                data.local_primRG.getRow(0, &data.largeSideRow);
 
-                for (k = 0; k < local_primRG.getRowCount() && !cancelled(); k++, largeSideRow.nextRow())
+                for (uint32_t k = 0; k < data.local_primRG.getRowCount() && !cancelled();
+                     k++, data.largeSideRow.nextRow())
                 {
-                    matchCount = 0;
+                    uint32_t matchCount = 0;
 
-                    for (j = 0; j < smallSideCount; j++)
+                    for (uint32_t j = 0; j < smallSideCount; j++)
                     {
-                        tjoiners[j]->match(largeSideRow, k, threadID, &joinerOutput[j]);
+                        tjoiners[j]->match(data.largeSideRow, k, threadID, &(data.joinerOutput[j]));
 #ifdef JLF_DEBUG
                         // Debugging code to print the matches
                         Row r;
@@ -2159,16 +2114,16 @@ void TupleBPS::process(vector<boost::shared_ptr<messageqcpp::ByteStream>>& bsv, 
                             cout << "  " << r.toString() << endl;
                         }
 #endif
-                        matchCount = joinerOutput[j].size();
+                        matchCount = data.joinerOutput[j].size();
 
+                        /*
                         if (tjoiners[j]->inUM())
                         {
-                            cout << "join on um " << endl;
                             // Count the # of rows that pass the join filter
                             if (tjoiners[j]->hasFEFilter() && matchCount > 0)
                             {
                                 vector<Row::Pointer> newJoinerOutput;
-                                applyMapping(fergMappings[smallSideCount], largeSideRow, &joinFERow);
+                                applyMapping(data.fergMappings[smallSideCount], data.largeSideRow, &joinFERow);
 
                                 for (uint32_t z = 0; z < joinerOutput[j].size(); z++)
                                 {
@@ -2220,6 +2175,8 @@ void TupleBPS::process(vector<boost::shared_ptr<messageqcpp::ByteStream>>& bsv, 
                                 matchCount = 1;
                             }
                         }
+                        */
+
 
                         if (matchCount == 0 && tjoiners[j]->innerJoin())
                             break;
@@ -2233,27 +2190,29 @@ void TupleBPS::process(vector<boost::shared_ptr<messageqcpp::ByteStream>>& bsv, 
                         }
 
                         if (tjoiners[j]->smallOuterJoin())
-                            tjoiners[j]->markMatches(threadID, joinerOutput[j]);
+                            tjoiners[j]->markMatches(threadID, data.joinerOutput[j]);
                     }
 
                     if (matchCount > 0)
                     {
-                        applyMapping(largeMapping, largeSideRow, &joinedBaseRow);
-                        joinedBaseRow.setRid(largeSideRow.getRelRid());
-                        generateJoinResultSet(joinerOutput, joinedBaseRow, smallMappings, 0, local_outputRG, joinedData,
-                                              &rgDatav, smallSideRows, postJoinRow);
+                        applyMapping(data.largeMapping, data.largeSideRow, &data.joinedBaseRow);
+                        data.joinedBaseRow.setRid(data.largeSideRow.getRelRid());
+                        generateJoinResultSet(data.joinerOutput, data.joinedBaseRow, data.smallMappings, 0,
+                                              data.local_outputRG, data.joinedData, &rgDatav, data.smallSideRows,
+                                              data.postJoinRow);
 
                         // Bug 3510: Don't let the join results buffer get out of control.  Need
                         // to refactor this.  All post-join processing needs to go here AND below
                         // for now.
-                        if (rgDatav.size() * local_outputRG.getMaxDataSize() > 50000000)
+                        if (rgDatav.size() * data.local_outputRG.getMaxDataSize() > 50000000)
                         {
-                            RowGroup out(local_outputRG);
+                            RowGroup out(data.local_outputRG);
 
                             if (fe2 && !runFEonPM)
                             {
-                                processFE2(out, local_fe2Output, postJoinRow, local_fe2OutRow, &rgDatav, &local_fe2);
-                                rgDataVecToDl(rgDatav, local_fe2Output, dlp);
+                                processFE2(out, data.local_fe2Output, data.postJoinRow, data.local_fe2OutRow, &rgDatav,
+                                           &data.local_fe2);
+                                rgDataVecToDl(rgDatav, data.local_fe2Output, dlp);
                             }
                             else
                                 rgDataVecToDl(rgDatav, out, dlp);
@@ -2261,9 +2220,9 @@ void TupleBPS::process(vector<boost::shared_ptr<messageqcpp::ByteStream>>& bsv, 
                     }
                 } // end of the for-loop in the join code
 
-                if (local_outputRG.getRowCount() > 0)
+                if (data.local_outputRG.getRowCount() > 0)
                 {
-                    rgDatav.push_back(joinedData);
+                    rgDatav.push_back(data.joinedData);
                 }
             }
             else
@@ -2274,8 +2233,9 @@ void TupleBPS::process(vector<boost::shared_ptr<messageqcpp::ByteStream>>& bsv, 
             // Execute UM F & E group 2 on rgDatav
             if (fe2 && !runFEonPM && rgDatav.size() > 0 && !cancelled())
             {
-                processFE2(local_outputRG, local_fe2Output, postJoinRow, local_fe2OutRow, &rgDatav, &local_fe2);
-                rgDataVecToDl(rgDatav, local_fe2Output, dlp);
+                processFE2(data.local_outputRG, data.local_fe2Output, data.postJoinRow, data.local_fe2OutRow, &rgDatav,
+                           &data.local_fe2);
+                rgDataVecToDl(rgDatav, data.local_fe2Output, dlp);
             }
 
             cachedIO_Thread += cachedIO;
@@ -2299,9 +2259,9 @@ void TupleBPS::process(vector<boost::shared_ptr<messageqcpp::ByteStream>>& bsv, 
         if (rgDatav.size() > 0)
         {
             if (fe2 && runFEonPM)
-                rgDataVecToDl(rgDatav, local_fe2Output, dlp);
+                rgDataVecToDl(rgDatav, data.local_fe2Output, dlp);
             else
-                rgDataVecToDl(rgDatav, local_outputRG, dlp);
+                rgDataVecToDl(rgDatav, data.local_outputRG, dlp);
         }
     }
 }
