@@ -2347,13 +2347,19 @@ void TupleBPS::receiveMultiPrimitiveMessages(uint32_t threadID)
 
             tplLock.unlock();
 
+            cout << "BSV: size: " << bsv.size() << endl;
             // Start processing thread.
             for (int i = 0; i < bsv.size(); ++i)
+            {
+                cout << "Start thread number " << i << endl;
                 startProcessingThread(this, bsv[i], data);
+            }
 
             // Join threads.
             for (uint32_t i = 0; i < fProcessorThreads.size(); ++i)
                 jobstepThreadPool.join(fProcessorThreads[i]);
+
+            bsv.clear();
 
             // @bug 4562
             if (traceOn() && fOid >= 3000)
@@ -2420,6 +2426,7 @@ void TupleBPS::receiveMultiPrimitiveMessages(uint32_t threadID)
 
 out:
 
+    // FIXME: We have only one thred here.
     bool lastThread = false;
     if (++recvExited == fNumThreads)
     {
