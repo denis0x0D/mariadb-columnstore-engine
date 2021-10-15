@@ -159,17 +159,21 @@ struct TupleBPSAggregators
 // Local data.
 struct DataP
 {
-    DataP(RowGroup primRowGroup, RowGroup outputRowGroup) : local_primRG(primRowGroup), local_outputRG(outputRowGroup)
+    DataP(RowGroup primRowGroup, RowGroup outputRowGroup, RowGroupDL* dlp)
+        : local_primRG(primRowGroup), local_outputRG(outputRowGroup), dlp(dlp)
     {
     }
+
+    RowGroup local_primRG;
+    RowGroup local_outputRG;
+    RowGroupDL* dlp;
 
     uint32_t cachedIO_Thread = 0;
     uint32_t physIO_Thread = 0;
     uint32_t touchedBlocks_Thread = 0;
     int64_t ridsReturned_Thread = 0;
 
-    RowGroup local_primRG;
-    RowGroup local_outputRG;
+    vector<_CPInfo> cpv;
 
     /* Join vars */
     vector<vector<rowgroup::Row::Pointer>> joinerOutput;
@@ -198,22 +202,20 @@ struct DataP
 
 struct ByteStreamProcessor
 {
-    ByteStreamProcessor(TupleBPS* tbps, vector<boost::shared_ptr<messageqcpp::ByteStream>>& bsv, vector<_CPInfo>& cpv,
-                        RowGroupDL* dlp, uint32_t threadID, DataP& data)
-        : tbps(tbps), bsv(bsv), cpv(cpv), dlp(dlp), threadID(threadID), data(data)
+    ByteStreamProcessor(TupleBPS* tbps, vector<boost::shared_ptr<messageqcpp::ByteStream>>& bsv,
+                        DataP& data)
+        : tbps(tbps), bsv(bsv), data(data)
     {
     }
 
     TupleBPS* tbps;
     vector<boost::shared_ptr<messageqcpp::ByteStream>>& bsv;
-    vector<_CPInfo>& cpv;
-    RowGroupDL* dlp;
-    uint32_t threadID;
     DataP& data;
+
     void operator()()
     {
         utils::setThreadName("ByteStreamProcessor");
-        tbps->process(bsv, cpv, dlp, threadID, data);
+        tbps->process(bsv, data);
     }
 };
 
@@ -939,10 +941,11 @@ void TupleBPS::startAggregationThread()
     fProducerThreads.push_back(jobstepThreadPool.invoke(TupleBPSAggregators(this, fNumThreads - 1)));
 }
 
-void TupleBPS::startProcessingThread(TupleBPS* tbps, vector<boost::shared_ptr<messageqcpp::ByteStream>>& bsv,
-                                     vector<_CPInfo>& cpv, RowGroupDL* dlp, uint32_t threadID, DataP& data)
+void TupleBPS::startProcessingThread(TupleBPS* tbps,
+                                     vector<boost::shared_ptr<messageqcpp::ByteStream>>& bsv,
+                                     DataP& data)
 {
-    fProcessorThreads.push_back(jobstepThreadPool.invoke(ByteStreamProcessor(tbps, bsv, cpv, dlp, threadID, data)));
+    fProcessorThreads.push_back(jobstepThreadPool.invoke(ByteStreamProcessor(tbps, bsv, data)));
 }
 
 void TupleBPS::serializeJoiner()
@@ -1947,9 +1950,10 @@ abort:
     tplLock.unlock();
 }
 
-void TupleBPS::process(vector<boost::shared_ptr<messageqcpp::ByteStream>>& bsv, vector<_CPInfo>& cpv, RowGroupDL* dlp,
-                       uint32_t threadID, DataP& data)
+void TupleBPS::process(vector<boost::shared_ptr<messageqcpp::ByteStream>>& bsv, DataP& data)
 {
+    // FIXME
+    uint32_t threadID = 0;
     rowgroup::RGData rgData;
     vector<rowgroup::RGData> rgDatav;
     vector<rowgroup::RGData> fromPrimProc;
@@ -1962,6 +1966,8 @@ void TupleBPS::process(vector<boost::shared_ptr<messageqcpp::ByteStream>>& bsv, 
     uint32_t cachedIO;
     uint32_t physIO;
     uint32_t touchedBlocks;
+    auto& cpv = data.cpv;
+    auto* dlp = data.dlp;
 
     if (doJoin || fe2)
     {
@@ -2270,9 +2276,8 @@ void TupleBPS::receiveMultiPrimitiveMessages(uint32_t threadID)
     sts.step_uuid = fStepUuid;
 
     uint32_t size = 0;
-    vector<boost::shared_ptr<ByteStream>> bsv;
-    vector<_CPInfo> cpv;
-    DataP data(primRowGroup, outputRowGroup);
+    DataP data(primRowGroup, outputRowGroup, dlp);
+    vector<boost::shared_ptr<messageqcpp::ByteStream>> bsv;
 
     boost::unique_lock<boost::mutex> tplLock(tplMutex, boost::defer_lock);
 
@@ -2344,7 +2349,7 @@ void TupleBPS::receiveMultiPrimitiveMessages(uint32_t threadID)
             tplLock.unlock();
 
             // Start processing thread.
-            startProcessingThread(this, bsv, cpv, dlp, threadID, data);
+            startProcessingThread(this, bsv, data);
             // Join threads.
             for (uint32_t i = 0; i < fProcessorThreads.size(); ++i)
                 jobstepThreadPool.join(fProcessorThreads[i]);
@@ -2353,6 +2358,7 @@ void TupleBPS::receiveMultiPrimitiveMessages(uint32_t threadID)
             if (traceOn() && fOid >= 3000)
                 dlTimes.setFirstInsertTime();
 
+            auto& cpv = data.cpv;
             //update casual partition
             size = cpv.size();
 
