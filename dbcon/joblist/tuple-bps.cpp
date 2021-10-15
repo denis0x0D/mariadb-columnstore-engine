@@ -172,7 +172,6 @@ struct JoinLocalData
     uint32_t touchedBlocks_Thread = 0;
     int64_t ridsReturned_Thread = 0;
 
-    vector<_CPInfo> cpv;
 
     /* Join vars */
     vector<vector<rowgroup::Row::Pointer>> joinerOutput;
@@ -202,8 +201,8 @@ struct JoinLocalData
 struct ByteStreamProcessor
 {
     ByteStreamProcessor(TupleBPS* tbps, vector<boost::shared_ptr<messageqcpp::ByteStream>>& bsv,
-                        uint32_t begin, uint32_t end, RowGroupDL* dlp)
-        : tbps(tbps), bsv(bsv), begin(begin), end(end), dlp(dlp)
+                        uint32_t begin, uint32_t end, vector<_CPInfo>& cpv, RowGroupDL* dlp)
+        : tbps(tbps), bsv(bsv), begin(begin), end(end), cpv(cpv), dlp(dlp)
     {
     }
 
@@ -211,12 +210,13 @@ struct ByteStreamProcessor
     vector<boost::shared_ptr<messageqcpp::ByteStream>>& bsv;
     uint32_t begin;
     uint32_t end;
+    vector<_CPInfo>& cpv;
     RowGroupDL* dlp;
 
     void operator()()
     {
         utils::setThreadName("ByteStreamProcessor");
-        tbps->process(bsv, begin, end, dlp);
+        tbps->process(bsv, begin, end, cpv, dlp);
     }
 };
 
@@ -944,10 +944,11 @@ void TupleBPS::startAggregationThread()
 
 void TupleBPS::startProcessingThread(TupleBPS* tbps,
                                      vector<boost::shared_ptr<messageqcpp::ByteStream>>& bsv,
-                                     uint32_t start, uint32_t end, RowGroupDL* dlp)
+                                     uint32_t start, uint32_t end, vector<_CPInfo>& cpv,
+                                     RowGroupDL* dlp)
 {
     fProcessorThreads.push_back(
-        jobstepThreadPool.invoke(ByteStreamProcessor(tbps, bsv, start, end, dlp)));
+        jobstepThreadPool.invoke(ByteStreamProcessor(tbps, bsv, start, end, cpv, dlp)));
 }
 
 void TupleBPS::serializeJoiner()
@@ -1953,7 +1954,7 @@ abort:
 }
 
 void TupleBPS::process(vector<boost::shared_ptr<messageqcpp::ByteStream>>& bsv, uint32_t begin,
-                       uint32_t end, RowGroupDL* dlp)
+                       uint32_t end, vector<_CPInfo>& cpv, RowGroupDL* dlp)
 {
     // FIXME
     uint32_t threadID = 0;
@@ -2038,7 +2039,6 @@ void TupleBPS::process(vector<boost::shared_ptr<messageqcpp::ByteStream>>& bsv, 
     uint32_t cachedIO;
     uint32_t physIO;
     uint32_t touchedBlocks;
-    auto& cpv = data.cpv;
 
     for (uint32_t i = begin; i < end; ++i)
     {
@@ -2419,6 +2419,7 @@ void TupleBPS::receiveMultiPrimitiveMessages(uint32_t threadID)
             }
 
             tplLock.unlock();
+            vector<_CPInfo> cpv;
 
             cout << "BSV size: " << bsv.size() << endl;
 
@@ -2438,13 +2439,12 @@ void TupleBPS::receiveMultiPrimitiveMessages(uint32_t threadID)
             uint32_t start = 0;
             uint32_t threadNumber = 0;
             //            stepSize = 16;
-
             while (start < size)
             {
                 cout << "start thread #: " << threadNumber++ << endl;
                 uint32_t end = std::min(start + stepSize, size);
                 cout << "start " << start << " end " << end << endl;
-                startProcessingThread(this, bsv, start, end, dlp);
+                startProcessingThread(this, bsv, start, end, cpv, dlp);
                 start = end;
             }
 
@@ -2458,7 +2458,6 @@ void TupleBPS::receiveMultiPrimitiveMessages(uint32_t threadID)
             if (traceOn() && fOid >= 3000)
                 dlTimes.setFirstInsertTime();
 
-            auto& cpv = data.cpv;
             //update casual partition
             size = cpv.size();
 
