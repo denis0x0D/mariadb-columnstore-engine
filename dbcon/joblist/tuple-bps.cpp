@@ -1969,73 +1969,6 @@ void TupleBPS::process(vector<boost::shared_ptr<messageqcpp::ByteStream>>& bsv, 
     auto& cpv = data.cpv;
     auto* dlp = data.dlp;
 
-    if (doJoin || fe2)
-    {
-        data.local_outputRG.initRow(&data.postJoinRow);
-    }
-
-    if (fe2)
-    {
-        data.local_fe2Output = fe2Output;
-        data.local_fe2Output.initRow(&data.local_fe2OutRow);
-        data.local_fe2Data.reinit(fe2Output);
-        data.local_fe2Output.setData(&data.local_fe2Data);
-        // local_fe2OutRow = fe2OutRow;
-        data.local_fe2 = *fe2;
-    }
-
-    if (doJoin)
-    {
-        data.joinerOutput.resize(smallSideCount);
-        data.smallSideRows.reset(new Row[smallSideCount]);
-        data.smallNulls.reset(new Row[smallSideCount]);
-        data.smallMappings.resize(smallSideCount);
-        data.fergMappings.resize(smallSideCount + 1);
-        data.smallNullMemory.reset(new shared_array<uint8_t>[smallSideCount]);
-        data.local_primRG.initRow(&data.largeSideRow);
-        data.local_outputRG.initRow(&data.joinedBaseRow, true);
-        data.joinedBaseRowData.reset(new uint8_t[data.joinedBaseRow.getSize()]);
-        data.joinedBaseRow.setData(data.joinedBaseRowData.get());
-        data.joinedBaseRow.initToNull();
-        data.largeMapping = makeMapping(data.local_primRG, data.local_outputRG);
-
-        bool hasJoinFE = false;
-
-        for (int i = 0; i < smallSideCount; i++)
-        {
-            joinerMatchesRGs[i].initRow(&(data.smallSideRows[i]));
-            data.smallMappings[i] = makeMapping(joinerMatchesRGs[i], data.local_outputRG);
-
-            if (tjoiners[i]->hasFEFilter())
-            {
-                data.fergMappings[i] = makeMapping(joinerMatchesRGs[i], joinFERG);
-                hasJoinFE = true;
-            }
-        }
-
-        if (hasJoinFE)
-        {
-            joinFERG.initRow(&data.joinFERow, true);
-            data.joinFERowData.reset(new uint8_t[data.joinFERow.getSize()]);
-            memset(data.joinFERowData.get(), 0, data.joinFERow.getSize());
-            data.joinFERow.setData(data.joinFERowData.get());
-            data.fergMappings[smallSideCount] = makeMapping(data.local_primRG, joinFERG);
-        }
-
-        for (int i = 0; i < smallSideCount; i++)
-        {
-            joinerMatchesRGs[i].initRow(&(data.smallNulls[i]), true);
-            data.smallNullMemory[i].reset(new uint8_t[data.smallNulls[i].getSize()]);
-            data.smallNulls[i].setData(data.smallNullMemory[i].get());
-            data.smallNulls[i].initToNull();
-        }
-
-        data.local_primRG.initRow(&data.largeNull, true);
-        data.largeNullMemory.reset(new uint8_t[data.largeNull.getSize()]);
-        data.largeNull.setData(data.largeNullMemory.get());
-        data.largeNull.initToNull();
-    }
-
     size_t size = bsv.size();
 
     for (int i = 0; i < size; ++i)
@@ -2075,8 +2008,9 @@ void TupleBPS::process(vector<boost::shared_ptr<messageqcpp::ByteStream>>& bsv, 
 
         bool unused;
         fromPrimProc.clear();
-        fBPP->getRowGroupData(*bs, &fromPrimProc, &validCPData, &lbid, &min, &max, &cachedIO, &physIO, &touchedBlocks,
-                              &unused, threadID, &hasBinaryColumn, fColType);
+        fBPP->getRowGroupData(*bs, &fromPrimProc, &validCPData, &lbid, &min, &max, &cachedIO,
+                              &physIO, &touchedBlocks, &unused, threadID, &hasBinaryColumn,
+                              fColType);
 
         // Another layer of messiness.  Need to refactor this fcn.
         while (!fromPrimProc.empty() && !cancelled())
@@ -2277,8 +2211,76 @@ void TupleBPS::receiveMultiPrimitiveMessages(uint32_t threadID)
 
     uint32_t size = 0;
     DataP data(primRowGroup, outputRowGroup, dlp);
-    vector<boost::shared_ptr<messageqcpp::ByteStream>> bsv;
 
+    // TODO: Put initialization into ctor.
+    if (doJoin || fe2)
+    {
+        data.local_outputRG.initRow(&data.postJoinRow);
+    }
+
+    if (fe2)
+    {
+        data.local_fe2Output = fe2Output;
+        data.local_fe2Output.initRow(&data.local_fe2OutRow);
+        data.local_fe2Data.reinit(fe2Output);
+        data.local_fe2Output.setData(&data.local_fe2Data);
+        // local_fe2OutRow = fe2OutRow;
+        data.local_fe2 = *fe2;
+    }
+
+    if (doJoin)
+    {
+        data.joinerOutput.resize(smallSideCount);
+        data.smallSideRows.reset(new Row[smallSideCount]);
+        data.smallNulls.reset(new Row[smallSideCount]);
+        data.smallMappings.resize(smallSideCount);
+        data.fergMappings.resize(smallSideCount + 1);
+        data.smallNullMemory.reset(new shared_array<uint8_t>[smallSideCount]);
+        data.local_primRG.initRow(&data.largeSideRow);
+        data.local_outputRG.initRow(&data.joinedBaseRow, true);
+        data.joinedBaseRowData.reset(new uint8_t[data.joinedBaseRow.getSize()]);
+        data.joinedBaseRow.setData(data.joinedBaseRowData.get());
+        data.joinedBaseRow.initToNull();
+        data.largeMapping = makeMapping(data.local_primRG, data.local_outputRG);
+
+        bool hasJoinFE = false;
+
+        for (int i = 0; i < smallSideCount; i++)
+        {
+            joinerMatchesRGs[i].initRow(&(data.smallSideRows[i]));
+            data.smallMappings[i] = makeMapping(joinerMatchesRGs[i], data.local_outputRG);
+
+            if (tjoiners[i]->hasFEFilter())
+            {
+                data.fergMappings[i] = makeMapping(joinerMatchesRGs[i], joinFERG);
+                hasJoinFE = true;
+            }
+        }
+
+        if (hasJoinFE)
+        {
+            joinFERG.initRow(&data.joinFERow, true);
+            data.joinFERowData.reset(new uint8_t[data.joinFERow.getSize()]);
+            memset(data.joinFERowData.get(), 0, data.joinFERow.getSize());
+            data.joinFERow.setData(data.joinFERowData.get());
+            data.fergMappings[smallSideCount] = makeMapping(data.local_primRG, joinFERG);
+        }
+
+        for (int i = 0; i < smallSideCount; i++)
+        {
+            joinerMatchesRGs[i].initRow(&(data.smallNulls[i]), true);
+            data.smallNullMemory[i].reset(new uint8_t[data.smallNulls[i].getSize()]);
+            data.smallNulls[i].setData(data.smallNullMemory[i].get());
+            data.smallNulls[i].initToNull();
+        }
+
+        data.local_primRG.initRow(&data.largeNull, true);
+        data.largeNullMemory.reset(new uint8_t[data.largeNull.getSize()]);
+        data.largeNull.setData(data.largeNullMemory.get());
+        data.largeNull.initToNull();
+    }
+
+    vector<boost::shared_ptr<messageqcpp::ByteStream>> bsv;
     boost::unique_lock<boost::mutex> tplLock(tplMutex, boost::defer_lock);
 
     try
@@ -2362,6 +2364,7 @@ void TupleBPS::receiveMultiPrimitiveMessages(uint32_t threadID)
             //update casual partition
             size = cpv.size();
 
+            // TODO: Put this into separate function.
             if (size > 0 && !cancelled())
             {
                 cpMutex.lock();
