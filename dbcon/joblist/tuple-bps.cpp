@@ -2066,6 +2066,7 @@ void TupleBPS::process(vector<boost::shared_ptr<messageqcpp::ByteStream>>& bsv, 
                 errorMessage(errMsg);
             }
 
+            // FIXME: Fix this.
             // abort_nolock();
             return;
         }
@@ -2116,27 +2117,26 @@ void TupleBPS::process(vector<boost::shared_ptr<messageqcpp::ByteStream>>& bsv, 
 #endif
                         matchCount = data.joinerOutput[j].size();
 
-                        /*
                         if (tjoiners[j]->inUM())
                         {
                             // Count the # of rows that pass the join filter
                             if (tjoiners[j]->hasFEFilter() && matchCount > 0)
                             {
                                 vector<Row::Pointer> newJoinerOutput;
-                                applyMapping(data.fergMappings[smallSideCount], data.largeSideRow, &joinFERow);
+                                applyMapping(data.fergMappings[smallSideCount], data.largeSideRow, &data.joinFERow);
 
-                                for (uint32_t z = 0; z < joinerOutput[j].size(); z++)
+                                for (uint32_t z = 0; z < data.joinerOutput[j].size(); z++)
                                 {
-                                    smallSideRows[j].setPointer(joinerOutput[j][z]);
-                                    applyMapping(fergMappings[j], smallSideRows[j], &joinFERow);
+                                    data.smallSideRows[j].setPointer(data.joinerOutput[j][z]);
+                                    applyMapping(data.fergMappings[j], data.smallSideRows[j], &data.joinFERow);
 
-                                    if (!tjoiners[j]->evaluateFilter(joinFERow, threadID))
+                                    if (!tjoiners[j]->evaluateFilter(data.joinFERow, threadID))
                                         matchCount--;
                                     else
                                     {
                                         // The first match includes it in a SEMI join result and excludes it from an
                                         // ANTI join result.  If it's SEMI & SCALAR however, it needs to continue.
-                                        newJoinerOutput.push_back(joinerOutput[j][z]);
+                                        newJoinerOutput.push_back(data.joinerOutput[j][z]);
 
                                         if (tjoiners[j]->antiJoin() ||
                                             (tjoiners[j]->semiJoin() && !tjoiners[j]->scalar()))
@@ -2147,11 +2147,11 @@ void TupleBPS::process(vector<boost::shared_ptr<messageqcpp::ByteStream>>& bsv, 
                                 // the filter eliminated all matches, need to join with the NULL row
                                 if (matchCount == 0 && tjoiners[j]->largeOuterJoin())
                                 {
-                                    newJoinerOutput.push_back(Row::Pointer(smallNullMemory[j].get()));
+                                    newJoinerOutput.push_back(Row::Pointer(data.smallNullMemory[j].get()));
                                     matchCount = 1;
                                 }
 
-                                joinerOutput[j].swap(newJoinerOutput);
+                                data.joinerOutput[j].swap(newJoinerOutput);
                             }
 
                             // XXXPAT: This has gone through enough revisions it would benefit
@@ -2165,18 +2165,16 @@ void TupleBPS::process(vector<boost::shared_ptr<messageqcpp::ByteStream>>& bsv, 
 
                             if (matchCount == 0)
                             {
-                                joinerOutput[j].clear();
+                                data.joinerOutput[j].clear();
                                 break;
                             }
                             else if (!tjoiners[j]->scalar() && (tjoiners[j]->antiJoin() || tjoiners[j]->semiJoin()))
                             {
-                                joinerOutput[j].clear();
-                                joinerOutput[j].push_back(Row::Pointer(smallNullMemory[j].get()));
+                                data.joinerOutput[j].clear();
+                                data.joinerOutput[j].push_back(Row::Pointer(data.smallNullMemory[j].get()));
                                 matchCount = 1;
                             }
                         }
-                        */
-
 
                         if (matchCount == 0 && tjoiners[j]->innerJoin())
                             break;
