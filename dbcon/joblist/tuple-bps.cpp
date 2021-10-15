@@ -202,20 +202,22 @@ struct JoinLocalData
 
 struct ByteStreamProcessor
 {
-    ByteStreamProcessor(TupleBPS* tbps, boost::shared_ptr<messageqcpp::ByteStream>& bsp,
-                        JoinLocalData& data)
-        : tbps(tbps), bsp(bsp), data(data)
+    ByteStreamProcessor(TupleBPS* tbps, vector<boost::shared_ptr<messageqcpp::ByteStream>>& bsv,
+                        uint32_t begin, uint32_t end, JoinLocalData& data)
+        : tbps(tbps), bsv(bsv), begin(begin), end(end), data(data)
     {
     }
 
     TupleBPS* tbps;
-    boost::shared_ptr<messageqcpp::ByteStream>& bsp;
+    vector<boost::shared_ptr<messageqcpp::ByteStream>>& bsv;
+    uint32_t begin;
+    uint32_t end;
     JoinLocalData& data;
 
     void operator()()
     {
         utils::setThreadName("ByteStreamProcessor");
-        tbps->process(bsp, data);
+        tbps->process(bsv, begin, end, data);
     }
 };
 
@@ -942,10 +944,11 @@ void TupleBPS::startAggregationThread()
 }
 
 void TupleBPS::startProcessingThread(TupleBPS* tbps,
-                                     boost::shared_ptr<messageqcpp::ByteStream>& bsp,
-                                     JoinLocalData& data)
+                                     vector<boost::shared_ptr<messageqcpp::ByteStream>>& bsv,
+                                     uint32_t start, uint32_t end, JoinLocalData& data)
 {
-    fProcessorThreads.push_back(jobstepThreadPool.invoke(ByteStreamProcessor(tbps, bsp, data)));
+    fProcessorThreads.push_back(
+        jobstepThreadPool.invoke(ByteStreamProcessor(tbps, bsv, start, end, data)));
 }
 
 void TupleBPS::serializeJoiner()
@@ -1950,7 +1953,8 @@ abort:
     tplLock.unlock();
 }
 
-void TupleBPS::process(boost::shared_ptr<messageqcpp::ByteStream>& bsp, JoinLocalData& data)
+void TupleBPS::process(vector<boost::shared_ptr<messageqcpp::ByteStream>>& bsv, uint32_t begin,
+                       uint32_t end, JoinLocalData& data)
 {
     // FIXME
     uint32_t threadID = 0;
@@ -1969,8 +1973,9 @@ void TupleBPS::process(boost::shared_ptr<messageqcpp::ByteStream>& bsp, JoinLoca
     auto& cpv = data.cpv;
     auto* dlp = data.dlp;
 
+    for (uint32_t i = begin; i < end; ++i)
     {
-        messageqcpp::ByteStream* bs = bsp.get();
+        messageqcpp::ByteStream* bs = bsv[i].get();
 
         // @bug 488. when PrimProc node is down. error out
         // An error condition.  We are not going to do anymore.
@@ -2017,7 +2022,8 @@ void TupleBPS::process(boost::shared_ptr<messageqcpp::ByteStream>& bsp, JoinLoca
 
             data.local_primRG.setData(&rgData);
             data.ridsReturned_Thread +=
-                data.local_primRG.getRowCount(); // TODO need the pre-join count even on PM joins... later
+                data.local_primRG
+                    .getRowCount(); // TODO need the pre-join count even on PM joins... later
 
             // TupleHashJoinStep::joinOneRG() is a port of the main join loop here.  Any
             // changes made here should also be made there and vice versa.
@@ -2195,7 +2201,7 @@ void TupleBPS::process(boost::shared_ptr<messageqcpp::ByteStream>& bsp, JoinLoca
                 rgDataVecToDl(rgDatav, data.local_outputRG, dlp);
         }
     }
-}
+    }
 
 void TupleBPS::receiveMultiPrimitiveMessages(uint32_t threadID)
 {
@@ -2348,12 +2354,10 @@ void TupleBPS::receiveMultiPrimitiveMessages(uint32_t threadID)
             tplLock.unlock();
 
             cout << "BSV: size: " << bsv.size() << endl;
+
+            uint32_t step = 16;
             // Start processing thread.
-            for (int i = 0; i < bsv.size(); ++i)
-            {
-                cout << "Start thread number " << i << endl;
-                startProcessingThread(this, bsv[i], data);
-            }
+            startProcessingThread(this, bsv, 0, bsv.size(), data);
 
             // Join threads.
             for (uint32_t i = 0; i < fProcessorThreads.size(); ++i)

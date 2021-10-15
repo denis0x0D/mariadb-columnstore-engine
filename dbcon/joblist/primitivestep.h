@@ -1136,7 +1136,8 @@ public:
     void receiveMultiPrimitiveMessages(uint32_t threadID);
 
     // TODO: comment.
-    void process(boost::shared_ptr<messageqcpp::ByteStream>& bsp, JoinLocalData& data);
+    void process(vector<boost::shared_ptr<messageqcpp::ByteStream>>& bsv, uint32_t begin,
+                 uint32_t end, JoinLocalData& data);
 
     /** @brief Add a filter when the column is anything but a 4-byte float type.
      *
@@ -1376,8 +1377,9 @@ private:
   void startPrimitiveThread();
   void startAggregationThread();
   // TODO: Comment.
-  void startProcessingThread(TupleBPS* tbps, boost::shared_ptr<messageqcpp::ByteStream>& bsp,
-                             JoinLocalData& data);
+  void startProcessingThread(TupleBPS* tbps,
+                             vector<boost::shared_ptr<messageqcpp::ByteStream>>& bsv,
+                             uint32_t begin, uint32_t end, JoinLocalData& data);
   void initializeConfigParms();
   uint64_t getFBO(uint64_t lbid);
   void checkDupOutputColumns(const rowgroup::RowGroup& rg);
