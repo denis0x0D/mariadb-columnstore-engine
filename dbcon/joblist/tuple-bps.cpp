@@ -2246,7 +2246,7 @@ void TupleBPS::process(vector<boost::shared_ptr<messageqcpp::ByteStream>>& bsv, 
             data.physIO_Thread += physIO;
             data.touchedBlocks_Thread += touchedBlocks;
 
-            if (false && fOid >= 3000 && ffirstStepType == SCAN && bop == BOP_AND)
+            if (fOid >= 3000 && ffirstStepType == SCAN && bop == BOP_AND)
             {
                 if (fColType.colWidth <= 8)
                 {
@@ -2419,9 +2419,9 @@ void TupleBPS::receiveMultiPrimitiveMessages(uint32_t threadID)
             }
 
             tplLock.unlock();
-            vector<_CPInfo> cpv;
+            vector<vector<_CPInfo>> cpInfos;
 
-            cout << "BSV size: " << bsv.size() << endl;
+            cout << "ByteStream vector size: " << bsv.size() << endl;
 
             // FIXME: Choose the right threshold.
             const uint32_t workSizeThreshold = 2;
@@ -2433,13 +2433,18 @@ void TupleBPS::receiveMultiPrimitiveMessages(uint32_t threadID)
             {
                 // If less than threshold use one thread.
                 workSizes.push_back(size);
+                cpInfos.push_back(vector<_CPInfo>());
             }
             else
             {
                 // Calculate the work size for each thread.
                 workSizes.reserve(maxThreadsNum);
+                cpInfos.reserve(maxThreadsNum);
                 for (uint32_t i = 0; i < maxThreadsNum; ++i)
+                {
                     workSizes.push_back(workSize);
+                    cpInfos.push_back(vector<_CPInfo>());
+                }
 
                 const uint32_t moreWork = size % maxThreadsNum;
                 for (uint32_t i = 0; i < moreWork; ++i)
@@ -2449,9 +2454,9 @@ void TupleBPS::receiveMultiPrimitiveMessages(uint32_t threadID)
             uint32_t start = 0;
             for (uint32_t i = 0, e = workSizes.size(); i < e; ++i)
             {
-                cout << "work size # " << i << " with size " << workSizes[i] << endl;
+                cout << "Thread # " << i << " work size " << workSizes[i] << endl;
                 uint32_t end = start + workSizes[i];
-                startProcessingThread(this, bsv, start, end, cpv, dlp);
+                startProcessingThread(this, bsv, start, end, cpInfos[i], dlp);
                 start = end;
             }
 
@@ -2466,10 +2471,11 @@ void TupleBPS::receiveMultiPrimitiveMessages(uint32_t threadID)
             if (traceOn() && fOid >= 3000)
                 dlTimes.setFirstInsertTime();
 
-            //update casual partition
-            size = cpv.size();
-
+            // update casual partition
+            //            size = cpv.size();
+            // FIXME: fix it.
             // TODO: Put this into separate function.
+            /*
             if (size > 0 && !cancelled())
             {
                 cpMutex.lock();
@@ -2490,8 +2496,7 @@ void TupleBPS::receiveMultiPrimitiveMessages(uint32_t threadID)
 
                 cpMutex.unlock();
             }
-
-            cpv.clear();
+            */
 
             tplLock.lock();
 
