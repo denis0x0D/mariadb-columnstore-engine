@@ -2424,26 +2424,33 @@ void TupleBPS::receiveMultiPrimitiveMessages(uint32_t threadID)
             cout << "BSV size: " << bsv.size() << endl;
 
             // FIXME: Choose the right threshold.
-            const uint32_t bsSizeThreshold = 2;
-            const uint32_t maxThreadsNumForBS = 8;
-            const uint32_t bsSizeForThread = size / maxThreadsNumForBS;
+            const uint32_t workSizeThreshold = 2;
+            const uint32_t maxThreadsNum = 8;
+            const uint32_t workSize = size / maxThreadsNum;
+            vector<uint32_t> workSizes;
 
-            uint32_t stepSize = bsSizeForThread;
-            // if (bsSizeForThread < bsSizeThreshold)
+            if (workSize < workSizeThreshold)
             {
-                // Process all in one thread.
-                stepSize = size;
+                // If less than threshold use one thread.
+                workSizes.push_back(size);
+            }
+            else
+            {
+                // Calculate the work size for each thread.
+                workSizes.reserve(maxThreadsNum);
+                for (uint32_t i = 0; i < maxThreadsNum; ++i)
+                    workSizes.push_back(workSize);
+
+                const uint32_t moreWork = size % maxThreadsNum;
+                for (uint32_t i = 0; i < moreWork; ++i)
+                    ++workSizes[i];
             }
 
-            cout << "step size " << stepSize << endl;
             uint32_t start = 0;
-            uint32_t threadNumber = 0;
-            //            stepSize = 16;
-            while (start < size)
+            for (uint32_t i = 0, e = workSizes.size(); i < e; ++i)
             {
-                cout << "start thread #: " << threadNumber++ << endl;
-                uint32_t end = std::min(start + stepSize, size);
-                cout << "start " << start << " end " << end << endl;
+                cout << "work size # " << i << " with size " << workSizes[i] << endl;
+                uint32_t end = start + workSizes[i];
                 startProcessingThread(this, bsv, start, end, cpv, dlp);
                 start = end;
             }
