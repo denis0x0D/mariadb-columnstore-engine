@@ -2246,7 +2246,7 @@ void TupleBPS::process(vector<boost::shared_ptr<messageqcpp::ByteStream>>& bsv, 
             data.physIO_Thread += physIO;
             data.touchedBlocks_Thread += touchedBlocks;
 
-            if (fOid >= 3000 && ffirstStepType == SCAN && bop == BOP_AND)
+            if (false && fOid >= 3000 && ffirstStepType == SCAN && bop == BOP_AND)
             {
                 if (fColType.colWidth <= 8)
                 {
