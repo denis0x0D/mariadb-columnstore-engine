@@ -2429,7 +2429,7 @@ void TupleBPS::receiveMultiPrimitiveMessages(uint32_t threadID)
             const uint32_t bsSizeForThread = size / maxThreadsNumForBS;
 
             uint32_t stepSize = bsSizeForThread;
-            if (bsSizeForThread < bsSizeThreshold)
+            // if (bsSizeForThread < bsSizeThreshold)
             {
                 // Process all in one thread.
                 stepSize = size;
@@ -2452,6 +2452,7 @@ void TupleBPS::receiveMultiPrimitiveMessages(uint32_t threadID)
             for (uint32_t i = 0; i < fProcessorThreads.size(); ++i)
                 jobstepThreadPool.join(fProcessorThreads[i]);
 
+            fProcessorThreads.clear();
             bsv.clear();
 
             // @bug 4562
