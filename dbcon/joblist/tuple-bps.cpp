@@ -201,8 +201,9 @@ struct JoinLocalData
 struct ByteStreamProcessor
 {
     ByteStreamProcessor(TupleBPS* tbps, vector<boost::shared_ptr<messageqcpp::ByteStream>>& bsv,
-                        uint32_t begin, uint32_t end, vector<_CPInfo>& cpv, RowGroupDL* dlp)
-        : tbps(tbps), bsv(bsv), begin(begin), end(end), cpv(cpv), dlp(dlp)
+                        uint32_t begin, uint32_t end, vector<_CPInfo>& cpv, vector<RGData>& rgDatav,
+                        RowGroupDL* dlp)
+        : tbps(tbps), bsv(bsv), begin(begin), end(end), cpv(cpv), rgDatav(rgDatav), dlp(dlp)
     {
     }
 
@@ -211,12 +212,13 @@ struct ByteStreamProcessor
     uint32_t begin;
     uint32_t end;
     vector<_CPInfo>& cpv;
+    vector<RGData>& rgDatav;
     RowGroupDL* dlp;
 
     void operator()()
     {
         utils::setThreadName("ByteStreamProcessor");
-        tbps->process(bsv, begin, end, cpv, dlp);
+        tbps->process(bsv, begin, end, cpv, rgDatav, dlp);
     }
 };
 
@@ -945,10 +947,10 @@ void TupleBPS::startAggregationThread()
 void TupleBPS::startProcessingThread(TupleBPS* tbps,
                                      vector<boost::shared_ptr<messageqcpp::ByteStream>>& bsv,
                                      uint32_t start, uint32_t end, vector<_CPInfo>& cpv,
-                                     RowGroupDL* dlp)
+                                     vector<RGData>& rgDatav, RowGroupDL* dlp)
 {
     fProcessorThreads.push_back(
-        jobstepThreadPool.invoke(ByteStreamProcessor(tbps, bsv, start, end, cpv, dlp)));
+        jobstepThreadPool.invoke(ByteStreamProcessor(tbps, bsv, start, end, cpv, rgDatav, dlp)));
 }
 
 void TupleBPS::serializeJoiner()
@@ -1954,12 +1956,12 @@ abort:
 }
 
 void TupleBPS::process(vector<boost::shared_ptr<messageqcpp::ByteStream>>& bsv, uint32_t begin,
-                       uint32_t end, vector<_CPInfo>& cpv, RowGroupDL* dlp)
+                       uint32_t end, vector<_CPInfo>& cpv, vector<RGData>& rgDatav, RowGroupDL* dlp)
 {
     // FIXME
     uint32_t threadID = 0;
     rowgroup::RGData rgData;
-    vector<rowgroup::RGData> rgDatav;
+    //    vector<rowgroup::RGData> rgDatav;
     vector<rowgroup::RGData> fromPrimProc;
     JoinLocalData data(primRowGroup, outputRowGroup);
 
@@ -2208,7 +2210,8 @@ void TupleBPS::process(vector<boost::shared_ptr<messageqcpp::ByteStream>>& bsv, 
                         // Bug 3510: Don't let the join results buffer get out of control.  Need
                         // to refactor this.  All post-join processing needs to go here AND below
                         // for now.
-                        if (rgDatav.size() * data.local_outputRG.getMaxDataSize() > 50000000)
+                        // FIXME: Apply this store to vector of vector.
+                        /*if (rgDatav.size() * data.local_outputRG.getMaxDataSize() > 50000000)
                         {
                             RowGroup out(data.local_outputRG);
 
@@ -2221,6 +2224,7 @@ void TupleBPS::process(vector<boost::shared_ptr<messageqcpp::ByteStream>>& bsv, 
                             else
                                 rgDataVecToDl(rgDatav, out, dlp);
                         }
+                        */
                     }
                 } // end of the for-loop in the join code
 
@@ -2420,6 +2424,7 @@ void TupleBPS::receiveMultiPrimitiveMessages(uint32_t threadID)
 
             tplLock.unlock();
             vector<vector<_CPInfo>> cpInfos;
+            vector<vector<RGData>> rgDatas;
 
             cout << "ByteStream vector size: " << bsv.size() << endl;
 
@@ -2434,6 +2439,7 @@ void TupleBPS::receiveMultiPrimitiveMessages(uint32_t threadID)
                 // If less than threshold use one thread.
                 workSizes.push_back(size);
                 cpInfos.push_back(vector<_CPInfo>());
+                rgDatas.push_back(vector<RGData>());
             }
             else
             {
@@ -2444,6 +2450,7 @@ void TupleBPS::receiveMultiPrimitiveMessages(uint32_t threadID)
                 {
                     workSizes.push_back(workSize);
                     cpInfos.push_back(vector<_CPInfo>());
+                    rgDatas.push_back(vector<RGData>());
                 }
 
                 const uint32_t moreWork = size % maxThreadsNum;
@@ -2456,7 +2463,7 @@ void TupleBPS::receiveMultiPrimitiveMessages(uint32_t threadID)
             {
                 cout << "Thread # " << i << " work size " << workSizes[i] << endl;
                 uint32_t end = start + workSizes[i];
-                startProcessingThread(this, bsv, start, end, cpInfos[i], dlp);
+                startProcessingThread(this, bsv, start, end, cpInfos[i], rgDatas[i], dlp);
                 start = end;
             }
 
@@ -2464,7 +2471,9 @@ void TupleBPS::receiveMultiPrimitiveMessages(uint32_t threadID)
             for (uint32_t i = 0; i < fProcessorThreads.size(); ++i)
                 jobstepThreadPool.join(fProcessorThreads[i]);
 
+            // Clear the thread IDs.
             fProcessorThreads.clear();
+            // Clear vector of bytestreams.
             bsv.clear();
 
             // @bug 4562

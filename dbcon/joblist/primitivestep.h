@@ -1137,7 +1137,7 @@ public:
 
     // TODO: comment.
     void process(vector<boost::shared_ptr<messageqcpp::ByteStream>>& bsv, uint32_t begin,
-                 uint32_t end, vector<_CPInfo>& cpv, RowGroupDL* dlp);
+                 uint32_t end, vector<_CPInfo>& cpv, vector<RGData>& rgDatav, RowGroupDL* dlp);
 
     /** @brief Add a filter when the column is anything but a 4-byte float type.
      *
@@ -1379,7 +1379,8 @@ private:
   // TODO: Comment.
   void startProcessingThread(TupleBPS* tbps,
                              vector<boost::shared_ptr<messageqcpp::ByteStream>>& bsv,
-                             uint32_t begin, uint32_t end, vector<_CPInfo>& cpv, RowGroupDL* dlp);
+                             uint32_t begin, uint32_t end, vector<_CPInfo>& cpv,
+                             vector<RGData>& rgDatav, RowGroupDL* dlp);
   void initializeConfigParms();
   uint64_t getFBO(uint64_t lbid);
   void checkDupOutputColumns(const rowgroup::RowGroup& rg);
