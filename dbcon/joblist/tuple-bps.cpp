@@ -2090,9 +2090,8 @@ void TupleBPS::process(vector<boost::shared_ptr<messageqcpp::ByteStream>>& bsv, 
             fromPrimProc.pop_back();
 
             data.local_primRG.setData(&rgData);
-            data.ridsReturned_Thread +=
-                data.local_primRG
-                    .getRowCount(); // TODO need the pre-join count even on PM joins... later
+            // TODO need the pre-join count even on PM joins... later
+            data.ridsReturned_Thread += data.local_primRG.getRowCount();
 
             // TupleHashJoinStep::joinOneRG() is a port of the main join loop here.  Any
             // changes made here should also be made there and vice versa.
@@ -2131,19 +2130,22 @@ void TupleBPS::process(vector<boost::shared_ptr<messageqcpp::ByteStream>>& bsv, 
                             if (tjoiners[j]->hasFEFilter() && matchCount > 0)
                             {
                                 vector<Row::Pointer> newJoinerOutput;
-                                applyMapping(data.fergMappings[smallSideCount], data.largeSideRow, &data.joinFERow);
+                                applyMapping(data.fergMappings[smallSideCount], data.largeSideRow,
+                                             &data.joinFERow);
 
                                 for (uint32_t z = 0; z < data.joinerOutput[j].size(); z++)
                                 {
                                     data.smallSideRows[j].setPointer(data.joinerOutput[j][z]);
-                                    applyMapping(data.fergMappings[j], data.smallSideRows[j], &data.joinFERow);
+                                    applyMapping(data.fergMappings[j], data.smallSideRows[j],
+                                                 &data.joinFERow);
 
                                     if (!tjoiners[j]->evaluateFilter(data.joinFERow, threadID))
                                         matchCount--;
                                     else
                                     {
-                                        // The first match includes it in a SEMI join result and excludes it from an
-                                        // ANTI join result.  If it's SEMI & SCALAR however, it needs to continue.
+                                        // The first match includes it in a SEMI join result and
+                                        // excludes it from an ANTI join result.  If it's SEMI &
+                                        // SCALAR however, it needs to continue.
                                         newJoinerOutput.push_back(data.joinerOutput[j][z]);
 
                                         if (tjoiners[j]->antiJoin() ||
@@ -2176,7 +2178,8 @@ void TupleBPS::process(vector<boost::shared_ptr<messageqcpp::ByteStream>>& bsv, 
                                 data.joinerOutput[j].clear();
                                 break;
                             }
-                            else if (!tjoiners[j]->scalar() && (tjoiners[j]->antiJoin() || tjoiners[j]->semiJoin()))
+                            else if (!tjoiners[j]->scalar() &&
+                                     (tjoiners[j]->antiJoin() || tjoiners[j]->semiJoin()))
                             {
                                 data.joinerOutput[j].clear();
                                 data.joinerOutput[j].push_back(Row::Pointer(data.smallNullMemory[j].get()));
@@ -2204,8 +2207,8 @@ void TupleBPS::process(vector<boost::shared_ptr<messageqcpp::ByteStream>>& bsv, 
                         applyMapping(data.largeMapping, data.largeSideRow, &data.joinedBaseRow);
                         data.joinedBaseRow.setRid(data.largeSideRow.getRelRid());
                         generateJoinResultSet(data.joinerOutput, data.joinedBaseRow, data.smallMappings, 0,
-                                              data.local_outputRG, data.joinedData, &rgDatav, data.smallSideRows,
-                                              data.postJoinRow);
+                                              data.local_outputRG, data.joinedData, &rgDatav,
+                                              data.smallSideRows, data.postJoinRow);
 
                         // Bug 3510: Don't let the join results buffer get out of control.  Need
                         // to refactor this.  All post-join processing needs to go here AND below
@@ -2239,12 +2242,14 @@ void TupleBPS::process(vector<boost::shared_ptr<messageqcpp::ByteStream>>& bsv, 
             }
 
             // Execute UM F & E group 2 on rgDatav
+            // FIXME: Make vector of vector as this func. param.
+            /*
             if (fe2 && !runFEonPM && rgDatav.size() > 0 && !cancelled())
             {
-                processFE2(data.local_outputRG, data.local_fe2Output, data.postJoinRow, data.local_fe2OutRow, &rgDatav,
-                           &data.local_fe2);
-                rgDataVecToDl(rgDatav, data.local_fe2Output, dlp);
+                processFE2(data.local_outputRG, data.local_fe2Output, data.postJoinRow, data.local_fe2OutRow,
+            &rgDatav, &data.local_fe2); rgDataVecToDl(rgDatav, data.local_fe2Output, dlp);
             }
+            */
 
             data.cachedIO_Thread += cachedIO;
             data.physIO_Thread += physIO;
@@ -2264,6 +2269,7 @@ void TupleBPS::process(vector<boost::shared_ptr<messageqcpp::ByteStream>>& bsv, 
         } // end of the per-rowgroup processing loop
 
         // insert the resulting rowgroup data from a single bytestream into dlp
+        /*
         if (rgDatav.size() > 0)
         {
             if (fe2 && runFEonPM)
@@ -2271,6 +2277,7 @@ void TupleBPS::process(vector<boost::shared_ptr<messageqcpp::ByteStream>>& bsv, 
             else
                 rgDataVecToDl(rgDatav, data.local_outputRG, dlp);
         }
+        */
     }
 }
 
@@ -2397,11 +2404,12 @@ void TupleBPS::receiveMultiPrimitiveMessages(uint32_t threadID)
 
             //@Bug 1424,1298
 
-            if (sendWaiting && ((msgsSent - msgsRecvd) <=
-                                (fMaxOutstandingRequests << LOGICAL_EXTENT_CONVERTER)))
+            if (sendWaiting &&
+                ((msgsSent - msgsRecvd) <= (fMaxOutstandingRequests << LOGICAL_EXTENT_CONVERTER)))
             {
                 condvarWakeupProducer.notify_one();
-                THROTTLEDEBUG << "receiveMultiPrimitiveMessages wakes up sending side .. " << "  msgsSent: " << msgsSent << "  msgsRecvd = " << msgsRecvd << endl;
+                THROTTLEDEBUG << "receiveMultiPrimitiveMessages wakes up sending side .. "
+                              << "  msgsSent: " << msgsSent << "  msgsRecvd = " << msgsRecvd << endl;
             }
 
             /* If there's an error and the joblist is being aborted, don't
@@ -2475,6 +2483,19 @@ void TupleBPS::receiveMultiPrimitiveMessages(uint32_t threadID)
             fProcessorThreads.clear();
             // Clear vector of bytestreams.
             bsv.clear();
+            dfsa
+
+            // TODO: Outline branch from the loop.
+            for (const auto& rgData : rgDatas)
+            {
+                if (rgData.size())
+                {
+                    if (fe2 && runFEonPM)
+                        rgDataVecToDl(rgDatav, data.local_fe2Output, dlp);
+                    else
+                        rgDataVecToDl(rgDatav, data.local_outputRG, dlp);
+                }
+            }
 
             // @bug 4562
             if (traceOn() && fOid >= 3000)
