@@ -2436,8 +2436,8 @@ void TupleBPS::receiveMultiPrimitiveMessages(uint32_t threadID)
             cout << "ByteStream vector size: " << bsv.size() << endl;
 
             // FIXME: Choose the right threshold.
-            const uint32_t workSizeThreshold = 1;
-            const uint32_t maxThreadsNum = 4;
+            const uint32_t workSizeThreshold = 4;
+            const uint32_t maxThreadsNum = 8;
             const uint32_t workSize = size / maxThreadsNum;
             vector<uint32_t> workSizes;
 
@@ -2485,19 +2485,10 @@ void TupleBPS::receiveMultiPrimitiveMessages(uint32_t threadID)
             // Clear vector of bytestreams.
             bsv.clear();
 
-            // TODO: Outline branch from the loop.
-            for (int32_t i = 0; i < rgDatas.size(); ++i)
-            {
-                auto& rgDatav = rgDatas[i];
-                if (rgDatav.size())
-                {
-                    cout << "Batch # " << i << " rgData size " << rgDatav.size() << endl;
-                    if (fe2 && runFEonPM)
-                        rgDataVecToDl(rgDatav, data.local_fe2Output, dlp);
-                    else
-                        rgDataVecToDl(rgDatav, data.local_outputRG, dlp);
-                }
-            }
+            if (fe2 && runFEonPM)
+                rgDataVecOfVecToDl(rgDatas, data.local_fe2Output, dlp);
+            else
+                rgDataVecOfVecToDl(rgDatas, data.local_outputRG, dlp);
 
             // @bug 4562
             if (traceOn() && fOid >= 3000)
@@ -3332,6 +3323,32 @@ void TupleBPS::rgDataVecToDl(vector<RGData>& rgDatav, RowGroup& rg, RowGroupDL* 
     }
 
     rgDatav.clear();
+}
+
+void TupleBPS::rgDataVecOfVecToDl(vector<vector<RGData>>& rgDataVecOfVec, RowGroup& rg, RowGroupDL* dlp)
+{
+    uint64_t size = rgDataVecOfVec.size();
+
+    if (size > 0 && !cancelled())
+    {
+        dlMutex.lock();
+
+        for (auto& rgDatav : rgDataVecOfVec)
+        {
+            if (cancelled())
+                break;
+
+            for (auto& rgData : rgDatav)
+            {
+                rgDataToDl(rgData, rg, dlp);
+            }
+
+        }
+
+        dlMutex.unlock();
+    }
+
+    rgDataVecOfVec.clear();
 }
 
 void TupleBPS::setJoinFERG(const RowGroup& rg)

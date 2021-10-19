@@ -1388,6 +1388,8 @@ private:
   void dupOutputColumns(rowgroup::RGData&, rowgroup::RowGroup&);
   void rgDataToDl(rowgroup::RGData&, rowgroup::RowGroup&, RowGroupDL*);
   void rgDataVecToDl(std::vector<rowgroup::RGData>&, rowgroup::RowGroup&, RowGroupDL*);
+  void rgDataVecOfVecToDl(vector<vector<rowgroup::RGData>>& rgDataVecOfVec, rowgroup::RowGroup& rg,
+                          RowGroupDL* dlp);
   DistributedEngineComm* fDec;
   boost::shared_ptr<BatchPrimitiveProcessorJL> fBPP;
   uint16_t fNumSteps;
