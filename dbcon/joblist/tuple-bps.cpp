@@ -942,10 +942,8 @@ void TupleBPS::startAggregationThread()
     fProducerThreads.push_back(jobstepThreadPool.invoke(TupleBPSAggregators(this, fNumThreads - 1)));
 }
 
-void TupleBPS::startProcessingThread(TupleBPS* tbps,
-                                     vector<boost::shared_ptr<messageqcpp::ByteStream>>& bsv,
-                                     uint32_t start, uint32_t end, vector<_CPInfo>& cpv,
-                                     RowGroupDL* dlp)
+void TupleBPS::startProcessingThread(TupleBPS* tbps, vector<boost::shared_ptr<messageqcpp::ByteStream>>& bsv,
+                                     uint32_t start, uint32_t end, vector<_CPInfo>& cpv, RowGroupDL* dlp)
 {
     fProcessorThreads.push_back(
         jobstepThreadPool.invoke(ByteStreamProcessor(tbps, bsv, start, end, cpv, dlp)));
@@ -2070,8 +2068,8 @@ void TupleBPS::process(vector<boost::shared_ptr<messageqcpp::ByteStream>>& bsv, 
                 errorMessage(errMsg);
             }
 
-            // FIXME: Fix this.
-            // abort_nolock();
+            // FIXME: Think about return error code.
+            abort_nolock();
             return;
         }
 
@@ -2088,9 +2086,8 @@ void TupleBPS::process(vector<boost::shared_ptr<messageqcpp::ByteStream>>& bsv, 
             fromPrimProc.pop_back();
 
             data.local_primRG.setData(&rgData);
-            data.ridsReturned_Thread +=
-                data.local_primRG
-                    .getRowCount(); // TODO need the pre-join count even on PM joins... later
+            // TODO need the pre-join count even on PM joins... later
+            data.ridsReturned_Thread += data.local_primRG.getRowCount();
 
             // TupleHashJoinStep::joinOneRG() is a port of the main join loop here.  Any
             // changes made here should also be made there and vice versa.
@@ -2113,11 +2110,11 @@ void TupleBPS::process(vector<boost::shared_ptr<messageqcpp::ByteStream>>& bsv, 
 #ifdef JLF_DEBUG
                         // Debugging code to print the matches
                         Row r;
-                        joinerMatchesRGs[j].initRow(&r);
-                        cout << joinerOutput[j].size() << " matches: \n";
-                        for (uint32_t z = 0; z < joinerOutput[j].size(); z++)
+                        data.joinerMatchesRGs[j].initRow(&r);
+                        cout << data.joinerOutput[j].size() << " matches: \n";
+                        for (uint32_t z = 0; z < data.joinerOutput[j].size(); z++)
                         {
-                            r.setPointer(joinerOutput[j][z]);
+                            r.setPointer(data.joinerOutput[j][z]);
                             cout << "  " << r.toString() << endl;
                         }
 #endif
@@ -2237,8 +2234,8 @@ void TupleBPS::process(vector<boost::shared_ptr<messageqcpp::ByteStream>>& bsv, 
             // Execute UM F & E group 2 on rgDatav
             if (fe2 && !runFEonPM && rgDatav.size() > 0 && !cancelled())
             {
-                processFE2(data.local_outputRG, data.local_fe2Output, data.postJoinRow, data.local_fe2OutRow, &rgDatav,
-                           &data.local_fe2);
+                processFE2(data.local_outputRG, data.local_fe2Output, data.postJoinRow, data.local_fe2OutRow,
+                           &rgDatav, &data.local_fe2);
                 rgDataVecToDl(rgDatav, data.local_fe2Output, dlp);
             }
 
@@ -2397,7 +2394,8 @@ void TupleBPS::receiveMultiPrimitiveMessages(uint32_t threadID)
                                 (fMaxOutstandingRequests << LOGICAL_EXTENT_CONVERTER)))
             {
                 condvarWakeupProducer.notify_one();
-                THROTTLEDEBUG << "receiveMultiPrimitiveMessages wakes up sending side .. " << "  msgsSent: " << msgsSent << "  msgsRecvd = " << msgsRecvd << endl;
+                THROTTLEDEBUG << "receiveMultiPrimitiveMessages wakes up sending side .. "
+                              << "  msgsSent: " << msgsSent << "  msgsRecvd = " << msgsRecvd << endl;
             }
 
             /* If there's an error and the joblist is being aborted, don't
@@ -2420,8 +2418,6 @@ void TupleBPS::receiveMultiPrimitiveMessages(uint32_t threadID)
 
             tplLock.unlock();
             vector<vector<_CPInfo>> cpInfos;
-
-            cout << "ByteStream vector size: " << bsv.size() << endl;
 
             // FIXME: Choose the right threshold.
             const uint32_t workSizeThreshold = 2;
@@ -2472,31 +2468,30 @@ void TupleBPS::receiveMultiPrimitiveMessages(uint32_t threadID)
                 dlTimes.setFirstInsertTime();
 
             // update casual partition
-            //            size = cpv.size();
-            // FIXME: fix it.
-            // TODO: Put this into separate function.
-            /*
-            if (size > 0 && !cancelled())
+            for (const auto& cpv : cpInfos)
             {
-                cpMutex.lock();
-
-                for (uint32_t i = 0; i < size; i++)
+                size = cpv.size();
+                if (size > 0 && !cancelled())
                 {
-                    if (fColType.colWidth > 8)
-                    {
-                        lbidList->UpdateMinMax(cpv[i].bigMin, cpv[i].bigMax, cpv[i].LBID, fColType,
-                                               cpv[i].valid);
-                    }
-                    else
-                    {
-                        lbidList->UpdateMinMax(cpv[i].min, cpv[i].max, cpv[i].LBID, fColType,
-                                               cpv[i].valid);
-                    }
-                }
+                    cpMutex.lock();
 
-                cpMutex.unlock();
+                    for (uint32_t i = 0; i < size; i++)
+                    {
+                        if (fColType.colWidth > 8)
+                        {
+                            lbidList->UpdateMinMax(cpv[i].bigMin, cpv[i].bigMax, cpv[i].LBID, fColType,
+                                                   cpv[i].valid);
+                        }
+                        else
+                        {
+                            lbidList->UpdateMinMax(cpv[i].min, cpv[i].max, cpv[i].LBID, fColType,
+                                                   cpv[i].valid);
+                        }
+                    }
+
+                    cpMutex.unlock();
+                }
             }
-            */
 
             tplLock.lock();
 
