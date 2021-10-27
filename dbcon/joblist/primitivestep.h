@@ -1567,13 +1567,18 @@ private:
       funcexp::FuncExpWrapper local_fe2;
   };
 
+  // (8 + 1) - 8 for processing vector of bytestreams + 1 for the main thread.
+  const uint32_t fMaxNumProcessorThreads = 9;
+  const uint32_t fWorkSizeThreshold = 4;
+
   std::shared_ptr<JoinLocalData> getJoinLocalDataByIndex(uint32_t index)
   {
-      idbassert(index < 16 && joinLocalDataPool.size() == 16);
+      idbassert(index < fMaxNumProcessorThreads && joinLocalDataPool.size() == fMaxNumProcessorThreads);
 
       auto joinLocalData = joinLocalDataPool[index];
       if (!joinLocalData)
       {
+          // Mutex here?
           joinLocalData.reset(new JoinLocalData(primRowGroup, outputRowGroup, fe2, fe2Output,
                                                 joinerMatchesRGs, joinFERG, tjoiners, smallSideCount,
                                                 doJoin));
@@ -1586,7 +1591,10 @@ private:
   // Join local data vector.
   std::vector<std::shared_ptr<JoinLocalData>> joinLocalDataPool;
 
-  void initializeJoinLocalDataPool() { joinLocalDataPool = std::vector<std::shared_ptr<JoinLocalData>>(16); }
+  void initializeJoinLocalDataPool()
+  {
+      joinLocalDataPool = std::vector<std::shared_ptr<JoinLocalData>>(fMaxNumProcessorThreads);
+  }
 
     /* shared nothing support */
   struct Job

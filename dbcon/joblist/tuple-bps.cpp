@@ -2330,13 +2330,10 @@ void TupleBPS::receiveMultiPrimitiveMessages(uint32_t threadID)
             tplLock.unlock();
             vector<vector<_CPInfo>> cpInfos;
 
-            // FIXME: Choose the right threshold.
-            const uint32_t workSizeThreshold = 2;
-            const uint32_t maxThreadsNum = 8;
-            const uint32_t workSize = size / maxThreadsNum;
+            // Calculate the work sizes.
+            const uint32_t workSize = size / fMaxNumProcessorThreads;
             vector<uint32_t> workSizes;
-
-            if (workSize < workSizeThreshold)
+            if (workSize < fWorkSizeThreshold)
             {
                 // Use one thread.
                 workSizes.push_back(size);
@@ -2345,15 +2342,15 @@ void TupleBPS::receiveMultiPrimitiveMessages(uint32_t threadID)
             else
             {
                 // Calculate the work size for each thread.
-                workSizes.reserve(maxThreadsNum);
-                cpInfos.reserve(maxThreadsNum);
-                for (uint32_t i = 0; i < maxThreadsNum; ++i)
+                workSizes.reserve(fMaxNumProcessorThreads);
+                cpInfos.reserve(fMaxNumProcessorThreads);
+                for (uint32_t i = 0; i < fMaxNumProcessorThreads; ++i)
                 {
                     workSizes.push_back(workSize);
                     cpInfos.push_back(vector<_CPInfo>());
                 }
 
-                const uint32_t moreWork = size % maxThreadsNum;
+                const uint32_t moreWork = size % fMaxNumProcessorThreads;
                 for (uint32_t i = 0; i < moreWork; ++i)
                     ++workSizes[i];
             }
@@ -2370,7 +2367,7 @@ void TupleBPS::receiveMultiPrimitiveMessages(uint32_t threadID)
             }
 
             // Join threads.
-            for (uint32_t i = 0; i < fProcessorThreads.size(); ++i)
+            for (uint32_t i = 0, e = fProcessorThreads.size(); i < e; ++i)
                 jobstepThreadPool.join(fProcessorThreads[i]);
 
             // Clear all.
