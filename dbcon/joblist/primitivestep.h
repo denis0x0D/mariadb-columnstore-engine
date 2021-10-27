@@ -1094,8 +1094,6 @@ struct _CPInfo
     bool valid;
 };
 
-// FIXME: fix this.
-struct JoinLocalData;
 /** @brief class TupleBPS
  *
  */
@@ -1515,6 +1513,79 @@ private:
 
   boost::shared_ptr<RowGroupDL> deliveryDL;
   uint32_t deliveryIt;
+
+  struct JoinLocalData
+  {
+      JoinLocalData() = default;
+      ~JoinLocalData() = default;
+
+      JoinLocalData(rowgroup::RowGroup primRowGroup, rowgroup::RowGroup outputRowGroup,
+                    boost::shared_ptr<funcexp::FuncExpWrapper>& fe2, rowgroup::RowGroup& fe2Output,
+                    std::vector<rowgroup::RowGroup>& joinerMatchesRGs, rowgroup::RowGroup& joinFERG,
+                    std::vector<boost::shared_ptr<joiner::TupleJoiner>>& tjoiners, uint32_t smallSideCount,
+                    bool doJoin);
+
+      rowgroup::RowGroup local_primRG;
+      rowgroup::RowGroup local_outputRG;
+
+      uint32_t cachedIO_Thread = 0;
+      uint32_t physIO_Thread = 0;
+      uint32_t touchedBlocks_Thread = 0;
+      int64_t ridsReturned_Thread = 0;
+
+      // On init.
+      bool doJoin;
+      boost::shared_ptr<funcexp::FuncExpWrapper> fe2;
+      rowgroup::RowGroup fe2Output;
+      uint32_t smallSideCount;
+      std::vector<rowgroup::RowGroup> joinerMatchesRGs;
+      rowgroup::RowGroup joinFERG;
+      std::vector<boost::shared_ptr<joiner::TupleJoiner>> tjoiners;
+
+      // Join vars.
+      vector<vector<rowgroup::Row::Pointer>> joinerOutput;
+      rowgroup::Row largeSideRow;
+      rowgroup::Row joinedBaseRow;
+      rowgroup::Row largeNull;
+      rowgroup::Row joinFERow; // LSR clean
+      boost::scoped_array<rowgroup::Row> smallSideRows;
+      boost::scoped_array<rowgroup::Row> smallNulls;
+      boost::scoped_array<uint8_t> joinedBaseRowData;
+      boost::scoped_array<uint8_t> joinFERowData;
+      boost::shared_array<int> largeMapping;
+      vector<boost::shared_array<int>> smallMappings;
+      vector<boost::shared_array<int>> fergMappings;
+      rowgroup::RGData joinedData;
+      boost::scoped_array<uint8_t> largeNullMemory;
+      boost::scoped_array<boost::shared_array<uint8_t>> smallNullMemory;
+      uint32_t matchCount;
+
+      rowgroup::Row postJoinRow;
+      rowgroup::RowGroup local_fe2Output;
+      rowgroup::RGData local_fe2Data;
+      rowgroup::Row local_fe2OutRow;
+      funcexp::FuncExpWrapper local_fe2;
+  };
+
+  /*
+  std::shared_ptr<JoinLocalData> getJoinLocalDataByIndex(uint32_t index)
+  {
+      // FIXME
+      idbassert(index < 16);
+
+      auto joinLocalData = joinLocalDataPool[index];
+      if (!joinLocalData)
+      {
+          joinLocalData.erase(JoinLocalData());
+          joinLocalDataPool[index] = joinLocalData;
+      }
+
+      return joinLocalData;
+  }
+
+  // Join local data vector.
+  std::vector<std::shared_ptr<JoinLocalData>> joinLocalDataPool(16);
+  */
 
   /* shared nothing support */
   struct Job

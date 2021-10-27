@@ -156,127 +156,84 @@ struct TupleBPSAggregators
     }
 };
 
-// Local data.
-struct JoinLocalData
+TupleBPS::JoinLocalData::JoinLocalData(RowGroup primRowGroup, RowGroup outputRowGroup,
+                                       boost::shared_ptr<funcexp::FuncExpWrapper>& fe2,
+                                       rowgroup::RowGroup& fe2Output,
+                                       std::vector<rowgroup::RowGroup>& joinerMatchesRGs,
+                                       rowgroup::RowGroup& joinFERG,
+                                       std::vector<boost::shared_ptr<joiner::TupleJoiner>>& tjoiners,
+                                       uint32_t smallSideCount, bool doJoin)
+    : local_primRG(primRowGroup), local_outputRG(outputRowGroup), fe2(fe2), fe2Output(fe2Output),
+      joinerMatchesRGs(joinerMatchesRGs), joinFERG(joinFERG), tjoiners(tjoiners),
+      smallSideCount(smallSideCount), doJoin(doJoin)
 {
-    JoinLocalData(RowGroup primRowGroup, RowGroup outputRowGroup,
-                  boost::shared_ptr<funcexp::FuncExpWrapper>& fe2, rowgroup::RowGroup& fe2Output,
-                  std::vector<rowgroup::RowGroup>& joinerMatchesRGs, rowgroup::RowGroup& joinFERG,
-                  std::vector<boost::shared_ptr<joiner::TupleJoiner>>& tjoiners, uint32_t smallSideCount,
-                  bool doJoin)
-        : local_primRG(primRowGroup), local_outputRG(outputRowGroup), fe2(fe2), fe2Output(fe2Output),
-          joinerMatchesRGs(joinerMatchesRGs), joinFERG(joinFERG), tjoiners(tjoiners),
-          smallSideCount(smallSideCount), doJoin(doJoin)
+    if (doJoin || fe2)
     {
-        if (doJoin || fe2)
-        {
-            local_outputRG.initRow(&postJoinRow);
-        }
-
-        if (fe2)
-        {
-            local_fe2Output = fe2Output;
-            local_fe2Output.initRow(&local_fe2OutRow);
-            local_fe2Data.reinit(fe2Output);
-            local_fe2Output.setData(&local_fe2Data);
-            // local_fe2OutRow = fe2OutRow;
-            local_fe2 = *fe2;
-        }
-
-        if (doJoin)
-        {
-            joinerOutput.resize(smallSideCount);
-            smallSideRows.reset(new Row[smallSideCount]);
-            smallNulls.reset(new Row[smallSideCount]);
-            smallMappings.resize(smallSideCount);
-            fergMappings.resize(smallSideCount + 1);
-            smallNullMemory.reset(new shared_array<uint8_t>[smallSideCount]);
-            local_primRG.initRow(&largeSideRow);
-            local_outputRG.initRow(&joinedBaseRow, true);
-            joinedBaseRowData.reset(new uint8_t[joinedBaseRow.getSize()]);
-            joinedBaseRow.setData(joinedBaseRowData.get());
-            joinedBaseRow.initToNull();
-            largeMapping = makeMapping(local_primRG, local_outputRG);
-
-            bool hasJoinFE = false;
-
-            for (int i = 0; i < smallSideCount; i++)
-            {
-                joinerMatchesRGs[i].initRow(&(smallSideRows[i]));
-                smallMappings[i] = makeMapping(joinerMatchesRGs[i], local_outputRG);
-
-                if (tjoiners[i]->hasFEFilter())
-                {
-                    fergMappings[i] = makeMapping(joinerMatchesRGs[i], joinFERG);
-                    hasJoinFE = true;
-                }
-            }
-
-            if (hasJoinFE)
-            {
-                joinFERG.initRow(&joinFERow, true);
-                joinFERowData.reset(new uint8_t[joinFERow.getSize()]);
-                memset(joinFERowData.get(), 0, joinFERow.getSize());
-                joinFERow.setData(joinFERowData.get());
-                fergMappings[smallSideCount] = makeMapping(local_primRG, joinFERG);
-            }
-
-            for (int i = 0; i < smallSideCount; i++)
-            {
-                joinerMatchesRGs[i].initRow(&(smallNulls[i]), true);
-                smallNullMemory[i].reset(new uint8_t[smallNulls[i].getSize()]);
-                smallNulls[i].setData(smallNullMemory[i].get());
-                smallNulls[i].initToNull();
-            }
-
-            local_primRG.initRow(&largeNull, true);
-            largeNullMemory.reset(new uint8_t[largeNull.getSize()]);
-            largeNull.setData(largeNullMemory.get());
-            largeNull.initToNull();
-        }
+        local_outputRG.initRow(&postJoinRow);
     }
 
-    RowGroup local_primRG;
-    RowGroup local_outputRG;
+    if (fe2)
+    {
+        local_fe2Output = fe2Output;
+        local_fe2Output.initRow(&local_fe2OutRow);
+        local_fe2Data.reinit(fe2Output);
+        local_fe2Output.setData(&local_fe2Data);
+        // local_fe2OutRow = fe2OutRow;
+        local_fe2 = *fe2;
+    }
 
-    uint32_t cachedIO_Thread = 0;
-    uint32_t physIO_Thread = 0;
-    uint32_t touchedBlocks_Thread = 0;
-    int64_t ridsReturned_Thread = 0;
+    if (doJoin)
+    {
+        joinerOutput.resize(smallSideCount);
+        smallSideRows.reset(new Row[smallSideCount]);
+        smallNulls.reset(new Row[smallSideCount]);
+        smallMappings.resize(smallSideCount);
+        fergMappings.resize(smallSideCount + 1);
+        smallNullMemory.reset(new shared_array<uint8_t>[smallSideCount]);
+        local_primRG.initRow(&largeSideRow);
+        local_outputRG.initRow(&joinedBaseRow, true);
+        joinedBaseRowData.reset(new uint8_t[joinedBaseRow.getSize()]);
+        joinedBaseRow.setData(joinedBaseRowData.get());
+        joinedBaseRow.initToNull();
+        largeMapping = makeMapping(local_primRG, local_outputRG);
 
-    // On init.
-    bool doJoin;
-    boost::shared_ptr<funcexp::FuncExpWrapper> fe2;
-    rowgroup::RowGroup fe2Output;
-    uint32_t smallSideCount;
-    std::vector<rowgroup::RowGroup> joinerMatchesRGs;
-    rowgroup::RowGroup joinFERG;
-    std::vector<boost::shared_ptr<joiner::TupleJoiner>> tjoiners;
+        bool hasJoinFE = false;
 
-    // Join vars.
-    vector<vector<rowgroup::Row::Pointer>> joinerOutput;
-    rowgroup::Row largeSideRow;
-    rowgroup::Row joinedBaseRow;
-    rowgroup::Row largeNull;
-    rowgroup::Row joinFERow; // LSR clean
-    boost::scoped_array<rowgroup::Row> smallSideRows;
-    boost::scoped_array<rowgroup::Row> smallNulls;
-    boost::scoped_array<uint8_t> joinedBaseRowData;
-    boost::scoped_array<uint8_t> joinFERowData;
-    boost::shared_array<int> largeMapping;
-    vector<shared_array<int>> smallMappings;
-    vector<shared_array<int>> fergMappings;
-    rowgroup::RGData joinedData;
-    scoped_array<uint8_t> largeNullMemory;
-    scoped_array<shared_array<uint8_t>> smallNullMemory;
-    uint32_t matchCount;
+        for (int i = 0; i < smallSideCount; i++)
+        {
+            joinerMatchesRGs[i].initRow(&(smallSideRows[i]));
+            smallMappings[i] = makeMapping(joinerMatchesRGs[i], local_outputRG);
 
-    Row postJoinRow;
-    RowGroup local_fe2Output;
-    RGData local_fe2Data;
-    Row local_fe2OutRow;
-    funcexp::FuncExpWrapper local_fe2;
-};
+            if (tjoiners[i]->hasFEFilter())
+            {
+                fergMappings[i] = makeMapping(joinerMatchesRGs[i], joinFERG);
+                hasJoinFE = true;
+            }
+        }
+
+        if (hasJoinFE)
+        {
+            joinFERG.initRow(&joinFERow, true);
+            joinFERowData.reset(new uint8_t[joinFERow.getSize()]);
+            memset(joinFERowData.get(), 0, joinFERow.getSize());
+            joinFERow.setData(joinFERowData.get());
+            fergMappings[smallSideCount] = makeMapping(local_primRG, joinFERG);
+        }
+
+        for (int i = 0; i < smallSideCount; i++)
+        {
+            joinerMatchesRGs[i].initRow(&(smallNulls[i]), true);
+            smallNullMemory[i].reset(new uint8_t[smallNulls[i].getSize()]);
+            smallNulls[i].setData(smallNullMemory[i].get());
+            smallNulls[i].initToNull();
+        }
+
+        local_primRG.initRow(&largeNull, true);
+        largeNullMemory.reset(new uint8_t[largeNull.getSize()]);
+        largeNull.setData(largeNullMemory.get());
+        largeNull.initToNull();
+    }
+}
 
 struct ByteStreamProcessor
 {
