@@ -159,8 +159,14 @@ struct TupleBPSAggregators
 // Local data.
 struct JoinLocalData
 {
-    JoinLocalData(RowGroup primRowGroup, RowGroup outputRowGroup, bool doJoin, bool fe2)
-        : local_primRG(primRowGroup), local_outputRG(outputRowGroup), doJoin(doJoin), fe2(fe2)
+    JoinLocalData(RowGroup primRowGroup, RowGroup outputRowGroup,
+                  boost::shared_ptr<funcexp::FuncExpWrapper>& fe2, rowgroup::RowGroup& fe2Output,
+                  std::vector<rowgroup::RowGroup>& joinerMatchesRGs, rowgroup::RowGroup& joinFERG,
+                  std::vector<boost::shared_ptr<joiner::TupleJoiner>>& tjoiners, uint32_t smallSideCount,
+                  bool doJoin)
+        : local_primRG(primRowGroup), local_outputRG(outputRowGroup), fe2(fe2), fe2Output(fe2Output),
+          joinerMatchesRGs(joinerMatchesRGs), joinFERG(joinFERG), tjoiners(tjoiners),
+          smallSideCount(smallSideCount), doJoin(doJoin)
     {
         if (doJoin || fe2)
         {
@@ -238,10 +244,16 @@ struct JoinLocalData
     uint32_t touchedBlocks_Thread = 0;
     int64_t ridsReturned_Thread = 0;
 
+    // On init.
     bool doJoin;
-    bool fe2;
+    boost::shared_ptr<funcexp::FuncExpWrapper> fe2;
+    rowgroup::RowGroup fe2Output;
+    uint32_t smallSideCount;
+    std::vector<rowgroup::RowGroup> joinerMatchesRGs;
+    rowgroup::RowGroup joinFERG;
+    std::vector<boost::shared_ptr<joiner::TupleJoiner>> tjoiners;
 
-    /* Join vars */
+    // Join vars.
     vector<vector<rowgroup::Row::Pointer>> joinerOutput;
     rowgroup::Row largeSideRow;
     rowgroup::Row joinedBaseRow;
@@ -2027,7 +2039,9 @@ void TupleBPS::process(vector<boost::shared_ptr<messageqcpp::ByteStream>>& bsv, 
     rowgroup::RGData rgData;
     vector<rowgroup::RGData> rgDatav;
     vector<rowgroup::RGData> fromPrimProc;
-    JoinLocalData data(primRowGroup, outputRowGroup, doJoin, fe2);
+
+    JoinLocalData data(primRowGroup, outputRowGroup, fe2, fe2Output, joinerMatchesRGs, joinFERG, tjoiners,
+                       smallSideCount, doJoin);
 
     // TODO: Put initialization into ctor.
     /*
@@ -2098,7 +2112,7 @@ void TupleBPS::process(vector<boost::shared_ptr<messageqcpp::ByteStream>>& bsv, 
         data.largeNull.initToNull();
     }
     */
- 
+
     bool validCPData;
     bool hasBinaryColumn;
     int128_t min;
@@ -2196,19 +2210,22 @@ void TupleBPS::process(vector<boost::shared_ptr<messageqcpp::ByteStream>>& bsv, 
                             if (tjoiners[j]->hasFEFilter() && matchCount > 0)
                             {
                                 vector<Row::Pointer> newJoinerOutput;
-                                applyMapping(data.fergMappings[smallSideCount], data.largeSideRow, &data.joinFERow);
+                                applyMapping(data.fergMappings[smallSideCount], data.largeSideRow,
+                                             &data.joinFERow);
 
                                 for (uint32_t z = 0; z < data.joinerOutput[j].size(); z++)
                                 {
                                     data.smallSideRows[j].setPointer(data.joinerOutput[j][z]);
-                                    applyMapping(data.fergMappings[j], data.smallSideRows[j], &data.joinFERow);
+                                    applyMapping(data.fergMappings[j], data.smallSideRows[j],
+                                                 &data.joinFERow);
 
                                     if (!tjoiners[j]->evaluateFilter(data.joinFERow, threadID))
                                         matchCount--;
                                     else
                                     {
-                                        // The first match includes it in a SEMI join result and excludes it from an
-                                        // ANTI join result.  If it's SEMI & SCALAR however, it needs to continue.
+                                        // The first match includes it in a SEMI join result and excludes it
+                                        // from an ANTI join result.  If it's SEMI & SCALAR however, it needs
+                                        // to continue.
                                         newJoinerOutput.push_back(data.joinerOutput[j][z]);
 
                                         if (tjoiners[j]->antiJoin() ||
@@ -2241,7 +2258,8 @@ void TupleBPS::process(vector<boost::shared_ptr<messageqcpp::ByteStream>>& bsv, 
                                 data.joinerOutput[j].clear();
                                 break;
                             }
-                            else if (!tjoiners[j]->scalar() && (tjoiners[j]->antiJoin() || tjoiners[j]->semiJoin()))
+                            else if (!tjoiners[j]->scalar() &&
+                                     (tjoiners[j]->antiJoin() || tjoiners[j]->semiJoin()))
                             {
                                 data.joinerOutput[j].clear();
                                 data.joinerOutput[j].push_back(Row::Pointer(data.smallNullMemory[j].get()));
@@ -2269,8 +2287,8 @@ void TupleBPS::process(vector<boost::shared_ptr<messageqcpp::ByteStream>>& bsv, 
                         applyMapping(data.largeMapping, data.largeSideRow, &data.joinedBaseRow);
                         data.joinedBaseRow.setRid(data.largeSideRow.getRelRid());
                         generateJoinResultSet(data.joinerOutput, data.joinedBaseRow, data.smallMappings, 0,
-                                              data.local_outputRG, data.joinedData, &rgDatav, data.smallSideRows,
-                                              data.postJoinRow);
+                                              data.local_outputRG, data.joinedData, &rgDatav,
+                                              data.smallSideRows, data.postJoinRow);
 
                         // Bug 3510: Don't let the join results buffer get out of control.  Need
                         // to refactor this.  All post-join processing needs to go here AND below
@@ -2281,8 +2299,8 @@ void TupleBPS::process(vector<boost::shared_ptr<messageqcpp::ByteStream>>& bsv, 
 
                             if (fe2 && !runFEonPM)
                             {
-                                processFE2(out, data.local_fe2Output, data.postJoinRow, data.local_fe2OutRow, &rgDatav,
-                                           &data.local_fe2);
+                                processFE2(out, data.local_fe2Output, data.postJoinRow, data.local_fe2OutRow,
+                                           &rgDatav, &data.local_fe2);
                                 rgDataVecToDl(rgDatav, data.local_fe2Output, dlp);
                             }
                             else
@@ -2347,7 +2365,8 @@ void TupleBPS::receiveMultiPrimitiveMessages(uint32_t threadID)
     sts.step_uuid = fStepUuid;
 
     uint32_t size = 0;
-    JoinLocalData data(primRowGroup, outputRowGroup, doJoin, fe2);
+    JoinLocalData data(primRowGroup, outputRowGroup, fe2, fe2Output, joinerMatchesRGs, joinFERG, tjoiners,
+                       smallSideCount, doJoin);
 
     // TODO: Put initialization into ctor.
     /*
@@ -2585,14 +2604,11 @@ void TupleBPS::receiveMultiPrimitiveMessages(uint32_t threadID)
 
         } // done reading
 
-    }//try
+    }  // try
     catch (...)
     {
-        handleException(std::current_exception(),
-                        logging::ERR_TUPLE_BPS,
-                        logging::ERR_ALWAYS_CRITICAL,
-                        "st: " + std::to_string(fStepId) +
-                            " TupleBPS::receiveMultiPrimitiveMessages()");
+        handleException(std::current_exception(), logging::ERR_TUPLE_BPS, logging::ERR_ALWAYS_CRITICAL,
+                        "st: " + std::to_string(fStepId) + " TupleBPS::receiveMultiPrimitiveMessages()");
         abort_nolock();
     }
 
@@ -2632,8 +2648,7 @@ out:
                     if (i == k)
                         applyMapping(data.smallMappings[i], data.smallSideRows[i], &data.joinedBaseRow);
                     else
-                        applyMapping(data.smallMappings[k], data.smallNulls[k],
-                                     &data.joinedBaseRow);
+                        applyMapping(data.smallMappings[k], data.smallNulls[k], &data.joinedBaseRow);
                 }
 
                 applyMapping(data.largeMapping, data.largeNull, &data.joinedBaseRow);
@@ -2740,17 +2755,17 @@ out:
     {
         struct timeval tvbuf;
         gettimeofday(&tvbuf, 0);
-        FIFO<boost::shared_array<uint8_t> >* pFifo = 0;
-        uint64_t totalBlockedReadCount  = 0;
+        FIFO<boost::shared_array<uint8_t>>* pFifo = 0;
+        uint64_t totalBlockedReadCount = 0;
         uint64_t totalBlockedWriteCount = 0;
 
         //...Sum up the blocked FIFO reads for all input associations
-        size_t inDlCnt  = fInputJobStepAssociation.outSize();
+        size_t inDlCnt = fInputJobStepAssociation.outSize();
 
         for (size_t iDataList = 0; iDataList < inDlCnt; iDataList++)
         {
-            pFifo = dynamic_cast<FIFO<boost::shared_array<uint8_t> > *>(
-                        fInputJobStepAssociation.outAt(iDataList)->rowGroupDL());
+            pFifo = dynamic_cast<FIFO<boost::shared_array<uint8_t>>*>(
+                fInputJobStepAssociation.outAt(iDataList)->rowGroupDL());
 
             if (pFifo)
             {
@@ -2763,7 +2778,7 @@ out:
 
         for (size_t iDataList = 0; iDataList < outDlCnt; iDataList++)
         {
-            pFifo = dynamic_cast<FIFO<boost::shared_array<uint8_t> > *>(dlp);
+            pFifo = dynamic_cast<FIFO<boost::shared_array<uint8_t>>*>(dlp);
 
             if (pFifo)
             {
@@ -2772,7 +2787,7 @@ out:
         }
 
         //...Roundoff msg byte counts to nearest KB for display
-        uint64_t msgBytesInKB  = fMsgBytesIn >> 10;
+        uint64_t msgBytesInKB = fMsgBytesIn >> 10;
         uint64_t msgBytesOutKB = fMsgBytesOut >> 10;
 
         if (fMsgBytesIn & 512)
@@ -2785,39 +2800,36 @@ out:
         {
             // @bug 828
             ostringstream logStr;
-            logStr << "ses:" << fSessionId << " st: " << fStepId << " finished at " <<
-                   JSTimeStamp::format(tvbuf) << "; PhyI/O-" << fPhysicalIO << "; CacheI/O-"  <<
-                   fCacheIO << "; MsgsSent-" << msgsSent << "; MsgsRvcd-" << msgsRecvd <<
-                   "; BlocksTouched-" << fBlockTouched <<
-                   "; BlockedFifoIn/Out-" << totalBlockedReadCount <<
-                   "/" << totalBlockedWriteCount <<
-                   "; output size-" << ridsReturned << endl <<
-                   "\tPartitionBlocksEliminated-" << fNumBlksSkipped <<
-                   "; MsgBytesIn-"  << msgBytesInKB  << "KB" <<
-                   "; MsgBytesOut-" << msgBytesOutKB << "KB" <<
-                   "; TotalMsgs-" << totalMsgs << endl  <<
-                   "\t1st read " << dlTimes.FirstReadTimeString() <<
-                   "; EOI " << dlTimes.EndOfInputTimeString() << "; runtime-" <<
-                   JSTimeStamp::tsdiffstr(dlTimes.EndOfInputTime(), dlTimes.FirstReadTime()) <<
-                   "s\n\tUUID " << uuids::to_string(fStepUuid) <<
-                   "\n\tQuery UUID " << uuids::to_string(queryUuid()) <<
-                   "\n\tJob completion status " << status() << endl;
+            logStr << "ses:" << fSessionId << " st: " << fStepId << " finished at "
+                   << JSTimeStamp::format(tvbuf) << "; PhyI/O-" << fPhysicalIO << "; CacheI/O-" << fCacheIO
+                   << "; MsgsSent-" << msgsSent << "; MsgsRvcd-" << msgsRecvd << "; BlocksTouched-"
+                   << fBlockTouched << "; BlockedFifoIn/Out-" << totalBlockedReadCount << "/"
+                   << totalBlockedWriteCount << "; output size-" << ridsReturned << endl
+                   << "\tPartitionBlocksEliminated-" << fNumBlksSkipped << "; MsgBytesIn-" << msgBytesInKB
+                   << "KB"
+                   << "; MsgBytesOut-" << msgBytesOutKB << "KB"
+                   << "; TotalMsgs-" << totalMsgs << endl
+                   << "\t1st read " << dlTimes.FirstReadTimeString() << "; EOI "
+                   << dlTimes.EndOfInputTimeString() << "; runtime-"
+                   << JSTimeStamp::tsdiffstr(dlTimes.EndOfInputTime(), dlTimes.FirstReadTime())
+                   << "s\n\tUUID " << uuids::to_string(fStepUuid) << "\n\tQuery UUID "
+                   << uuids::to_string(queryUuid()) << "\n\tJob completion status " << status() << endl;
             logEnd(logStr.str().c_str());
 
-            syslogReadBlockCounts(16,      // exemgr sybsystem
+            syslogReadBlockCounts(16,                        // exemgr sybsystem
                                   fPhysicalIO,               // # blocks read from disk
                                   fCacheIO,                  // # blocks read from cache
                                   fNumBlksSkipped);          // # casual partition block hits
-            syslogProcessingTimes(16,      // exemgr subsystem
+            syslogProcessingTimes(16,                        // exemgr subsystem
                                   dlTimes.FirstReadTime(),   // first datalist read
                                   dlTimes.LastReadTime(),    // last  datalist read
                                   dlTimes.FirstInsertTime(), // first datalist write
                                   dlTimes.EndOfInputTime()); // last (endOfInput) datalist write
-            syslogEndStep(16,              // exemgr subsystem
-                          totalBlockedReadCount,     // blocked datalist input
-                          totalBlockedWriteCount,    // blocked datalist output
-                          fMsgBytesIn,               // incoming msg byte count
-                          fMsgBytesOut);             // outgoing msg byte count
+            syslogEndStep(16,                                // exemgr subsystem
+                          totalBlockedReadCount,             // blocked datalist input
+                          totalBlockedWriteCount,            // blocked datalist output
+                          fMsgBytesIn,                       // incoming msg byte count
+                          fMsgBytesOut);                     // outgoing msg byte count
             fExtendedInfo += toString() + logStr.str();
             formatMiniStats();
         }
