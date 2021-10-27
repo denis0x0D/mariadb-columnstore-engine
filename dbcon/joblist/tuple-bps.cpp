@@ -2255,8 +2255,7 @@ void TupleBPS::receiveMultiPrimitiveMessages(uint32_t threadID)
     uint32_t size = 0;
 
     initializeJoinLocalDataPool();
-    JoinLocalData data(primRowGroup, outputRowGroup, fe2, fe2Output, joinerMatchesRGs, joinFERG, tjoiners,
-                       smallSideCount, doJoin);
+    auto data = getJoinLocalDataByIndex(0);
 
     vector<boost::shared_ptr<messageqcpp::ByteStream>> bsv;
     boost::unique_lock<boost::mutex> tplLock(tplMutex, boost::defer_lock);
@@ -2455,66 +2454,66 @@ out:
 #endif
             uint32_t i = smallOuterJoiner;
             tjoiners[i]->getUnmarkedRows(&unmatched);
-            data.joinedData = RGData(data.local_outputRG);
-            data.local_outputRG.setData(&data.joinedData);
-            data.local_outputRG.resetRowGroup(-1);
-            data.local_outputRG.getRow(0, &data.joinedBaseRow);
+            data->joinedData = RGData(data->local_outputRG);
+            data->local_outputRG.setData(&data->joinedData);
+            data->local_outputRG.resetRowGroup(-1);
+            data->local_outputRG.getRow(0, &data->joinedBaseRow);
 
             for (uint32_t j = 0; j < unmatched.size(); j++)
             {
-                data.smallSideRows[i].setPointer(unmatched[j]);
+                data->smallSideRows[i].setPointer(unmatched[j]);
 
                 for (uint32_t k = 0; k < smallSideCount; k++)
                 {
                     if (i == k)
-                        applyMapping(data.smallMappings[i], data.smallSideRows[i], &data.joinedBaseRow);
+                        applyMapping(data->smallMappings[i], data->smallSideRows[i], &data->joinedBaseRow);
                     else
-                        applyMapping(data.smallMappings[k], data.smallNulls[k], &data.joinedBaseRow);
+                        applyMapping(data->smallMappings[k], data->smallNulls[k], &data->joinedBaseRow);
                 }
 
-                applyMapping(data.largeMapping, data.largeNull, &data.joinedBaseRow);
-                data.joinedBaseRow.setRid(0);
-                data.joinedBaseRow.nextRow();
-                data.local_outputRG.incRowCount();
+                applyMapping(data->largeMapping, data->largeNull, &data->joinedBaseRow);
+                data->joinedBaseRow.setRid(0);
+                data->joinedBaseRow.nextRow();
+                data->local_outputRG.incRowCount();
 
-                if (data.local_outputRG.getRowCount() == 8192)
+                if (data->local_outputRG.getRowCount() == 8192)
                 {
                     if (fe2)
                     {
-                        rgDatav.push_back(data.joinedData);
-                        processFE2(data.local_outputRG, data.local_fe2Output, data.postJoinRow,
-                                   data.local_fe2OutRow, &rgDatav, &data.local_fe2);
+                        rgDatav.push_back(data->joinedData);
+                        processFE2(data->local_outputRG, data->local_fe2Output, data->postJoinRow,
+                                   data->local_fe2OutRow, &rgDatav, &data->local_fe2);
 
                         if (rgDatav.size() > 0)
-                            rgDataToDl(rgDatav[0], data.local_fe2Output, dlp);
+                            rgDataToDl(rgDatav[0], data->local_fe2Output, dlp);
 
                         rgDatav.clear();
                     }
                     else
-                        rgDataToDl(data.joinedData, data.local_outputRG, dlp);
+                        rgDataToDl(data->joinedData, data->local_outputRG, dlp);
 
-                    data.joinedData = RGData(data.local_outputRG);
-                    data.local_outputRG.setData(&data.joinedData);
-                    data.local_outputRG.resetRowGroup(-1);
-                    data.local_outputRG.getRow(0, &data.joinedBaseRow);
+                    data->joinedData = RGData(data->local_outputRG);
+                    data->local_outputRG.setData(&data->joinedData);
+                    data->local_outputRG.resetRowGroup(-1);
+                    data->local_outputRG.getRow(0, &data->joinedBaseRow);
                 }
             }
 
-            if (data.local_outputRG.getRowCount() > 0)
+            if (data->local_outputRG.getRowCount() > 0)
             {
                 if (fe2)
                 {
-                    rgDatav.push_back(data.joinedData);
-                    processFE2(data.local_outputRG, data.local_fe2Output, data.postJoinRow,
-                               data.local_fe2OutRow, &rgDatav, &data.local_fe2);
+                    rgDatav.push_back(data->joinedData);
+                    processFE2(data->local_outputRG, data->local_fe2Output, data->postJoinRow,
+                               data->local_fe2OutRow, &rgDatav, &data->local_fe2);
 
                     if (rgDatav.size() > 0)
-                        rgDataToDl(rgDatav[0], data.local_fe2Output, dlp);
+                        rgDataToDl(rgDatav[0], data->local_fe2Output, dlp);
 
                     rgDatav.clear();
                 }
                 else
-                    rgDataToDl(data.joinedData, data.local_outputRG, dlp);
+                    rgDataToDl(data->joinedData, data->local_outputRG, dlp);
             }
 
             tplLock.lock();
@@ -2565,10 +2564,10 @@ out:
     }
 
     //@Bug 1099
-    ridsReturned += data.ridsReturned_Thread;
-    fPhysicalIO += data.physIO_Thread;
-    fCacheIO += data.cachedIO_Thread;
-    fBlockTouched += data.touchedBlocks_Thread;
+    ridsReturned += data->ridsReturned_Thread;
+    fPhysicalIO += data->physIO_Thread;
+    fCacheIO += data->cachedIO_Thread;
+    fBlockTouched += data->touchedBlocks_Thread;
     tplLock.unlock();
 
     if (fTableOid >= 3000)
