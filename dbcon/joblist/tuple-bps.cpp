@@ -238,8 +238,9 @@ TupleBPS::JoinLocalData::JoinLocalData(RowGroup primRowGroup, RowGroup outputRow
 struct ByteStreamProcessor
 {
     ByteStreamProcessor(TupleBPS* tbps, vector<boost::shared_ptr<messageqcpp::ByteStream>>& bsv,
-                        uint32_t begin, uint32_t end, vector<_CPInfo>& cpv, RowGroupDL* dlp)
-        : tbps(tbps), bsv(bsv), begin(begin), end(end), cpv(cpv), dlp(dlp)
+                        uint32_t begin, uint32_t end, vector<_CPInfo>& cpv, RowGroupDL* dlp,
+                        uint32_t joinDataIndex)
+        : tbps(tbps), bsv(bsv), begin(begin), end(end), cpv(cpv), dlp(dlp), joinDataIndex(joinDataIndex)
     {
     }
 
@@ -249,11 +250,12 @@ struct ByteStreamProcessor
     uint32_t end;
     vector<_CPInfo>& cpv;
     RowGroupDL* dlp;
+    uint32_t joinDataIndex;
 
     void operator()()
     {
         utils::setThreadName("ByteStreamProcessor");
-        tbps->process(bsv, begin, end, cpv, dlp);
+        tbps->process(bsv, begin, end, cpv, dlp, joinDataIndex);
     }
 };
 
@@ -980,10 +982,11 @@ void TupleBPS::startAggregationThread()
 }
 
 void TupleBPS::startProcessingThread(TupleBPS* tbps, vector<boost::shared_ptr<messageqcpp::ByteStream>>& bsv,
-                                     uint32_t start, uint32_t end, vector<_CPInfo>& cpv, RowGroupDL* dlp)
+                                     uint32_t start, uint32_t end, vector<_CPInfo>& cpv, RowGroupDL* dlp,
+                                     uint32_t joinDataIndex)
 {
     fProcessorThreads.push_back(
-        jobstepThreadPool.invoke(ByteStreamProcessor(tbps, bsv, start, end, cpv, dlp)));
+        jobstepThreadPool.invoke(ByteStreamProcessor(tbps, bsv, start, end, cpv, dlp, joinDataIndex)));
 }
 
 void TupleBPS::serializeJoiner()
@@ -1988,17 +1991,15 @@ abort:
     tplLock.unlock();
 }
 
-void TupleBPS::process(vector<boost::shared_ptr<messageqcpp::ByteStream>>& bsv, uint32_t begin,
-                       uint32_t end, vector<_CPInfo>& cpv, RowGroupDL* dlp)
+void TupleBPS::process(vector<boost::shared_ptr<messageqcpp::ByteStream>>& bsv, uint32_t begin, uint32_t end,
+                       vector<_CPInfo>& cpv, RowGroupDL* dlp, uint32_t joinDataIndex)
 {
     // FIXME
     uint32_t threadID = 0;
     rowgroup::RGData rgData;
     vector<rowgroup::RGData> rgDatav;
     vector<rowgroup::RGData> fromPrimProc;
-
-    JoinLocalData data(primRowGroup, outputRowGroup, fe2, fe2Output, joinerMatchesRGs, joinFERG, tjoiners,
-                       smallSideCount, doJoin);
+    auto data = getJoinLocalDataByIndex(joinDataIndex);
 
     bool validCPData;
     bool hasBinaryColumn;
@@ -2057,40 +2058,40 @@ void TupleBPS::process(vector<boost::shared_ptr<messageqcpp::ByteStream>>& bsv, 
             rgData = fromPrimProc.back();
             fromPrimProc.pop_back();
 
-            data.local_primRG.setData(&rgData);
+            data->local_primRG.setData(&rgData);
             // TODO need the pre-join count even on PM joins... later
-            data.ridsReturned_Thread += data.local_primRG.getRowCount();
+            data->ridsReturned_Thread += data->local_primRG.getRowCount();
 
             // TupleHashJoinStep::joinOneRG() is a port of the main join loop here.  Any
             // changes made here should also be made there and vice versa.
             if (hasUMJoin || !fBPP->pmSendsFinalResult())
             {
-                data.joinedData = RGData(data.local_outputRG);
-                data.local_outputRG.setData(&data.joinedData);
-                data.local_outputRG.resetRowGroup(data.local_primRG.getBaseRid());
-                data.local_outputRG.setDBRoot(data.local_primRG.getDBRoot());
-                data.local_primRG.getRow(0, &data.largeSideRow);
+                data->joinedData = RGData(data->local_outputRG);
+                data->local_outputRG.setData(&data->joinedData);
+                data->local_outputRG.resetRowGroup(data->local_primRG.getBaseRid());
+                data->local_outputRG.setDBRoot(data->local_primRG.getDBRoot());
+                data->local_primRG.getRow(0, &data->largeSideRow);
 
-                for (uint32_t k = 0; k < data.local_primRG.getRowCount() && !cancelled();
-                     k++, data.largeSideRow.nextRow())
+                for (uint32_t k = 0; k < data->local_primRG.getRowCount() && !cancelled();
+                     k++, data->largeSideRow.nextRow())
                 {
                     uint32_t matchCount = 0;
 
                     for (uint32_t j = 0; j < smallSideCount; j++)
                     {
-                        tjoiners[j]->match(data.largeSideRow, k, threadID, &(data.joinerOutput[j]));
+                        tjoiners[j]->match(data->largeSideRow, k, threadID, &(data->joinerOutput[j]));
 #ifdef JLF_DEBUG
                         // Debugging code to print the matches
                         Row r;
                         joinerMatchesRGs[j].initRow(&r);
-                        cout << data.joinerOutput[j].size() << " matches: \n";
-                        for (uint32_t z = 0; z < data.joinerOutput[j].size(); z++)
+                        cout << data->joinerOutput[j].size() << " matches: \n";
+                        for (uint32_t z = 0; z < data->joinerOutput[j].size(); z++)
                         {
-                            r.setPointer(data.joinerOutput[j][z]);
+                            r.setPointer(data->joinerOutput[j][z]);
                             cout << "  " << r.toString() << endl;
                         }
 #endif
-                        matchCount = data.joinerOutput[j].size();
+                        matchCount = data->joinerOutput[j].size();
 
                         if (tjoiners[j]->inUM())
                         {
@@ -2098,23 +2099,23 @@ void TupleBPS::process(vector<boost::shared_ptr<messageqcpp::ByteStream>>& bsv, 
                             if (tjoiners[j]->hasFEFilter() && matchCount > 0)
                             {
                                 vector<Row::Pointer> newJoinerOutput;
-                                applyMapping(data.fergMappings[smallSideCount], data.largeSideRow,
-                                             &data.joinFERow);
+                                applyMapping(data->fergMappings[smallSideCount], data->largeSideRow,
+                                             &data->joinFERow);
 
-                                for (uint32_t z = 0; z < data.joinerOutput[j].size(); z++)
+                                for (uint32_t z = 0; z < data->joinerOutput[j].size(); z++)
                                 {
-                                    data.smallSideRows[j].setPointer(data.joinerOutput[j][z]);
-                                    applyMapping(data.fergMappings[j], data.smallSideRows[j],
-                                                 &data.joinFERow);
+                                    data->smallSideRows[j].setPointer(data->joinerOutput[j][z]);
+                                    applyMapping(data->fergMappings[j], data->smallSideRows[j],
+                                                 &data->joinFERow);
 
-                                    if (!tjoiners[j]->evaluateFilter(data.joinFERow, threadID))
+                                    if (!tjoiners[j]->evaluateFilter(data->joinFERow, threadID))
                                         matchCount--;
                                     else
                                     {
                                         // The first match includes it in a SEMI join result and excludes it
                                         // from an ANTI join result.  If it's SEMI & SCALAR however, it needs
                                         // to continue.
-                                        newJoinerOutput.push_back(data.joinerOutput[j][z]);
+                                        newJoinerOutput.push_back(data->joinerOutput[j][z]);
 
                                         if (tjoiners[j]->antiJoin() ||
                                             (tjoiners[j]->semiJoin() && !tjoiners[j]->scalar()))
@@ -2125,11 +2126,11 @@ void TupleBPS::process(vector<boost::shared_ptr<messageqcpp::ByteStream>>& bsv, 
                                 // the filter eliminated all matches, need to join with the NULL row
                                 if (matchCount == 0 && tjoiners[j]->largeOuterJoin())
                                 {
-                                    newJoinerOutput.push_back(Row::Pointer(data.smallNullMemory[j].get()));
+                                    newJoinerOutput.push_back(Row::Pointer(data->smallNullMemory[j].get()));
                                     matchCount = 1;
                                 }
 
-                                data.joinerOutput[j].swap(newJoinerOutput);
+                                data->joinerOutput[j].swap(newJoinerOutput);
                             }
 
                             // XXXPAT: This has gone through enough revisions it would benefit
@@ -2143,14 +2144,14 @@ void TupleBPS::process(vector<boost::shared_ptr<messageqcpp::ByteStream>>& bsv, 
 
                             if (matchCount == 0)
                             {
-                                data.joinerOutput[j].clear();
+                                data->joinerOutput[j].clear();
                                 break;
                             }
                             else if (!tjoiners[j]->scalar() &&
                                      (tjoiners[j]->antiJoin() || tjoiners[j]->semiJoin()))
                             {
-                                data.joinerOutput[j].clear();
-                                data.joinerOutput[j].push_back(Row::Pointer(data.smallNullMemory[j].get()));
+                                data->joinerOutput[j].clear();
+                                data->joinerOutput[j].push_back(Row::Pointer(data->smallNullMemory[j].get()));
                                 matchCount = 1;
                             }
                         }
@@ -2167,29 +2168,29 @@ void TupleBPS::process(vector<boost::shared_ptr<messageqcpp::ByteStream>>& bsv, 
                         }
 
                         if (tjoiners[j]->smallOuterJoin())
-                            tjoiners[j]->markMatches(threadID, data.joinerOutput[j]);
+                            tjoiners[j]->markMatches(threadID, data->joinerOutput[j]);
                     }
 
                     if (matchCount > 0)
                     {
-                        applyMapping(data.largeMapping, data.largeSideRow, &data.joinedBaseRow);
-                        data.joinedBaseRow.setRid(data.largeSideRow.getRelRid());
-                        generateJoinResultSet(data.joinerOutput, data.joinedBaseRow, data.smallMappings, 0,
-                                              data.local_outputRG, data.joinedData, &rgDatav,
-                                              data.smallSideRows, data.postJoinRow);
+                        applyMapping(data->largeMapping, data->largeSideRow, &data->joinedBaseRow);
+                        data->joinedBaseRow.setRid(data->largeSideRow.getRelRid());
+                        generateJoinResultSet(data->joinerOutput, data->joinedBaseRow, data->smallMappings, 0,
+                                              data->local_outputRG, data->joinedData, &rgDatav,
+                                              data->smallSideRows, data->postJoinRow);
 
                         // Bug 3510: Don't let the join results buffer get out of control.  Need
                         // to refactor this.  All post-join processing needs to go here AND below
                         // for now.
-                        if (rgDatav.size() * data.local_outputRG.getMaxDataSize() > 50000000)
+                        if (rgDatav.size() * data->local_outputRG.getMaxDataSize() > 50000000)
                         {
-                            RowGroup out(data.local_outputRG);
+                            RowGroup out(data->local_outputRG);
 
                             if (fe2 && !runFEonPM)
                             {
-                                processFE2(out, data.local_fe2Output, data.postJoinRow, data.local_fe2OutRow,
-                                           &rgDatav, &data.local_fe2);
-                                rgDataVecToDl(rgDatav, data.local_fe2Output, dlp);
+                                processFE2(out, data->local_fe2Output, data->postJoinRow, data->local_fe2OutRow,
+                                           &rgDatav, &data->local_fe2);
+                                rgDataVecToDl(rgDatav, data->local_fe2Output, dlp);
                             }
                             else
                                 rgDataVecToDl(rgDatav, out, dlp);
@@ -2197,9 +2198,9 @@ void TupleBPS::process(vector<boost::shared_ptr<messageqcpp::ByteStream>>& bsv, 
                     }
                 } // end of the for-loop in the join code
 
-                if (data.local_outputRG.getRowCount() > 0)
+                if (data->local_outputRG.getRowCount() > 0)
                 {
-                    rgDatav.push_back(data.joinedData);
+                    rgDatav.push_back(data->joinedData);
                 }
             }
             else
@@ -2210,14 +2211,14 @@ void TupleBPS::process(vector<boost::shared_ptr<messageqcpp::ByteStream>>& bsv, 
             // Execute UM F & E group 2 on rgDatav
             if (fe2 && !runFEonPM && rgDatav.size() > 0 && !cancelled())
             {
-                processFE2(data.local_outputRG, data.local_fe2Output, data.postJoinRow, data.local_fe2OutRow,
-                           &rgDatav, &data.local_fe2);
-                rgDataVecToDl(rgDatav, data.local_fe2Output, dlp);
+                processFE2(data->local_outputRG, data->local_fe2Output, data->postJoinRow,
+                           data->local_fe2OutRow, &rgDatav, &data->local_fe2);
+                rgDataVecToDl(rgDatav, data->local_fe2Output, dlp);
             }
 
-            data.cachedIO_Thread += cachedIO;
-            data.physIO_Thread += physIO;
-            data.touchedBlocks_Thread += touchedBlocks;
+            data->cachedIO_Thread += cachedIO;
+            data->physIO_Thread += physIO;
+            data->touchedBlocks_Thread += touchedBlocks;
 
             if (fOid >= 3000 && ffirstStepType == SCAN && bop == BOP_AND)
             {
@@ -2236,9 +2237,9 @@ void TupleBPS::process(vector<boost::shared_ptr<messageqcpp::ByteStream>>& bsv, 
         if (rgDatav.size() > 0)
         {
             if (fe2 && runFEonPM)
-                rgDataVecToDl(rgDatav, data.local_fe2Output, dlp);
+                rgDataVecToDl(rgDatav, data->local_fe2Output, dlp);
             else
-                rgDataVecToDl(rgDatav, data.local_outputRG, dlp);
+                rgDataVecToDl(rgDatav, data->local_outputRG, dlp);
         }
     }
 }
@@ -2364,7 +2365,7 @@ void TupleBPS::receiveMultiPrimitiveMessages(uint32_t threadID)
                 cout << "Thread # " << i << " work size " << workSizes[i] << endl;
 #endif
                 uint32_t end = start + workSizes[i];
-                startProcessingThread(this, bsv, start, end, cpInfos[i], dlp);
+                startProcessingThread(this, bsv, start, end, cpInfos[i], dlp, i + 1);
                 start = end;
             }
 
