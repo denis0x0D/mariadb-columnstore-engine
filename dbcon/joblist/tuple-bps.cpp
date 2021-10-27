@@ -2477,7 +2477,7 @@ void TupleBPS::receiveMultiPrimitiveMessages(uint32_t threadID)
 
 out:
 
-    // FIXME: We have only one thred here.
+    // We have only one thread here.
     {
         if (doJoin && smallOuterJoiner != -1 && !cancelled())
         {
@@ -2694,8 +2694,7 @@ out:
             formatMiniStats();
         }
 
-        // FIXME: what does this branch do? we already checked the table oid for this path?
-        if (fOid >= 3000)
+        // What does this branch do? we already checked the table oid for this path?
         {
             sts.msg_type = StepTeleStats::ST_SUMMARY;
             sts.phy_io = fPhysicalIO;
@@ -2717,7 +2716,7 @@ out:
     }
 
     // Bug 3136, let mini stats to be formatted if traceOn.
-    // FIXME: How the comment above is related to the next lines of code?
+    // How the comment above is related to the next line of code?
     dlp->endOfInput();
 }
 
