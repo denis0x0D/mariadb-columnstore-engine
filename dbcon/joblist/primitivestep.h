@@ -1567,8 +1567,7 @@ private:
       funcexp::FuncExpWrapper local_fe2;
   };
 
-  // (8 + 1) - 8 for processing vector of bytestreams + 1 for the main thread.
-  const uint32_t fMaxNumProcessorThreads = 9;
+  const uint32_t fMaxNumProcessorThreads = 8;
   const uint32_t fWorkSizeThreshold = 4;
 
   std::shared_ptr<JoinLocalData> getJoinLocalDataByIndex(uint32_t index)

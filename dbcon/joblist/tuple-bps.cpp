@@ -2358,11 +2358,9 @@ void TupleBPS::receiveMultiPrimitiveMessages(uint32_t threadID)
             uint32_t start = 0;
             for (uint32_t i = 0, e = workSizes.size(); i < e; ++i)
             {
-#ifdef DEBUG_MPM
                 cout << "Thread # " << i << " work size " << workSizes[i] << endl;
-#endif
                 uint32_t end = start + workSizes[i];
-                startProcessingThread(this, bsv, start, end, cpInfos[i], dlp, i + 1);
+                startProcessingThread(this, bsv, start, end, cpInfos[i], dlp, i);
                 start = end;
             }
 
