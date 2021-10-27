@@ -1567,16 +1567,16 @@ private:
       funcexp::FuncExpWrapper local_fe2;
   };
 
-  /*
   std::shared_ptr<JoinLocalData> getJoinLocalDataByIndex(uint32_t index)
   {
-      // FIXME
-      idbassert(index < 16);
+      idbassert(index < 16 && joinLocalDataPool.size() == 16);
 
       auto joinLocalData = joinLocalDataPool[index];
       if (!joinLocalData)
       {
-          joinLocalData.erase(JoinLocalData());
+          joinLocalData.reset(new JoinLocalData(primRowGroup, outputRowGroup, fe2, fe2Output,
+                                                joinerMatchesRGs, joinFERG, tjoiners, smallSideCount,
+                                                doJoin));
           joinLocalDataPool[index] = joinLocalData;
       }
 
@@ -1584,10 +1584,11 @@ private:
   }
 
   // Join local data vector.
-  std::vector<std::shared_ptr<JoinLocalData>> joinLocalDataPool(16);
-  */
+  std::vector<std::shared_ptr<JoinLocalData>> joinLocalDataPool;
 
-  /* shared nothing support */
+  void initializeJoinLocalDataPool() { joinLocalDataPool = std::vector<std::shared_ptr<JoinLocalData>>(16); }
+
+    /* shared nothing support */
   struct Job
   {
       Job(uint32_t d, uint32_t n, uint32_t b, boost::shared_ptr<messageqcpp::ByteStream>& bs)
