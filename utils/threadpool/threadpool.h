@@ -225,6 +225,8 @@ public:
         return fMaxThreads;
     }
 
+    inline size_t getThreadCount() { return fThreadCount; }
+
     /** @brief queue size accessor
       *
       */
@@ -291,6 +293,7 @@ public:
     {
         fDebug = d;
     }
+
 
     friend class ThreadPoolMonitor;
 protected:

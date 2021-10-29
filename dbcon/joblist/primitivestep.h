@@ -1572,34 +1572,32 @@ private:
   };
 
   const uint32_t fMaxNumProcessorThreads = 8;
+  uint32_t fNumProcessorThreads = 0;
   const uint32_t fWorkSizeThreshold = 4;
 
   std::shared_ptr<JoinLocalData> getJoinLocalDataByIndex(uint32_t index)
   {
-      idbassert(index < fMaxNumProcessorThreads && joinLocalDataPool.size() == fMaxNumProcessorThreads);
+      idbassert(index < fNumProcessorThreads && joinLocalDataPool.size() == fNumProcessorThreads);
+      return joinLocalDataPool[index];
+  }
 
-      auto joinLocalData = joinLocalDataPool[index];
-      if (!joinLocalData)
+  void initializeJoinLocalDataPool(uint32_t numThreads)
+  {
+      idbassert(numThreads <= fMaxNumProcessorThreads);
+      for (uint32_t i = 0; i < numThreads; ++i)
       {
-          // Mutex here?
-          joinLocalData.reset(new JoinLocalData(primRowGroup, outputRowGroup, fe2, fe2Output,
-                                                joinerMatchesRGs, joinFERG, tjoiners, smallSideCount,
-                                                doJoin));
-          joinLocalDataPool[index] = joinLocalData;
+          joinLocalDataPool.push_back(std::shared_ptr<JoinLocalData>(
+              new JoinLocalData(primRowGroup, outputRowGroup, fe2, fe2Output, joinerMatchesRGs, joinFERG,
+                                tjoiners, smallSideCount, doJoin)));
       }
 
-      return joinLocalData;
+      fNumProcessorThreads = numThreads;
   }
 
   // Join local data vector.
   std::vector<std::shared_ptr<JoinLocalData>> joinLocalDataPool;
 
-  void initializeJoinLocalDataPool()
-  {
-      joinLocalDataPool = std::vector<std::shared_ptr<JoinLocalData>>(fMaxNumProcessorThreads);
-  }
-
-    /* shared nothing support */
+  /* shared nothing support */
   struct Job
   {
       Job(uint32_t d, uint32_t n, uint32_t b, boost::shared_ptr<messageqcpp::ByteStream>& bs)

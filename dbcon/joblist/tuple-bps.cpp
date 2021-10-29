@@ -2253,8 +2253,13 @@ void TupleBPS::receiveMultiPrimitiveMessages(uint32_t threadID)
 
     uint32_t size = 0;
 
-    initializeJoinLocalDataPool();
-    auto data = getJoinLocalDataByIndex(0);
+    // Based on the type of `tupleBPS` operation - initialize the `JoinLocalDataPool`.
+    // We initialize the max possible number of threads, because the right number of parallel threads will be
+    // chosen right before the `vector of bytestream` processing based on `ThreadPool` workload.
+    if (doJoin || fe2)
+        initializeJoinLocalDataPool(fMaxNumProcessorThreads);
+    else
+        initializeJoinLocalDataPool(1);
 
     vector<boost::shared_ptr<messageqcpp::ByteStream>> bsv;
     boost::unique_lock<boost::mutex> tplLock(tplMutex, boost::defer_lock);
@@ -2326,31 +2331,35 @@ void TupleBPS::receiveMultiPrimitiveMessages(uint32_t threadID)
             }
 
             tplLock.unlock();
-            vector<vector<_CPInfo>> cpInfos;
 
+            vector<vector<_CPInfo>> cpInfos;
             // Calculate the work sizes.
-            const uint32_t workSize = size / fMaxNumProcessorThreads;
-            vector<uint32_t> workSizes;
-            if (workSize < fWorkSizeThreshold)
+            uint32_t currentThreadPoolSize = jobstepThreadPool.getThreadCount();
+            uint32_t numOfThreads = 1;
+            // FIXME: How to choose the right size of thread pool?
+            if (currentThreadPoolSize < 32 && (doJoin || fe2))
             {
-                // Use one thread.
-                workSizes.push_back(size);
+                numOfThreads = std::min(32 - currentThreadPoolSize, fMaxNumProcessorThreads);
+            }
+
+            // The `size` is greater than 0.
+            const uint32_t workSize = size / numOfThreads;
+            vector<uint32_t> workSizes;
+
+            // Calculate the work size for each thread.
+            workSizes.reserve(numOfThreads);
+            cpInfos.reserve(numOfThreads);
+
+            for (uint32_t i = 0; i < numOfThreads; ++i)
+            {
+                workSizes.push_back(workSize);
                 cpInfos.push_back(vector<_CPInfo>());
             }
-            else
-            {
-                // Calculate the work size for each thread.
-                workSizes.reserve(fMaxNumProcessorThreads);
-                cpInfos.reserve(fMaxNumProcessorThreads);
-                for (uint32_t i = 0; i < fMaxNumProcessorThreads; ++i)
-                {
-                    workSizes.push_back(workSize);
-                    cpInfos.push_back(vector<_CPInfo>());
-                }
 
-                const uint32_t moreWork = size % fMaxNumProcessorThreads;
-                for (uint32_t i = 0; i < moreWork; ++i)
-                    ++workSizes[i];
+            const uint32_t moreWork = size % numOfThreads;
+            for (uint32_t i = 0; i < moreWork; ++i)
+            {
+                ++workSizes[i];
             }
 
             uint32_t start = 0;
@@ -2432,6 +2441,8 @@ void TupleBPS::receiveMultiPrimitiveMessages(uint32_t threadID)
 
 out:
 
+    // Take just the first one.
+    auto data = getJoinLocalDataByIndex(0);
     // We have only one thread here.
     {
         if (doJoin && smallOuterJoiner != -1 && !cancelled())
@@ -2556,7 +2567,6 @@ out:
         fMsgBytesOut = stats.dataSent();
         fDec->removeQueue(uniqueID);
         tjoiners.clear();
-
     }
 
     //@Bug 1099
