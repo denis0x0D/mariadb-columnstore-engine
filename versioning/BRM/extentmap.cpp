@@ -283,6 +283,7 @@ FreeListImpl::FreeListImpl(unsigned key, off_t size, bool readOnly) :
 ExtentMap::ExtentMap()
 {
     fExtentMap = NULL;
+    fExtentMapTree = nullptr;
     fFreeList = NULL;
     fCurrentEMShmkey = -1;
     fCurrentFLShmkey = -1;

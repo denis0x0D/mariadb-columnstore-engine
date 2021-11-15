@@ -232,7 +232,14 @@ void BRMShmImpl::destroy()
     if (!oldName.empty()) bi::shared_memory_object::remove(oldName.c_str());
 }
 
-} //namespace
+// TODO: Implement this.
+BRMManagedShmImpl::BRMManagedShmImpl(unsigned key, off_t size, bool readOnly) {}
+void BRMManagedShmImpl::setReadOnly() {}
+int BRMManagedShmImpl::grow(unsigned newKey, off_t newSize) {}
+int BRMManagedShmImpl::clear(unsigned newKey, off_t newSize) {}
+void BRMManagedShmImpl::destroy() {}
+
+} // namespace BRM
 
 // vim:ts=4 sw=4:
 

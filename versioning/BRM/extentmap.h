@@ -955,6 +955,7 @@ private:
     ExtentMap& operator=(const ExtentMap& em);
 
     EMEntry* fExtentMap;
+    ExtentMapRBTree* fExtentMapTree;
     InlineLBIDRange* fFreeList;
     key_t fCurrentEMShmkey;
     key_t fCurrentFLShmkey;

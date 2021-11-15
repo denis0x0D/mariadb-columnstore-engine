@@ -32,6 +32,7 @@
 #include <cassert>
 #include <boost/interprocess/shared_memory_object.hpp>
 #include <boost/interprocess/mapped_region.hpp>
+#include <boost/interprocess/managed_shared_memory.hpp>
 
 namespace BRM
 {
@@ -72,6 +73,31 @@ private:
     unsigned fKey;
     off_t fSize;
     bool fReadOnly;
+};
+
+class BRMManagedShmImpl
+{
+public:
+  BRMManagedShmImpl(unsigned key, off_t size, bool readOnly = false);
+  ~BRMManagedShmImpl() = default;
+
+  inline unsigned key() const { return fKey; }
+  inline off_t size() const { return fSize; }
+  inline bool isReadOnly() const { return fReadOnly; }
+
+  void setReadOnly();
+  int grow(unsigned newKey, off_t newSize);
+  int clear(unsigned newKey, off_t newSize);
+
+  //  void swap(BRMShmImpl& rhs);
+  void destroy();
+
+  boost::interprocess::managed_shared_memory fShmSegment;
+
+private:
+  unsigned fKey;
+  off_t fSize;
+  bool fReadOnly;
 };
 
 } //namespace
