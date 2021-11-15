@@ -39,6 +39,9 @@
 #include <cassert>
 #include <boost/interprocess/shared_memory_object.hpp>
 #include <boost/interprocess/mapped_region.hpp>
+#include <boost/interprocess/managed_shared_memory.hpp>
+#include <boost/interprocess/allocators/allocator.hpp>
+#include <boost/interprocess/containers/map.hpp>
 
 #include "shmkeys.h"
 #include "brmtypes.h"
@@ -63,6 +66,8 @@
 #else
 #define EXPORT
 #endif
+
+namespace bi = boost::interprocess;
 
 namespace oam
 {
@@ -176,6 +181,12 @@ struct EMEntry
     EXPORT EMEntry& operator= (const EMEntry&);
     EXPORT bool operator< (const EMEntry&) const;
 };
+
+using EMEntryKeyValueType = std::pair<const int64_t, EMEntry>;
+using EMEntryKeyValueTypeAllocator =
+    bi::allocator<EMEntryKeyValueType, bi::managed_shared_memory::segment_manager>;
+using ExtentMapRBTree =
+    bi::map<int64_t, EMEntryKeyValueType, std::less<int64_t>, EMEntryKeyValueTypeAllocator>;
 
 // Bug 2989, moved from joblist
 struct ExtentSorter
