@@ -39,6 +39,9 @@
 #include <cassert>
 #include <boost/interprocess/shared_memory_object.hpp>
 #include <boost/interprocess/mapped_region.hpp>
+#include <boost/interprocess/managed_shared_memory.hpp>
+#include <boost/interprocess/allocators/allocator.hpp>
+#include <boost/interprocess/containers/map.hpp>
 
 #include "shmkeys.h"
 #include "brmtypes.h"
@@ -63,6 +66,8 @@
 #else
 #define EXPORT
 #endif
+
+namespace bi = boost::interprocess;
 
 namespace oam
 {
@@ -177,6 +182,16 @@ struct EMEntry
     EXPORT bool operator< (const EMEntry&) const;
 };
 
+// FIXME: Find better naming.
+using EMEntryKeyValueType = std::pair<const int64_t, EMEntry>;
+using VoidAllocator =
+    boost::interprocess::allocator<void, boost::interprocess::managed_shared_memory::segment_manager>;
+using EMEntryKeyValueTypeAllocator =
+    boost::interprocess::allocator<EMEntryKeyValueType,
+                                   boost::interprocess::managed_shared_memory::segment_manager>;
+using ExtentMapRBTree =
+    boost::interprocess::map<int64_t, EMEntry, std::less<int64_t>, EMEntryKeyValueTypeAllocator>;
+
 // Bug 2989, moved from joblist
 struct ExtentSorter
 {
@@ -256,6 +271,43 @@ private:
 
     static boost::mutex fInstanceMutex;
     static ExtentMapImpl* fInstance;
+};
+
+class ExtentMapRBTreeImpl
+{
+  public:
+    ~ExtentMapRBTreeImpl() = default;
+
+    static ExtentMapRBTreeImpl* makeExtentMapRBTreeImpl(unsigned key, off_t size, bool readOnly = false);
+
+    /*
+    static void refreshShm()
+    {
+        if (fInstance)
+        {
+            delete fInstance;
+            fInstance = NULL;
+        }
+    }
+    */
+
+    inline void grow(off_t size) { fManagedShm.grow(size); }
+
+    inline unsigned key() const { return fManagedShm.key(); }
+
+    inline ExtentMapRBTree* get() const { return fExtentMapRBTree; }
+    inline uint64_t getFreeMemory() const { return fManagedShm.fShmSegment->get_free_memory(); }
+
+  private:
+    ExtentMapRBTreeImpl(unsigned key, off_t size, bool readOnly = false);
+    ExtentMapRBTreeImpl(const ExtentMapRBTreeImpl& rhs);
+    ExtentMapRBTreeImpl& operator=(const ExtentMapRBTreeImpl& rhs);
+
+    BRMManagedShmImpl fManagedShm;
+    ExtentMapRBTree* fExtentMapRBTree;
+
+    static boost::mutex fInstanceMutex;
+    static ExtentMapRBTreeImpl* fInstance;
 };
 
 class FreeListImpl
@@ -944,6 +996,7 @@ private:
     ExtentMap& operator=(const ExtentMap& em);
 
     EMEntry* fExtentMap;
+    ExtentMapRBTree* fExtentMapRBTree;
     InlineLBIDRange* fFreeList;
     key_t fCurrentEMShmkey;
     key_t fCurrentFLShmkey;
@@ -1023,6 +1076,7 @@ private:
      */
     template <class T> void loadVersion4or5(T* in, bool upgradeV4ToV5);
 
+    ExtentMapRBTreeImpl* fPExtMapRBTreeImpl;
     ExtentMapImpl* fPExtMapImpl;
     FreeListImpl* fPFreeListImpl;
 };

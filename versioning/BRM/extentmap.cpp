@@ -247,6 +247,30 @@ ExtentMapImpl::ExtentMapImpl(unsigned key, off_t size, bool readOnly) :
 {
 }
 
+boost::mutex ExtentMapRBTreeImpl::fInstanceMutex;
+
+ExtentMapRBTreeImpl* ExtentMapRBTreeImpl::fInstance = 0;
+
+ExtentMapRBTreeImpl* ExtentMapRBTreeImpl::makeExtentMapRBTreeImpl(unsigned key, off_t size, bool readOnly)
+{
+    boost::mutex::scoped_lock lk(fInstanceMutex);
+
+    if (fInstance)
+        return fInstance;
+
+    fInstance = new ExtentMapRBTreeImpl(key, size, readOnly);
+    return fInstance;
+}
+
+ExtentMapRBTreeImpl::ExtentMapRBTreeImpl(unsigned key, off_t size, bool readOnly)
+    : fManagedShm(key, size, readOnly)
+{
+    VoidAllocator allocator(fManagedShm.fShmSegment->get_segment_manager());
+    // TODO: Take a right name for container.
+    fExtentMapRBTree =
+        fManagedShm.fShmSegment->construct<ExtentMapRBTree>("EmMapRBTree")(std::less<int64_t>(), allocator);
+}
+
 /*static*/
 boost::mutex FreeListImpl::fInstanceMutex;
 
@@ -283,6 +307,7 @@ FreeListImpl::FreeListImpl(unsigned key, off_t size, bool readOnly) :
 ExtentMap::ExtentMap()
 {
     fExtentMap = NULL;
+    fExtentMapRBTree = nullptr;
     fFreeList = NULL;
     fCurrentEMShmkey = -1;
     fCurrentFLShmkey = -1;
@@ -1812,7 +1837,12 @@ void ExtentMap::grabEMEntryTable(OPS op)
         else
         {
             fPExtMapImpl = ExtentMapImpl::makeExtentMapImpl(fEMShminfo->tableShmkey, 0);
+            // FIXME: Use a valid key.
+            uint32_t dummyKey = fEMShminfo->tableShmkey + 12345;
+            fPExtMapRBTreeImpl = ExtentMapRBTreeImpl::makeExtentMapRBTreeImpl(dummyKey, 0);
+
             ASSERT(fPExtMapImpl);
+            ASSERT(fPExtMapRBTreeImpl);
 
             if (r_only)
                 fPExtMapImpl->makeReadOnly();
@@ -1823,6 +1853,13 @@ void ExtentMap::grabEMEntryTable(OPS op)
             {
                 log_errno("ExtentMap::grabEMEntryTable(): shmat");
                 throw runtime_error("ExtentMap::grabEMEntryTable(): shmat failed.  Check the error log.");
+            }
+
+            fExtentMapRBTree = fPExtMapRBTreeImpl->get();
+            if (fExtentMapRBTree == NULL)
+            {
+                log_errno("ExtentMap cannot create RBTree in shared memory segment");
+                throw runtime_error("ExtentMap cannot create RBTree in shared memory segment");
             }
         }
     }
