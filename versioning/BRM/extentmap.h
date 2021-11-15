@@ -39,6 +39,9 @@
 #include <cassert>
 #include <boost/interprocess/shared_memory_object.hpp>
 #include <boost/interprocess/mapped_region.hpp>
+#include <boost/interprocess/managed_shared_memory.hpp>
+#include <boost/interprocess/allocators/allocator.hpp>
+#include <boost/interprocess/containers/map.hpp>
 
 #include "shmkeys.h"
 #include "brmtypes.h"
@@ -63,6 +66,8 @@
 #else
 #define EXPORT
 #endif
+
+namespace bi = boost::interprocess;
 
 namespace oam
 {
@@ -177,6 +182,16 @@ struct EMEntry
     EXPORT bool operator< (const EMEntry&) const;
 };
 
+// FIXME: Find better naming.
+using EMEntryKeyValueType = std::pair<const int64_t, EMEntry>;
+using VoidAllocator =
+    boost::interprocess::allocator<void, boost::interprocess::managed_shared_memory::segment_manager>;
+using EMEntryKeyValueTypeAllocator =
+    boost::interprocess::allocator<EMEntryKeyValueType,
+                                   boost::interprocess::managed_shared_memory::segment_manager>;
+using ExtentMapRBTree =
+    boost::interprocess::map<int64_t, EMEntry, std::less<int64_t>, EMEntryKeyValueTypeAllocator>;
+
 // Bug 2989, moved from joblist
 struct ExtentSorter
 {
@@ -256,6 +271,43 @@ private:
 
     static boost::mutex fInstanceMutex;
     static ExtentMapImpl* fInstance;
+};
+
+class ExtentMapRBTreeImpl
+{
+  public:
+    ~ExtentMapRBTreeImpl() = default;
+
+    static ExtentMapRBTreeImpl* makeExtentMapRBTreeImpl(unsigned key, off_t size, bool readOnly = false);
+
+    /*
+    static void refreshShm()
+    {
+        if (fInstance)
+        {
+            delete fInstance;
+            fInstance = NULL;
+        }
+    }
+    */
+
+    inline void grow(off_t size) { fManagedShm.grow(size); }
+
+    inline unsigned key() const { return fManagedShm.key(); }
+
+    inline ExtentMapRBTree* get() const { return fExtentMapRBTree; }
+    inline uint64_t getFreeMemory() const { return fManagedShm.fShmSegment->get_free_memory(); }
+
+  private:
+    ExtentMapRBTreeImpl(unsigned key, off_t size, bool readOnly = false);
+    ExtentMapRBTreeImpl(const ExtentMapRBTreeImpl& rhs);
+    ExtentMapRBTreeImpl& operator=(const ExtentMapRBTreeImpl& rhs);
+
+    BRMManagedShmImpl fManagedShm;
+    ExtentMapRBTree* fExtentMapRBTree;
+
+    static boost::mutex fInstanceMutex;
+    static ExtentMapRBTreeImpl* fInstance;
 };
 
 class FreeListImpl
@@ -386,7 +438,8 @@ public:
      * with LBID
      * @return 0 on success, -1 on error
      */
-    EXPORT int lookupLocal(LBID_t LBID, int& OID, uint16_t& dbRoot, uint32_t& partitionNum, uint16_t& segmentNum, uint32_t& fileBlockOffset);
+    EXPORT int lookupLocal(LBID_t LBID, int& OID, uint16_t& dbRoot, uint32_t& partitionNum,
+                           uint16_t& segmentNum, uint32_t& fileBlockOffset);
 
     /** @brief Look up the LBID associated with a given OID, offset, partition, and segment.
      *
@@ -398,7 +451,8 @@ public:
      * @param LBID (out) The LBID associated with the given offset of the OID.
      * @return 0 on success, -1 on error
      */
-    EXPORT int lookupLocal(int OID, uint32_t partitionNum, uint16_t segmentNum, uint32_t fileBlockOffset, LBID_t& LBID);
+    EXPORT int lookupLocal(int OID, uint32_t partitionNum, uint16_t segmentNum,
+                           uint32_t fileBlockOffset, LBID_t& LBID);
 
     /** @brief Look up the LBID associated with a given dbroot, OID, offset,
      * partition, and segment.
@@ -411,9 +465,8 @@ public:
      * @param LBID (out) The LBID associated with the given offset of the OID.
      * @return 0 on success, -1 on error
      */
-    EXPORT int lookupLocal_DBroot(int OID, uint16_t dbroot,
-                                  uint32_t partitionNum, uint16_t segmentNum, uint32_t fileBlockOffset,
-                                  LBID_t& LBID);
+    EXPORT int lookupLocal_DBroot(int OID, uint16_t dbroot, uint32_t partitionNum,
+                                  uint16_t segmentNum, uint32_t fileBlockOffset, LBID_t& LBID);
 
     // @bug 1055-.
 
@@ -428,11 +481,8 @@ public:
      *        containing the given offset
      * @return 0 on success, -1 on error
      */
-    int lookupLocalStartLbid(int OID,
-                             uint32_t partitionNum,
-                             uint16_t segmentNum,
-                             uint32_t fileBlockOffset,
-                             LBID_t& LBID);
+    int lookupLocalStartLbid(int OID, uint32_t partitionNum, uint16_t segmentNum,
+                             uint32_t fileBlockOffset, LBID_t& LBID);
 
     /** @brief Get a complete list of LBID ranges assigned to an OID
      *
@@ -459,12 +509,11 @@ public:
      * @param extents (out) list of lbids, numBlks, and fbo for new extents
      * @return 0 on success, -1 on error
      */
-    EXPORT void createStripeColumnExtents(
-        const std::vector<CreateStripeColumnExtentsArgIn>& cols,
-        uint16_t  dbRoot,
-        uint32_t& partitionNum,
-        uint16_t& segmentNum,
-        std::vector<CreateStripeColumnExtentsArgOut>& extents);
+    // Not used.
+    EXPORT void createStripeColumnExtents(const std::vector<CreateStripeColumnExtentsArgIn>& cols,
+                                          uint16_t dbRoot, uint32_t& partitionNum,
+                                          uint16_t& segmentNum,
+                                          std::vector<CreateStripeColumnExtentsArgOut>& extents);
 
     /** @brief Allocates an extent for a column file
      *
@@ -491,16 +540,12 @@ public:
      */
     // @bug 4091: To be deprecated as public function.  Should just be a
     // private function used by createStripeColumnExtents().
-    EXPORT void createColumnExtent_DBroot(int OID,
-                                          uint32_t  colWidth,
-                                          uint16_t  dbRoot,
+    // Not used.
+    EXPORT void createColumnExtent_DBroot(int OID, uint32_t colWidth, uint16_t dbRoot,
                                           execplan::CalpontSystemCatalog::ColDataType colDataType,
-                                          uint32_t& partitionNum,
-                                          uint16_t& segmentNum,
-                                          LBID_t&    lbid,
-                                          int&       allocdsize,
-                                          uint32_t& startBlockOffset,
-                                          bool       useLock = true);
+                                          uint32_t& partitionNum, uint16_t& segmentNum,
+                                          LBID_t& lbid, int& allocdsize, uint32_t& startBlockOffset,
+                                          bool useLock = true);
 
     /** @brief Allocates extent for exact file that is specified
      *
@@ -526,16 +571,11 @@ public:
      * @param allocdSize (out) The total number of LBIDs allocated.
      * @param startBlockOffset (out) The first block of the extent created.
      */
-    EXPORT void createColumnExtentExactFile(int OID,
-                                            uint32_t  colWidth,
-                                            uint16_t  dbRoot,
-                                            uint32_t  partitionNum,
-                                            uint16_t  segmentNum,
+    EXPORT void createColumnExtentExactFile(int OID, uint32_t colWidth, uint16_t dbRoot,
+                                            uint32_t partitionNum, uint16_t segmentNum,
                                             execplan::CalpontSystemCatalog::ColDataType colDataType,
-                                            LBID_t&    lbid,
-                                            int&       allocdsize,
+                                            LBID_t& lbid, int& allocdsize,
                                             uint32_t& startBlockOffset);
-
     /** @brief Allocates an extent for a dictionary store file
      *
      * Allocates an extent for the specified dictionary store OID,
@@ -553,12 +593,8 @@ public:
      * @param lbid (out) The first LBID of the extent created.
      * @param allocdsize (out) The total number of LBIDs allocated.
      */
-    EXPORT void createDictStoreExtent(int OID,
-                                      uint16_t   dbRoot,
-                                      uint32_t   partitionNum,
-                                      uint16_t   segmentNum,
-                                      LBID_t&    lbid,
-                                      int&       allocdsize);
+    EXPORT void createDictStoreExtent(int OID, uint16_t dbRoot, uint32_t partitionNum,
+                                      uint16_t segmentNum, LBID_t& lbid, int& allocdsize);
 
     /** @brief Rollback (delete) a set of extents for the specified OID.
      *
@@ -569,10 +605,9 @@ public:
      * @param segmentNum Last segment in partitionNum to be kept.
      * @param hwm HWM to be assigned to the last extent that is kept.
      */
-    EXPORT void rollbackColumnExtents(int oid,
-                                      uint32_t partitionNum,
-                                      uint16_t segmentNum,
-                                      HWM_t     hwm);
+    // Not implemented.
+    EXPORT void rollbackColumnExtents(int oid, uint32_t partitionNum, uint16_t segmentNum,
+                                      HWM_t hwm);
 
     /** @brief Rollback (delete) set of extents for specified OID & DBRoot.
      *
@@ -586,12 +621,8 @@ public:
      * @param segmentNum Last segment in partitionNum to be kept.
      * @param hwm HWM to be assigned to the last extent that is kept.
      */
-    EXPORT void rollbackColumnExtents_DBroot(int oid,
-            bool      bDeleteAll,
-            uint16_t dbRoot,
-            uint32_t partitionNum,
-            uint16_t segmentNum,
-            HWM_t     hwm);
+    EXPORT void rollbackColumnExtents_DBroot(int oid, bool bDeleteAll, uint16_t dbRoot,
+                                             uint32_t partitionNum, uint16_t segmentNum, HWM_t hwm);
 
     /** @brief delete of column extents for the specified extents.
      *
@@ -623,8 +654,8 @@ public:
      * @param partitionNum Last partition to be kept.
      * @param hwms Vector of hwms for the last partition to be kept.
      */
-    EXPORT void rollbackDictStoreExtents(int oid,
-                                         uint32_t        partitionNum,
+    // Not implemented.
+    EXPORT void rollbackDictStoreExtents(int oid, uint32_t partitionNum,
                                          const std::vector<HWM_t>& hwms);
 
     /** @brief Rollback (delete) a set of dict store extents for an OID & DBRoot
@@ -641,11 +672,9 @@ public:
      * @param segNums Vector of segment files in last partition to be kept.
      * @param hwms Vector of hwms for the last partition to be kept.
      */
-    EXPORT void rollbackDictStoreExtents_DBroot(int oid,
-            uint16_t  dbRoot,
-            uint32_t  partitionNum,
-            const std::vector<uint16_t>& segNums,
-            const std::vector<HWM_t>& hwms);
+    EXPORT void rollbackDictStoreExtents_DBroot(int oid, uint16_t dbRoot, uint32_t partitionNum,
+                                                const std::vector<uint16_t>& segNums,
+                                                const std::vector<HWM_t>& hwms);
 
     /** @brief Deallocates all extents associated with OID
      *
@@ -690,7 +719,6 @@ public:
     EXPORT HWM_t getLastHWM_DBroot(int OID, uint16_t dbRoot,
                                    uint32_t& partitionNum, uint16_t& segmentNum,
                                    int& status, bool& bFound);
-
     /** @brief Gets the current high water mark of an OID,partition,segment
      *
      * Get current local high water mark of an OID, partition, segment;
@@ -702,8 +730,7 @@ public:
      * @return The last file block number written to in the specified
      * partition/segment file for the given OID.
      */
-    EXPORT HWM_t getLocalHWM(int OID, uint32_t partitionNum,
-                             uint16_t segmentNum, int& status);
+    EXPORT HWM_t getLocalHWM(int OID, uint32_t partitionNum, uint16_t segmentNum, int& status);
 
     /** @brief Sets the current high water mark of an OID,partition,segment
      *
@@ -718,7 +745,9 @@ public:
                             uint16_t segmentNum, HWM_t HWM, bool firstNode,
                             bool uselock = true);
 
+
     EXPORT void bulkSetHWM(const std::vector<BulkSetHWMArg>&, bool firstNode);
+
 
     EXPORT void bulkUpdateDBRoot(const std::vector<BulkUpdateDBRootArg>&);
 
@@ -748,9 +777,9 @@ public:
      * @param bFound (out) Indicates if extent was found or not
      * @param status (out) The state of the extents in the specified
      *        segment file.
-    */
-    EXPORT void getExtentState(int OID, uint32_t partitionNum,
-                               uint16_t segmentNum, bool& bFound, int& status);
+     */
+    EXPORT void getExtentState(int OID, uint32_t partitionNum, uint16_t segmentNum, bool& bFound,
+                               int& status);
 
     /** @brief Gets the extents of a given OID
      *
@@ -766,9 +795,8 @@ public:
      * @param notFoundErr (in) indicates if no extents is considered an err
      * @param incOutOfService (in) include/exclude out of service extents
      */
-    EXPORT void getExtents(int OID, std::vector<struct EMEntry>& entries,
-                           bool sorted = true, bool notFoundErr = true,
-                           bool incOutOfService = false);
+    EXPORT void getExtents(int OID, std::vector<struct EMEntry>& entries, bool sorted = true,
+                           bool notFoundErr = true, bool incOutOfService = false);
 
     /** @brief Gets the extents of a given OID under specified dbroot
      *
@@ -827,7 +855,8 @@ public:
      * @param partitionNums (in) the set of partitions to be marked out of service.
      */
     EXPORT void markPartitionForDeletion(const std::set<OID_t>& oids,
-                                         const std::set<LogicalPartition>& partitionNums, std::string& emsg);
+                                         const std::set<LogicalPartition>& partitionNums,
+                                         std::string& emsg);
 
     /** @brief Mark all Partition for the specified OID(s) as out of service.
      *
@@ -841,7 +870,8 @@ public:
      * @param partitionNums (in) the set of partitions to be restored.
      */
     EXPORT void restorePartition(const std::set<OID_t>& oids,
-                                 const std::set<LogicalPartition>& partitionNums, std::string& emsg);
+                                 const std::set<LogicalPartition>& partitionNums,
+                                 std::string& emsg);
 
     /** @brief Get the list of out-of-service partitions for a given OID
      *
@@ -849,8 +879,7 @@ public:
      * @param partitionNums (out) the out-of-service partitions for the oid.
      * partitionNums will be in sorted order.
      */
-    EXPORT void getOutOfServicePartitions(OID_t oid,
-                                          std::set<LogicalPartition>& partitionNums);
+    EXPORT void getOutOfServicePartitions(OID_t oid, std::set<LogicalPartition>& partitionNums);
 
     /** @brief Delete all extent map rows for the specified dbroot
      *
@@ -879,13 +908,19 @@ public:
 
     EXPORT virtual void confirmChanges();
 
+    // RBTRee start.
     EXPORT int markInvalid(const LBID_t lbid,
                            const execplan::CalpontSystemCatalog::ColDataType colDataType);
-    EXPORT int markInvalid(const std::vector<LBID_t>& lbids,
-                           const std::vector<execplan::CalpontSystemCatalog::ColDataType>& colDataTypes);
 
-    EXPORT int setMaxMin(const LBID_t lbidRange, const int64_t max, const int64_t min, const int32_t seqNum,
-                         bool firstNode);
+    EXPORT int
+    markInvalid(const std::vector<LBID_t>& lbids,
+                const std::vector<execplan::CalpontSystemCatalog::ColDataType>& colDataTypes);
+
+    // Not used.
+    EXPORT int setMaxMin(const LBID_t lbidRange, const int64_t max, const int64_t min,
+                         const int32_t seqNum, bool firstNode);
+
+    // RBTree end.
 
     // @bug 1970.  Added setExtentsMaxMin function below.
 
@@ -907,22 +942,25 @@ public:
     template <typename T>
     EXPORT int getMaxMin(const LBID_t lbidRange, T& max, T& min, int32_t& seqNum);
 
-    EXPORT void getCPMaxMin(const LBID_t lbidRange, CPMaxMin& cpMaxMin); /** @brief Get whole record for untyped use. */
+    /** @brief Get whole record for untyped use. */
+    EXPORT void getCPMaxMin(const LBID_t lbidRange, CPMaxMin& cpMaxMin);
+    /** @brief Get whole record for untyped use. */
 
     inline bool empty()
     {
-        if (fEMShminfo == 0)
+        if (fEMRBTreeShminfo == 0)
         {
-            grabEMEntryTable(BRM::ExtentMap::READ);
-            releaseEMEntryTable(BRM::ExtentMap::READ);
+            grabEMEntryTable(READ);
+            releaseEMEntryTable(READ);
         }
 
-        return (fEMShminfo->currentSize == 0);
+        return (fEMRBTreeShminfo->currentSize == 0);
     }
 
     EXPORT std::vector<InlineLBIDRange> getFreeListEntries();
 
     EXPORT void dumpTo(std::ostream& os);
+
     EXPORT const bool* getEMLockStatus();
     EXPORT const bool* getEMFLLockStatus();
 
@@ -934,21 +972,29 @@ public:
 #endif
 
 private:
-    static const size_t EM_INCREMENT_ROWS = 100;
+    static const size_t EM_INCREMENT_ROWS = 10000;
     static const size_t EM_INITIAL_SIZE = EM_INCREMENT_ROWS * 10 * sizeof(EMEntry);
+    static const size_t EM_RB_TREE_NODE_SIZE = sizeof(EMEntry) + 8 * sizeof(uint64_t);
+    static const size_t EM_RB_TREE_META_SIZE = 512;
+    static const size_t EM_RB_TREE_INITIAL_SIZE =
+        EM_INCREMENT_ROWS * 10 * EM_RB_TREE_NODE_SIZE + EM_RB_TREE_META_SIZE;
     static const size_t EM_INCREMENT = EM_INCREMENT_ROWS * sizeof(EMEntry);
+    static const size_t EM_RB_TREE_INCREMENT = EM_INCREMENT_ROWS * EM_RB_TREE_NODE_SIZE;
     static const size_t EM_FREELIST_INITIAL_SIZE = 50 * sizeof(InlineLBIDRange);
     static const size_t EM_FREELIST_INCREMENT = 50 * sizeof(InlineLBIDRange);
 
     ExtentMap(const ExtentMap& em);
     ExtentMap& operator=(const ExtentMap& em);
 
-    EMEntry* fExtentMap;
+    ExtentMapRBTree* fExtentMapRBTree;
     InlineLBIDRange* fFreeList;
+
     key_t fCurrentEMShmkey;
     key_t fCurrentFLShmkey;
-    MSTEntry* fEMShminfo;
+
+    MSTEntry* fEMRBTreeShminfo;
     MSTEntry* fFLShminfo;
+
     const MasterSegmentTable fMST;
     bool r_only;
     typedef std::tr1::unordered_map<int, oam::DBRootConfigList*> PmDbRootMap_t;
@@ -956,7 +1002,10 @@ private:
     time_t fCacheTime; // timestamp associated with config cache
 
     int numUndoRecords;
-    bool flLocked, emLocked;
+
+    bool flLocked;
+    bool emLocked;
+
     static boost::mutex mutex; // @bug5355 - made mutex static
     boost::mutex fConfigCacheMutex; // protect access to Config Cache
 
@@ -976,31 +1025,42 @@ private:
                                       uint32_t& partitionNum,
                                       uint16_t& segmentNum,
                                       uint32_t& startBlockOffset);
-    LBID_t _createColumnExtentExactFile(uint32_t size, int OID,
-                                        uint32_t  colWidth,
-                                        uint16_t  dbRoot,
-                                        uint32_t  partitionNum,
-                                        uint16_t  segmentNum,
+
+    LBID_t _createColumnExtentExactFile(uint32_t size, int OID, uint32_t colWidth, uint16_t dbRoot,
+                                        uint32_t partitionNum, uint16_t segmentNum,
                                         execplan::CalpontSystemCatalog::ColDataType colDataType,
                                         uint32_t& startBlockOffset);
-    LBID_t _createDictStoreExtent(uint32_t size, int OID,
-                                  uint16_t  dbRoot,
-                                  uint32_t  partitionNum,
-                                  uint16_t  segmentNum);
+
+    LBID_t _createDictStoreExtent(uint32_t size, int OID, uint16_t dbRoot, uint32_t partitionNum,
+                                  uint16_t segmentNum);
+
     template <typename T>
     bool isValidCPRange(const T& max, const T& min, execplan::CalpontSystemCatalog::ColDataType type) const;
-    void deleteExtent(int emIndex);
-    LBID_t getLBIDsFromFreeList(uint32_t size);
-    void reserveLBIDRange(LBID_t start, uint8_t size);    // used by load() to allocate pre-existing LBIDs
 
-    key_t chooseEMShmkey();  //see the code for how keys are segmented
+    // Delete extent.
+    ExtentMapRBTree::iterator deleteExtent(ExtentMapRBTree::iterator it);
+
+    LBID_t getLBIDsFromFreeList(uint32_t size);
+    // Used by load() to allocate pre-existing LBIDs.
+    void reserveLBIDRange(LBID_t start, uint8_t size);
+
+    // Choose key.
     key_t chooseFLShmkey();  //see the code for how keys are segmented
+    key_t chooseEMShmkey();
+
+    // Grab table.
     void grabEMEntryTable(OPS op);
     void grabFreeList(OPS op);
+
+    // Release table.
     void releaseEMEntryTable(OPS op);
     void releaseFreeList(OPS op);
+
+    // Grow memory.
     void growEMShmseg(size_t nrows = 0);
     void growFLShmseg();
+
+    // Finish changes.
     void finishChanges();
 
     EXPORT unsigned getFilesPerColumnPartition();
@@ -1012,9 +1072,13 @@ private:
 
     bool fDebug;
 
-    int _markInvalid(const LBID_t lbid, const execplan::CalpontSystemCatalog::ColDataType colDataType);
+    int _markInvalid(const LBID_t lbid,
+                     const execplan::CalpontSystemCatalog::ColDataType colDataType);
+
+    ExtentMapRBTree::iterator findByLBID(const LBID_t lbid);
 
     template <class T> void load(T* in);
+
     /** @brief Loads the extent map from a file into memory.
      *
      * @param in (in) the file to load the extent map from.
@@ -1023,7 +1087,7 @@ private:
      */
     template <class T> void loadVersion4or5(T* in, bool upgradeV4ToV5);
 
-    ExtentMapImpl* fPExtMapImpl;
+    ExtentMapRBTreeImpl* fPExtMapRBTreeImpl;
     FreeListImpl* fPFreeListImpl;
 };
 

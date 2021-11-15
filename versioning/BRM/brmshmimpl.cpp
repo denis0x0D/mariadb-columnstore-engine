@@ -232,7 +232,68 @@ void BRMShmImpl::destroy()
     if (!oldName.empty()) bi::shared_memory_object::remove(oldName.c_str());
 }
 
-} //namespace
+BRMManagedShmImpl::BRMManagedShmImpl(unsigned key, off_t size, bool readOnly)
+    : fKey(key), fSize(size), fReadOnly(readOnly)
+{
+    auto keyName = ShmKeys::keyToName(fKey);
+
+    // FIXME: Take a right size.
+    // Actually this means to open a segment at the default code.
+    if (fSize == 0)
+        fSize = 64000;
+
+    try
+    {
+        bi::permissions perms;
+        perms.set_unrestricted();
+
+        fShmSegment = new boost::interprocess::managed_shared_memory(
+            boost::interprocess::open_or_create, keyName.c_str(), fSize, 0, perms);
+
+        fSize = fShmSegment->get_size();
+    }
+    catch (exception& e)
+    {
+        std::cout << "Cannot create boost::interprocess::managed_shared_memory object: " << e.what()
+                  << std::endl;
+    }
+}
+
+BRMManagedShmImpl::~BRMManagedShmImpl() {}
+
+// Not implemented.
+void BRMManagedShmImpl::setReadOnly() {}
+
+int BRMManagedShmImpl::grow(off_t newSize)
+{
+    auto keyName = ShmKeys::keyToName(fKey);
+
+    if (newSize > fSize)
+    {
+        const auto incSize = newSize - fSize;
+        if (fShmSegment)
+        {
+            // Call destructor to unmap the segment.
+            delete fShmSegment;
+            // Grow the segment.
+            bi::managed_shared_memory::grow(keyName.c_str(), incSize);
+            // Open only.
+            fShmSegment = new bi::managed_shared_memory(bi::open_only, keyName.c_str());
+            // Update size.
+            fSize = newSize;
+        }
+    }
+
+    // FIXME: Is this needed?
+    return 0;
+}
+
+void BRMManagedShmImpl::destroy(unsigned key)
+{
+    auto keyName = ShmKeys::keyToName(fKey);
+    bi::shared_memory_object::remove(keyName.c_str());
+}
+
+} // namespace BRM
 
 // vim:ts=4 sw=4:
-

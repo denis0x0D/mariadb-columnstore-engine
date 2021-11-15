@@ -234,6 +234,9 @@ int main(int argc, char** argv)
     semDoit(BrmKeys.KEYRANGE_VBBM_BASE,       "VBBM       ");
     semDoit(BrmKeys.KEYRANGE_VSS_BASE,        "VSS        ");
     semDoit(BrmKeys.MST_SYSVKEY,              "MST        ");
+    // We have only one segment, and grow it on request.
+    semDoit(13, "EXTENT_MAP_RB_TREE");
+    shmDoit(13, "EXTENT_MAP_RB_TREE");
 
     if (!cFlg)
     {
