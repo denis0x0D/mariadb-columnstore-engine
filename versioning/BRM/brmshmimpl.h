@@ -86,13 +86,10 @@ public:
   inline bool isReadOnly() const { return fReadOnly; }
 
   void setReadOnly();
-  int grow(unsigned newKey, off_t newSize);
-  int clear(unsigned newKey, off_t newSize);
+  int grow(off_t newSize);
+  void destroy(unsigned key);
 
-  //  void swap(BRMShmImpl& rhs);
-  void destroy();
-
-  boost::interprocess::managed_shared_memory fShmSegment;
+  boost::interprocess::managed_shared_memory* fShmSegment;
 
 private:
   unsigned fKey;

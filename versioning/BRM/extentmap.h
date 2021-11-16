@@ -291,11 +291,7 @@ class ExtentMapRBTreeImpl
     }
     */
 
-    inline void grow(unsigned key, off_t size) { fManagedShm.grow(key, size); }
-
-    inline void clear(unsigned key, off_t size) {}
-
-    inline void swapout(BRMShmImpl& rhs) {}
+    inline void grow(off_t size) { fManagedShm.grow(size); }
 
     inline unsigned key() const { return fManagedShm.key(); }
 
