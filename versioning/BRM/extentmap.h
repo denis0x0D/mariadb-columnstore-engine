@@ -269,6 +269,46 @@ private:
     static ExtentMapImpl* fInstance;
 };
 
+class ExtentMapRBTreeImpl
+{
+  public:
+    ~ExtentMapRBTreeImpl() = default;
+
+    static ExtentMapRBTreeImpl* makeExtentMapRBTreeImpl(unsigned key, off_t size, bool readOnly = false);
+
+    /*
+    static void refreshShm()
+    {
+        if (fInstance)
+        {
+            delete fInstance;
+            fInstance = NULL;
+        }
+    }
+    */
+
+    inline void grow(unsigned key, off_t size) { fManagedShm.grow(key, size); }
+
+    inline void clear(unsigned key, off_t size) {}
+
+    inline void swapout(BRMShmImpl& rhs) {}
+
+    inline unsigned key() const { return fManagedShm.key(); }
+
+    inline ExtentMapRBTree* get() const { return fExtentMapRBTree; }
+
+  private:
+    ExtentMapRBTreeImpl(unsigned key, off_t size, bool readOnly = false);
+    ExtentMapRBTreeImpl(const ExtentMapRBTreeImpl& rhs);
+    ExtentMapRBTreeImpl& operator=(const ExtentMapRBTreeImpl& rhs);
+
+    BRMManagedShmImpl fManagedShm;
+    ExtentMapRBTree* fExtentMapRBTree;
+
+    static boost::mutex fInstanceMutex;
+    static ExtentMapRBTreeImpl* fInstance;
+};
+
 class FreeListImpl
 {
 public:

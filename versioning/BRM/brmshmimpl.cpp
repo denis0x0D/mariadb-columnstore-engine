@@ -233,9 +233,37 @@ void BRMShmImpl::destroy()
 }
 
 // TODO: Implement this.
-BRMManagedShmImpl::BRMManagedShmImpl(unsigned key, off_t size, bool readOnly) {}
+BRMManagedShmImpl::BRMManagedShmImpl(unsigned key, off_t size, bool readOnly)
+    : fKey(key), fSize(size), fReadOnly(readOnly)
+{
+    auto keyName = ShmKeys::keyToName(fKey);
+
+    // FIXME: Take a right size.
+    if (fSize == 0)
+    {
+        fSize = 64000;
+    }
+
+    bi::managed_shared_memory tempSegment(bi::create_only, keyName.c_str(), fSize);
+    fShmSegment = std::move(tempSegment);
+    // FIXME: Add exception handling.
+}
+
 void BRMManagedShmImpl::setReadOnly() {}
-int BRMManagedShmImpl::grow(unsigned newKey, off_t newSize) {}
+
+int BRMManagedShmImpl::grow(unsigned newKey, off_t newSize)
+{
+    auto keyName = ShmKeys::keyToName(fKey);
+
+    if (newSize > fSize)
+    {
+        const auto moreSize = newSize - fSize;
+        bi::managed_shared_memory::grow(keyName.c_str(), moreSize);
+    }
+    // TODO: Handle decreasing.
+}
+
+// TODO
 int BRMManagedShmImpl::clear(unsigned newKey, off_t newSize) {}
 void BRMManagedShmImpl::destroy() {}
 

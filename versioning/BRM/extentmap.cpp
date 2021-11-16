@@ -247,6 +247,38 @@ ExtentMapImpl::ExtentMapImpl(unsigned key, off_t size, bool readOnly) :
 {
 }
 
+boost::mutex ExtentMapRBTreeImpl::fInstanceMutex;
+
+ExtentMapRBTreeImpl* ExtentMapRBTreeImpl::fInstance = 0;
+
+ExtentMapRBTreeImpl* ExtentMapRBTreeImpl::makeExtentMapRBTreeImpl(unsigned key, off_t size, bool readOnly)
+{
+    boost::mutex::scoped_lock lk(fInstanceMutex);
+
+    if (fInstance)
+    {
+        // TODO: Impelement swapout.
+        /*
+          if (key != fInstance->fExtSharedMap.key())
+          {
+              BRMShmImpl newShm(key, 0);
+              fInstance->swapout(newShm);
+          }
+          */
+
+        ASSERT(key == fInstance->fExtMap.key());
+        return fInstance;
+    }
+
+    fInstance = new ExtentMapRBTreeImpl(key, size, readOnly);
+    return fInstance;
+}
+
+ExtentMapRBTreeImpl::ExtentMapRBTreeImpl(unsigned key, off_t size, bool readOnly)
+    : fManagedShm(key, size, readOnly)
+{
+}
+
 /*static*/
 boost::mutex FreeListImpl::fInstanceMutex;
 
