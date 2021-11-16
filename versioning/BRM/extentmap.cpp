@@ -277,6 +277,10 @@ ExtentMapRBTreeImpl* ExtentMapRBTreeImpl::makeExtentMapRBTreeImpl(unsigned key, 
 ExtentMapRBTreeImpl::ExtentMapRBTreeImpl(unsigned key, off_t size, bool readOnly)
     : fManagedShm(key, size, readOnly)
 {
+    VoidAllocator allocator(fManagedShm.fShmSegment.get_segment_manager());
+    // TODO: Take a right name for container.
+    fExtentMapRBTree =
+        fManagedShm.fShmSegment.construct<ExtentMapRBTree>("EmMapRBTree")(std::less<int64_t>(), allocator);
 }
 
 /*static*/

@@ -182,11 +182,15 @@ struct EMEntry
     EXPORT bool operator< (const EMEntry&) const;
 };
 
+// FIXME: Find better naming.
 using EMEntryKeyValueType = std::pair<const int64_t, EMEntry>;
+using VoidAllocator =
+    boost::interprocess::allocator<void, boost::interprocess::managed_shared_memory::segment_manager>;
 using EMEntryKeyValueTypeAllocator =
-    bi::allocator<EMEntryKeyValueType, bi::managed_shared_memory::segment_manager>;
+    boost::interprocess::allocator<EMEntryKeyValueType,
+                                   boost::interprocess::managed_shared_memory::segment_manager>;
 using ExtentMapRBTree =
-    bi::map<int64_t, EMEntryKeyValueType, std::less<int64_t>, EMEntryKeyValueTypeAllocator>;
+    boost::interprocess::map<int64_t, EMEntry, std::less<int64_t>, EMEntryKeyValueTypeAllocator>;
 
 // Bug 2989, moved from joblist
 struct ExtentSorter
