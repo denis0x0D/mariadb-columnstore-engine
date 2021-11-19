@@ -306,18 +306,19 @@ FreeListImpl::FreeListImpl(unsigned key, off_t size, bool readOnly) :
 
 ExtentMap::ExtentMap()
 {
-    fExtentMap = NULL;
+    fExtentMap = nullptr;
     fExtentMapRBTree = nullptr;
-    fFreeList = NULL;
+    fFreeList = nullptr;
     fCurrentEMShmkey = -1;
     fCurrentFLShmkey = -1;
-    fEMShminfo = NULL;
-    fFLShminfo = NULL;
+    fEMShminfo = nullptr;
+    fFLShminfo = nullptr;
     r_only = false;
     flLocked = false;
     emLocked = false;
-    fPExtMapImpl = 0;
-    fPFreeListImpl = 0;
+    fPExtMapImpl = nullptr;
+    fPExtMapRBTreeImpl = nullptr;
+    fPFreeListImpl = nullptr;
 
 #ifdef BRM_INFO
     fDebug = ("Y" == config::Config::makeConfig()->getConfig("DBRM", "Debug"));
@@ -1837,12 +1838,8 @@ void ExtentMap::grabEMEntryTable(OPS op)
         else
         {
             fPExtMapImpl = ExtentMapImpl::makeExtentMapImpl(fEMShminfo->tableShmkey, 0);
-            // FIXME: Use a valid key.
-            uint32_t dummyKey = fEMShminfo->tableShmkey + 12345;
-            fPExtMapRBTreeImpl = ExtentMapRBTreeImpl::makeExtentMapRBTreeImpl(dummyKey, 0);
 
             ASSERT(fPExtMapImpl);
-            ASSERT(fPExtMapRBTreeImpl);
 
             if (r_only)
                 fPExtMapImpl->makeReadOnly();
@@ -1854,9 +1851,61 @@ void ExtentMap::grabEMEntryTable(OPS op)
                 log_errno("ExtentMap::grabEMEntryTable(): shmat");
                 throw runtime_error("ExtentMap::grabEMEntryTable(): shmat failed.  Check the error log.");
             }
+        }
+    }
+    else
+        fExtentMap = fPExtMapImpl->get();
+}
+
+void ExtentMap::grabEMRBTreeEntryTable(OPS op)
+{
+    boost::mutex::scoped_lock lk(mutex);
+
+    if (op == READ)
+        fEMRBTreeShminfo = fMST.getTable_read(MasterSegmentTable::EMRBTreeTable);
+    else
+    {
+        fEMRBTreeShminfo = fMST.getTable_write(MasterSegmentTable::EMRBTreeTable);
+        // emLocked = true;
+    }
+
+    if (!fPExtMapRBTreeImpl || fPExtMapRBTreeImpl->key() != (uint32_t) fEMRBTreeShminfo->tableShmkey)
+    {
+        if (fExtentMapRBTree)
+            fExtentMap = nullptr;
+
+        if (fEMRBTreeShminfo->allocdSize == 0)
+        {
+            if (op == READ)
+            {
+                fMST.getTable_upgrade(MasterSegmentTable::EMRBTreeTable);
+                //  emLocked = true;
+
+                // TODO: Implement grow for EMShmeg.
+                if (fEMRBTreeShminfo->allocdSize == 0)
+                    growEMShmseg();
+
+                // TODO: Add locks.
+                // emLocked = false;	// has to be done holding the write lock
+                fMST.getTable_downgrade(MasterSegmentTable::EMRBTreeTable);
+            }
+            else
+            {
+                growEMRBTreeShmseg();
+            }
+        }
+        else
+        {
+            fPExtMapRBTreeImpl =
+                ExtentMapRBTreeImpl::makeExtentMapRBTreeImpl(fEMRBTreeShminfo->tableShmkey, 0);
+
+            ASSERT(fPExtMapRBTreeImpl);
+
+            // if (r_only)
+            //    fPExtMapRBTreeImpl->makeReadOnly();
 
             fExtentMapRBTree = fPExtMapRBTreeImpl->get();
-            if (fExtentMapRBTree == NULL)
+            if (fExtentMapRBTree == nullptr)
             {
                 log_errno("ExtentMap cannot create RBTree in shared memory segment");
                 throw runtime_error("ExtentMap cannot create RBTree in shared memory segment");
@@ -1864,7 +1913,9 @@ void ExtentMap::grabEMEntryTable(OPS op)
         }
     }
     else
-        fExtentMap = fPExtMapImpl->get();
+    {
+        fExtentMapRBTree = fPExtMapRBTreeImpl->get();
+    }
 }
 
 /* always returns holding the FL lock */
@@ -1979,6 +2030,21 @@ key_t ExtentMap::chooseEMShmkey()
     return ret;
 }
 
+key_t ExtentMap::chooseEMRBTreeShmkey()
+{
+    int fixedKeys = 1;
+    key_t ret;
+
+    if (fEMRBTreeShminfo->tableShmkey + 1 ==
+            (key_t)(fShmKeys.KEYRANGE_EXTENTMAP_RB_TREE_BASE + fShmKeys.KEYRANGE_SIZE - 1) ||
+        (unsigned) fEMShminfo->tableShmkey < fShmKeys.KEYRANGE_EXTENTMAP_RB_TREE_BASE)
+        ret = fShmKeys.KEYRANGE_EXTENTMAP_RB_TREE_BASE + fixedKeys;
+    else
+        ret = fEMShminfo->tableShmkey + 1;
+
+    return ret;
+}
+
 key_t ExtentMap::chooseFLShmkey()
 {
     int fixedKeys = 1, ret;
@@ -2026,6 +2092,43 @@ void ExtentMap::growEMShmseg(size_t nrows)
         fPExtMapImpl->makeReadOnly();
 
     fExtentMap = fPExtMapImpl->get();
+}
+
+/* Must be called holding the EM write lock
+   Returns with the new shmseg mapped */
+void ExtentMap::growEMRBTreeShmseg(size_t nrows)
+{
+    size_t allocSize;
+
+    if (fEMRBTreeShminfo->allocdSize == 0)
+    {
+        if (fEMRBTreeShminfo->tableShmkey == -1)
+            fEMRBTreeShminfo->tableShmkey = chooseEMRBTreeShmkey();
+
+        allocSize = EM_RB_TREE_INITIAL_SIZE;
+    }
+    else
+    {
+        allocSize = fEMRBTreeShminfo->allocdSize + EM_RB_TREE_INCREMENT;
+    }
+
+    ASSERT((allocSize == EM_RB_TREE_INITIAL_SIZE && !fPExtMapRBTreeImpl) || fPExtRBTreeMapImpl);
+
+    if (!fPExtMapRBTreeImpl)
+    {
+        fPExtMapRBTreeImpl =
+            ExtentMapRBTreeImpl::makeExtentMapRBTreeImpl(fEMRBTreeShminfo->tableShmkey, allocSize, r_only);
+    }
+    else
+    {
+        fPExtMapRBTreeImpl->grow(allocSize);
+    }
+
+    fEMRBTreeShminfo->allocdSize = allocSize;
+    // if (r_only)
+    //   fPExtMapImpl->makeReadOnly();
+
+    fExtentMapRBTree = fPExtMapRBTreeImpl->get();
 }
 
 /* Must be called holding the FL lock
@@ -5255,9 +5358,9 @@ void ExtentMap::markPartitionForDeletion(const set<OID_t>& oids,
         TRACER_WRITENOW("markPartitionForDeletion");
         ostringstream oss;
         set<LogicalPartition>::const_iterator partIt;
-		oss << "partitionNums: ";
-		for (partIt=partitionNums.begin(); partIt!=partitionNums.end(); ++partIt)
-			oss << (*partIt) << " ";
+        oss << "partitionNums: ";
+        for (partIt = partitionNums.begin(); partIt != partitionNums.end(); ++partIt)
+            oss << (*partIt) << " ";
 
         oss << endl;
         oss << "OIDS: ";

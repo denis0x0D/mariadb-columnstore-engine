@@ -988,7 +988,14 @@ public:
 private:
     static const size_t EM_INCREMENT_ROWS = 100;
     static const size_t EM_INITIAL_SIZE = EM_INCREMENT_ROWS * 10 * sizeof(EMEntry);
+    // FIXME: Make sure this a right size of the node.
+    static const size_t EM_RB_TREE_NODE_SIZE = sizeof(EMEntry) + 3 * sizeof(uint64_t);
+    // FIXME: Check this also.
+    static const size_t EM_RB_TREE_META_SIZE = 512;
+    static const size_t EM_RB_TREE_INITIAL_SIZE =
+        EM_INCREMENT_ROWS * 10 * EM_RB_TREE_NODE_SIZE + EM_RB_TREE_META_SIZE;
     static const size_t EM_INCREMENT = EM_INCREMENT_ROWS * sizeof(EMEntry);
+    static const size_t EM_RB_TREE_INCREMENT = EM_INCREMENT_ROWS * EM_RB_TREE_NODE_SIZE;
     static const size_t EM_FREELIST_INITIAL_SIZE = 50 * sizeof(InlineLBIDRange);
     static const size_t EM_FREELIST_INCREMENT = 50 * sizeof(InlineLBIDRange);
 
@@ -1001,6 +1008,7 @@ private:
     key_t fCurrentEMShmkey;
     key_t fCurrentFLShmkey;
     MSTEntry* fEMShminfo;
+    MSTEntry* fEMRBTreeShminfo;
     MSTEntry* fFLShminfo;
     const MasterSegmentTable fMST;
     bool r_only;
@@ -1048,11 +1056,14 @@ private:
 
     key_t chooseEMShmkey();  //see the code for how keys are segmented
     key_t chooseFLShmkey();  //see the code for how keys are segmented
+    key_t chooseEMRBTreeShmkey();
     void grabEMEntryTable(OPS op);
+    void grabEMRBTreeEntryTable(OPS op);
     void grabFreeList(OPS op);
     void releaseEMEntryTable(OPS op);
     void releaseFreeList(OPS op);
     void growEMShmseg(size_t nrows = 0);
+    void growEMRBTreeShmseg(size_t nrows = 0);
     void growFLShmseg();
     void finishChanges();
 
