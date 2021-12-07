@@ -239,6 +239,7 @@ BRMManagedShmImpl::BRMManagedShmImpl(unsigned key, off_t size, bool readOnly)
     auto keyName = ShmKeys::keyToName(fKey);
 
     // FIXME: Take a right size.
+    // Actually this means to open a segment at the default code.
     if (fSize == 0)
         fSize = 64000;
 
@@ -246,7 +247,7 @@ BRMManagedShmImpl::BRMManagedShmImpl(unsigned key, off_t size, bool readOnly)
     {
         // Check that segment is not exists in the shared memory.
         boost::interprocess::shared_memory_object::remove(keyName.c_str());
-        fShmSegment = new boost::interprocess::managed_shared_memory(boost::interprocess::create_only,
+        fShmSegment = new boost::interprocess::managed_shared_memory(boost::interprocess::open_or_create,
                                                                      keyName.c_str(), fSize);
     }
     catch (exception& e)
