@@ -3182,6 +3182,158 @@ void ExtentMap::createColumnExtentExactFile(int OID,
     allocdsize = EXTENT_SIZE;
 }
 
+void ExtentMap::createColumnExtentExactFileRBTree(int OID, uint32_t colWidth, uint16_t dbRoot,
+                                                  uint32_t partitionNum, uint16_t segmentNum,
+                                                  execplan::CalpontSystemCatalog::ColDataType colDataType,
+                                                  LBID_t& lbid, int& allocdsize, uint32_t& startBlockOffset)
+{
+#ifdef BRM_INFO
+
+    if (fDebug)
+    {
+        TRACER_WRITELATER("createColumnExtentExactFile");
+        TRACER_ADDINPUT(OID);
+        TRACER_ADDINPUT(colWidth);
+        TRACER_ADDSHORTINPUT(dbRoot);
+        TRACER_ADDOUTPUT(partitionNum);
+        TRACER_ADDSHORTOUTPUT(segmentNum);
+        TRACER_ADDINT64OUTPUT(lbid);
+        TRACER_ADDOUTPUT(allocdsize);
+        TRACER_ADDOUTPUT(startBlockOffset);
+        TRACER_WRITE;
+    }
+
+#endif
+
+#ifdef BRM_DEBUG
+
+    if (OID <= 0)
+    {
+        log("ExtentMap::createColumnExtentExactFile(): OID must be > 0",
+            logging::LOG_TYPE_DEBUG);
+        throw invalid_argument(
+            "ExtentMap::createColumnExtentExactFile(): OID must be > 0");
+    }
+
+#endif
+
+    // Convert extent size in rows to extent size in 8192-byte blocks.
+    // extentRows should be multiple of blocksize (8192).
+    const unsigned EXTENT_SIZE = (getExtentRows() * colWidth) / BLOCK_SIZE;
+    grabEMEntryTable(WRITE);
+    grabFreeList(WRITE);
+
+    if (fEMShminfo->currentSize == fEMShminfo->allocdSize)
+        growEMShmseg();
+
+    //  size is the number of multiples of 1024 blocks.
+    //  ex: size=1 --> 1024 blocks
+    //      size=2 --> 2048 blocks
+    //      size=3 --> 3072 blocks, etc.
+    uint32_t size = EXTENT_SIZE / 1024;
+
+    lbid = _createColumnExtentExactFileRBTree(size, OID, colWidth, dbRoot, partitionNum, segmentNum,
+                                              colDataType, startBlockOffset);
+
+    allocdsize = EXTENT_SIZE;
+}
+
+
+LBID_t ExtentMap::_createColumnExtentExactFileRBTree(uint32_t size, int OID, uint32_t colWidth,
+                                                     uint16_t dbRoot, uint32_t partitionNum,
+                                                     uint16_t segmentNum,
+                                                     execplan::CalpontSystemCatalog::ColDataType colDataType,
+                                                     uint32_t& startBlockOffset)
+{
+    uint32_t highestOffset = 0;
+    LBID_t startLBID = getLBIDsFromFreeList(size);
+    EMEntry* lastEmEntry = nullptr;
+
+    ASSERT(fExtentMapRBTree);
+
+    for (auto& emEntryPair : *fExtentMapRBTree)
+    {
+        auto& emEntry = emEntryPair.second;
+        if (emEntry.fileID == OID)
+        {
+            // In case we have multiple extents per segment file.
+            if ((emEntry.dbRoot == dbRoot) && (emEntry.partitionNum == partitionNum) &&
+                (emEntry.segmentNum == segmentNum) && (emEntry.blockOffset >= highestOffset))
+            {
+                lastEmEntry = &emEntry;
+                highestOffset = emEntry.blockOffset;
+            }
+        }
+    }
+
+    EMEntry newEmEntry;
+    //    makeUndoRecord(&fExtentMap[emptyEMEntry], sizeof(EMEntry));
+
+    newEmEntry.range.start = startLBID;
+    newEmEntry.range.size = size;
+    newEmEntry.fileID = OID;
+
+    if (isUnsigned(colDataType))
+    {
+        if (colWidth != datatypes::MAXDECIMALWIDTH)
+        {
+            newEmEntry.partition.cprange.loVal = numeric_limits<uint64_t>::max();
+            newEmEntry.partition.cprange.hiVal = 0;
+        }
+        else
+        {
+            newEmEntry.partition.cprange.bigLoVal = -1;
+            newEmEntry.partition.cprange.bigHiVal = 0;
+        }
+    }
+    else
+    {
+        if (colWidth != datatypes::MAXDECIMALWIDTH)
+        {
+            newEmEntry.partition.cprange.loVal = numeric_limits<int64_t>::max();
+            newEmEntry.partition.cprange.hiVal = numeric_limits<int64_t>::min();
+        }
+        else
+        {
+            utils::int128Max(newEmEntry.partition.cprange.bigLoVal);
+            utils::int128Min(newEmEntry.partition.cprange.bigHiVal);
+        }
+    }
+
+    newEmEntry.partition.cprange.sequenceNum = 0;
+    newEmEntry.colWid = colWidth;
+    newEmEntry.dbRoot = dbRoot;
+    newEmEntry.partitionNum = partitionNum;
+    newEmEntry.segmentNum = segmentNum;
+    newEmEntry.status = EXTENTUNAVAILABLE; // mark extent as in process
+
+    // If first extent for this OID, partition, dbroot, and segment then
+    //   blockOffset is set to 0
+    // else
+    //   blockOffset is extrapolated from the last extent
+    newEmEntry.HWM = 0;
+    if (lastEmEntry)
+        newEmEntry.blockOffset = 0;
+    else
+        newEmEntry.blockOffset =
+            static_cast<uint64_t>(lastEmEntry->range.size) * 1024 + lastEmEntry->blockOffset;
+
+    if ((newEmEntry.partitionNum == 0) && (newEmEntry.segmentNum == 0) && (newEmEntry.blockOffset == 0))
+        newEmEntry.partition.cprange.isValid = CP_VALID;
+    else
+        newEmEntry.partition.cprange.isValid = CP_INVALID;
+
+    // Create and insert a pair of `lbid` and `EMEntry`.
+    std::pair<int64_t, EMEntry> lbidEmEntryPair = make_pair(startLBID, newEmEntry);
+    fExtentMapRBTree->insert(lbidEmEntryPair);
+
+    startBlockOffset = newEmEntry.blockOffset;
+    //    makeUndoRecord(fEMShminfo, sizeof(MSTEntry));
+    fEMShminfo->currentSize += sizeof(struct EMEntry);
+
+    return startLBID;
+}
+
 //------------------------------------------------------------------------------
 // Creates an extent for the exact segment file specified by the requested
 // OID, DBRoot, partition, and segment.  This is the internal implementation

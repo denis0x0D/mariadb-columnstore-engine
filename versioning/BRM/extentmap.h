@@ -588,6 +588,11 @@ public:
                                             int&       allocdsize,
                                             uint32_t& startBlockOffset);
 
+    EXPORT void createColumnExtentExactFileRBTree(int OID, uint32_t colWidth, uint16_t dbRoot,
+                                                  uint32_t partitionNum, uint16_t segmentNum,
+                                                  execplan::CalpontSystemCatalog::ColDataType colDataType,
+                                                  LBID_t& lbid, int& allocdsize, uint32_t& startBlockOffset);
+
     /** @brief Allocates an extent for a dictionary store file
      *
      * Allocates an extent for the specified dictionary store OID,
@@ -1044,6 +1049,12 @@ private:
                                         uint16_t  segmentNum,
                                         execplan::CalpontSystemCatalog::ColDataType colDataType,
                                         uint32_t& startBlockOffset);
+
+    LBID_t _createColumnExtentExactFileRBTree(uint32_t size, int OID, uint32_t colWidth, uint16_t dbRoot,
+                                              uint32_t partitionNum, uint16_t segmentNum,
+                                              execplan::CalpontSystemCatalog::ColDataType colDataType,
+                                              uint32_t& startBlockOffset);
+
     LBID_t _createDictStoreExtent(uint32_t size, int OID,
                                   uint16_t  dbRoot,
                                   uint32_t  partitionNum,
