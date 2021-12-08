@@ -3655,6 +3655,139 @@ LBID_t ExtentMap::_createDictStoreExtent(uint32_t size, int OID,
     return startLBID;
 }
 
+void ExtentMap::createDictStoreExtentRBTree(int OID, uint16_t dbRoot, uint32_t partitionNum,
+                                            uint16_t segmentNum, LBID_t& lbid, int& allocdsize)
+{
+#ifdef BRM_INFO
+
+    if (fDebug)
+    {
+        TRACER_WRITELATER("createDictStoreExtent");
+        TRACER_ADDINPUT(OID);
+        TRACER_ADDSHORTINPUT(dbRoot);
+        TRACER_ADDINPUT(partitionNum);
+        TRACER_ADDSHORTINPUT(segmentNum);
+        TRACER_ADDINT64OUTPUT(lbid);
+        TRACER_ADDOUTPUT(allocdsize);
+        TRACER_WRITE;
+    }
+
+#endif
+
+#ifdef BRM_DEBUG
+
+    if (OID <= 0)
+    {
+        log("ExtentMap::createDictStoreExtent(): OID must be > 0",
+            logging::LOG_TYPE_DEBUG);
+        throw invalid_argument(
+            "ExtentMap::createDictStoreExtent(): OID must be > 0");
+    }
+
+#endif
+
+    // Convert extent size in rows to extent size in 8192-byte blocks.
+    // extentRows should be multiple of blocksize (8192).
+    const unsigned EXTENT_SIZE = (getExtentRows() * DICT_COL_WIDTH) / BLOCK_SIZE;
+
+    grabEMEntryTable(WRITE);
+    grabFreeList(WRITE);
+
+    if (fEMShminfo->currentSize + EM_RB_TREE_NODE_SIZE == fEMShminfo->allocdSize)
+        growEMRBTreeShmseg();
+
+//  size is the number of multiples of 1024 blocks.
+//  ex: size=1 --> 1024 blocks
+//      size=2 --> 2048 blocks
+//      size=3 --> 3072 blocks, etc.
+    uint32_t size = EXTENT_SIZE / 1024;
+
+    lbid = _createDictStoreExtentRBTree(size, OID, dbRoot, partitionNum, segmentNum);
+
+    allocdsize = EXTENT_SIZE;
+}
+
+//------------------------------------------------------------------------------
+// Creates an extent for a dictionary store file.  This is the internal
+// implementation function.
+// input:
+//   size         - number of multiples of 1024 blocks allocated to the extent
+//                  ex: size=1 --> 1024 blocks
+//                      size=2 --> 2048 blocks
+//                      size=3 --> 3072 blocks, etc.
+//   OID          - column OID for which the extent is to be created
+//   dbRoot       - DBRoot to be assigned to the new extent
+//   partitionNum - partition number to be assigned to the new extent
+//   segmentNum   - segment number to be assigned to the new extent
+// returns starting LBID of the created extent.
+//------------------------------------------------------------------------------
+// TODO: This is almost the same as for `column extent` merge those function - introduce template.
+LBID_t ExtentMap::_createDictStoreExtentRBTree(uint32_t size, int OID, uint16_t dbRoot,
+                                               uint32_t partitionNum, uint16_t segmentNum)
+{
+
+    uint32_t highestOffset = 0;
+    LBID_t startLBID = getLBIDsFromFreeList(size);
+    EMEntry* lastEmEntry = nullptr;
+
+    ASSERT(fExtentMapRBTree);
+
+    for (auto& emEntryPair : *fExtentMapRBTree)
+    {
+        auto& emEntry = emEntryPair.second;
+        if (emEntry.fileID == OID)
+        {
+            // In case we have multiple extents per segment file.
+            if ((emEntry.dbRoot == dbRoot) && (emEntry.partitionNum == partitionNum) &&
+                (emEntry.segmentNum == segmentNum) && (emEntry.blockOffset >= highestOffset))
+            {
+                lastEmEntry = &emEntry;
+                highestOffset = emEntry.blockOffset;
+            }
+        }
+    }
+
+    EMEntry newEmEntry;
+    //    makeUndoRecord(&fExtentMap[emptyEMEntry], sizeof(EMEntry));
+
+    newEmEntry.range.start = startLBID;
+    newEmEntry.range.size = size;
+    newEmEntry.fileID = OID;
+    newEmEntry.status = EXTENTUNAVAILABLE; // @bug 1911 mark extent as in process
+    utils::int128Max(newEmEntry.partition.cprange.bigLoVal);
+    utils::int128Min(newEmEntry.partition.cprange.bigHiVal);
+    newEmEntry.partition.cprange.sequenceNum = 0;
+    newEmEntry.partition.cprange.isValid = CP_INVALID;
+    newEmEntry.colWid = 0; // we don't store col width for dictionaries;
+    newEmEntry.HWM = 0;
+
+    if (!lastEmEntry)
+    {
+        newEmEntry.blockOffset = 0;
+        newEmEntry.segmentNum = segmentNum;
+        newEmEntry.partitionNum = partitionNum;
+        newEmEntry.dbRoot = dbRoot;
+    }
+    else
+    // TODO: Why is this different comparing to `column extent creation`.
+    {
+        newEmEntry.blockOffset =
+            static_cast<uint64_t>(lastEmEntry->range.size) * 1024 + lastEmEntry->blockOffset;
+        newEmEntry.segmentNum = lastEmEntry->segmentNum;
+        newEmEntry.partitionNum = lastEmEntry->partitionNum;
+        newEmEntry.dbRoot = lastEmEntry->dbRoot;
+    }
+
+    std::pair<int64_t, EMEntry> lbidEmEntryPair = make_pair(startLBID, newEmEntry);
+    fExtentMapRBTree->insert(lbidEmEntryPair);
+
+    //    makeUndoRecord(fEMShminfo, sizeof(MSTEntry));
+    fEMShminfo->currentSize += EM_RB_TREE_NODE_SIZE;
+
+    return startLBID;
+}
+
+
 //------------------------------------------------------------------------------
 // Finds and returns the starting LBID for an LBID range taken from the
 // free list.

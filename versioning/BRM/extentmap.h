@@ -617,6 +617,9 @@ public:
                                       LBID_t&    lbid,
                                       int&       allocdsize);
 
+    EXPORT void createDictStoreExtentRBTree(int OID, uint16_t dbRoot, uint32_t partitionNum,
+                                            uint16_t segmentNum, LBID_t& lbid, int& allocdsize);
+
     /** @brief Rollback (delete) a set of extents for the specified OID.
      *
      * Deletes all the extents that logically follow the specified
@@ -1059,6 +1062,10 @@ private:
                                   uint16_t  dbRoot,
                                   uint32_t  partitionNum,
                                   uint16_t  segmentNum);
+
+    LBID_t _createDictStoreExtentRBTree(uint32_t size, int OID, uint16_t dbRoot,
+                                        uint32_t partitionNum, uint16_t segmentNum);
+
     template <typename T>
     bool isValidCPRange(const T& max, const T& min, execplan::CalpontSystemCatalog::ColDataType type) const;
     void deleteExtent(int emIndex);
