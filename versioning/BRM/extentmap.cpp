@@ -2124,7 +2124,10 @@ void ExtentMap::growEMRBTreeShmseg(size_t nrows)
         fPExtMapRBTreeImpl->grow(allocSize);
     }
 
+    uint64_t freeMemory = fPExtMapRBTreeImpl->getFreeMemory();
+    ASSERT(freeMemory >= allocSize);
     fEMRBTreeShminfo->allocdSize = allocSize;
+    fEMRBTreeShminfo->currentSize = freeMemory - allocSize;
     // if (r_only)
     //   fPExtMapImpl->makeReadOnly();
 
@@ -3223,8 +3226,9 @@ void ExtentMap::createColumnExtentExactFileRBTree(int OID, uint32_t colWidth, ui
     grabEMEntryTable(WRITE);
     grabFreeList(WRITE);
 
-    if (fEMShminfo->currentSize == fEMShminfo->allocdSize)
-        growEMShmseg();
+    // FIXME: Make a function call.
+    if (fEMShminfo->currentSize + EM_RB_TREE_NODE_SIZE < fEMShminfo->allocdSize)
+        growEMRBTreeShmseg();
 
     //  size is the number of multiples of 1024 blocks.
     //  ex: size=1 --> 1024 blocks
@@ -3329,7 +3333,7 @@ LBID_t ExtentMap::_createColumnExtentExactFileRBTree(uint32_t size, int OID, uin
 
     startBlockOffset = newEmEntry.blockOffset;
     //    makeUndoRecord(fEMShminfo, sizeof(MSTEntry));
-    fEMShminfo->currentSize += sizeof(struct EMEntry);
+    fEMShminfo->currentSize += EM_RB_TREE_NODE_SIZE;
 
     return startLBID;
 }
