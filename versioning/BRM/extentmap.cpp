@@ -1383,6 +1383,156 @@ void ExtentMap::reserveLBIDRange(LBID_t start, uint8_t size)
 	    ...   (* numFL)
 */
 
+template <class T>
+void ExtentMap::loadVersion4or5RBTree(T *in, bool upgradeV4ToV5)
+{
+    uint32_t emNumElements = 0;
+    uint32_t flNumElements = 0;
+
+    uint32_t nbytes = 0;
+    nbytes += in->read((char*) &emNumElements, sizeof(uint32_t));
+    nbytes += in->read((char*) &flNumElements, sizeof(uint32_t));
+    idbassert(emNumElements > 0);
+
+    if (nbytes != (2 * sizeof(uint32_t)))
+    {
+        log_errno("ExtentMap::loadVersion4or5(): read ");
+        throw runtime_error("ExtentMap::loadVersion4or5(): read failed. Check the error log.");
+    }
+
+    // Clear the extent map.
+    fExtentMapRBTree->clear();
+    fEMRBTreeShminfo->currentSize = 0;
+
+    // Init the free list.
+    memset(fFreeList, 0, fFLShminfo->allocdSize);
+    fFreeList[0].size = (1 << 26);   // 2^36 LBIDs
+    fFLShminfo->currentSize = sizeof(InlineLBIDRange);
+
+    // Calculate how much memory we need.
+    const uint32_t memorySizeNeeded = (emNumElements * EM_RB_TREE_NODE_SIZE) + EM_RB_TREE_META_SIZE;
+
+    if (fEMShminfo->allocdSize < memorySizeNeeded)
+        growEMRBTreeShmseg(memorySizeNeeded);
+
+    int err;
+    size_t progress, writeSize;
+    char* writePos;
+
+    if (!upgradeV4ToV5)
+    {
+        for (int32_t i = 0; i < emNumElements; ++i)
+        {
+            progress = 0;
+            EMEntry emEntry;
+            writeSize = sizeof(EMEntry);
+            writePos = reinterpret_cast<char*>(&emEntry);
+
+            while (progress < writeSize)
+            {
+                err = in->read(writePos + progress, writeSize - progress);
+                if (err <= 0)
+                {
+                    log_errno("ExtentMap::loadVersion4or5(): read ");
+                    throw runtime_error(
+                        "ExtentMap::loadVersion4or5(): read failed. Check the error log.");
+                }
+                progress += (uint) err;
+            }
+
+            std::pair<int64_t, EMEntry> lbidEMEntryPair = make_pair(emEntry.range.start, emEntry);
+            fExtentMapRBTree->insert(lbidEMEntryPair);
+        }
+    }
+    else
+    {
+        // We are upgrading extent map from v4 to v5.
+        for (uint32_t i = 0; i < emNumElements; i++)
+        {
+            EMEntry_v4 emEntryV4;
+            progress = 0;
+            writeSize = sizeof(EMEntry_v4);
+            writePos = reinterpret_cast<char*>(&emEntryV4);
+            while (progress < writeSize)
+            {
+                err = in->read(writePos + progress, writeSize - progress);
+                if (err <= 0)
+                {
+                    log_errno("ExtentMap::loadVersion4or5(): read ");
+                    throw runtime_error("ExtentMap::loadVersion4or5(): read failed during upgrade. "
+                                        "Check the error log.");
+                }
+                progress += (uint) err;
+            }
+
+            EMEntry emEntry;
+            emEntry.range.start = emEntryV4.range.start;
+            emEntry.range.size = emEntryV4.range.size;
+            emEntry.fileID = emEntryV4.fileID;
+            emEntry.blockOffset = emEntryV4.blockOffset;
+            emEntry.HWM = emEntryV4.HWM;
+            emEntry.partitionNum = emEntryV4.partitionNum;
+            emEntry.segmentNum = emEntryV4.segmentNum;
+            emEntry.dbRoot = emEntryV4.dbRoot;
+            emEntry.colWid = emEntryV4.colWid;
+            emEntry.status = emEntryV4.status;
+            emEntry.partition.cprange.hiVal = emEntryV4.partition.cprange.hi_val;
+            emEntry.partition.cprange.loVal = emEntryV4.partition.cprange.lo_val;
+            emEntry.partition.cprange.sequenceNum = emEntryV4.partition.cprange.sequenceNum;
+            emEntry.partition.cprange.isValid = emEntryV4.partition.cprange.isValid;
+
+            // Create and insert a pair.
+            std::pair<int64_t, EMEntry> lbidEMEntryPair = make_pair(emEntry.range.start, emEntry);
+            fExtentMapRBTree->insert(lbidEMEntryPair);
+        }
+
+        std::cout << emNumElements << " extents successfully upgraded" << std::endl;
+    }
+
+    for (const auto& lbidEMEntryPair : *fExtentMapRBTree)
+    {
+        const EMEntry& emEntry = lbidEMEntryPair.second;
+        reserveLBIDRange(emEntry.range.start, emEntry.range.size);
+
+        //@bug 1911 - verify status value is valid
+        if (emEntry.status < EXTENTSTATUSMIN || emEntry.status > EXTENTSTATUSMAX)
+            emEntry.status = EXTENTAVAILABLE;
+    }
+
+    fEMRBTreeShminfo->currentSize = (emNumElements * EM_RB_TREE_NODE_SIZE) + EM_RB_TREE_META_SIZE;
+
+#ifdef DUMP_EXTENT_MAP
+    cout << "lbid\tsz\toid\tfbo\thwm\tpart#\tseg#\tDBRoot\twid\tst\thi\tlo\tsq\tv" << endl;
+
+    for (const auto& lbidEMEntryPair : *fExtentMapRBTRee)
+    {
+        const EMEntry& emEntry = lbidEMEntryPair.second;
+        cout <<
+             emEntry.start
+             << '\t' << emEntry.size
+             << '\t' << emEntry.fileID
+             << '\t' << emEntry.blockOffset
+             << '\t' << emEntry.HWM
+             << '\t' << emEntry.partitionNum
+             << '\t' << emEntry.segmentNum
+             << '\t' << emEntry.dbRoot
+             << '\t' << emEntry.status
+             << '\t' << emEntry.partition.cprange.hiVal
+             << '\t' << emEntry.partition.cprange.loVal
+             << '\t' << emEntry.partition.cprange.sequenceNum
+             << '\t' << (int)(emEntry.partition.cprange.isValid)
+             << endl;
+    }
+
+    cout << "Free list entries:" << endl;
+    cout << "start\tsize" << endl;
+
+    for (uint32_t i = 0; i < flNumElements; i++)
+        cout << fFreeList[i].start << '\t' << fFreeList[i].size << endl;
+
+#endif
+}
+
 
 template <class T>
 void ExtentMap::loadVersion4or5(T* in, bool upgradeV4ToV5)
@@ -2096,7 +2246,7 @@ void ExtentMap::growEMShmseg(size_t nrows)
 
 /* Must be called holding the EM write lock
    Returns with the new shmseg mapped */
-void ExtentMap::growEMRBTreeShmseg(size_t nrows)
+void ExtentMap::growEMRBTreeShmseg(size_t size)
 {
     size_t allocSize;
 
@@ -2111,6 +2261,8 @@ void ExtentMap::growEMRBTreeShmseg(size_t nrows)
     {
         allocSize = fEMRBTreeShminfo->allocdSize + EM_RB_TREE_INCREMENT;
     }
+
+    allocSize = std::max(size, allocSize);
 
     ASSERT((allocSize == EM_RB_TREE_INITIAL_SIZE && !fPExtMapRBTreeImpl) || fPExtRBTreeMapImpl);
 

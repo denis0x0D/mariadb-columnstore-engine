@@ -1104,6 +1104,7 @@ private:
      * extent map from v4 to v5.
      */
     template <class T> void loadVersion4or5(T* in, bool upgradeV4ToV5);
+    template <class T> void loadVersion4or5RBTree(T* in, bool upgradeV4ToV5);
 
     ExtentMapRBTreeImpl* fPExtMapRBTreeImpl;
     ExtentMapImpl* fPExtMapImpl;

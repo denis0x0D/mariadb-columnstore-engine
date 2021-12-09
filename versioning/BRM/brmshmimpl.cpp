@@ -246,7 +246,7 @@ BRMManagedShmImpl::BRMManagedShmImpl(unsigned key, off_t size, bool readOnly)
     try
     {
         // Check that segment is not exists in the shared memory.
-        boost::interprocess::shared_memory_object::remove(keyName.c_str());
+        // boost::interprocess::shared_memory_object::remove(keyName.c_str());
         fShmSegment = new boost::interprocess::managed_shared_memory(boost::interprocess::open_or_create,
                                                                      keyName.c_str(), fSize);
     }
