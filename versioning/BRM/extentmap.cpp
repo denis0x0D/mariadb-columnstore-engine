@@ -4554,6 +4554,127 @@ void ExtentMap::rollbackDictStoreExtents_DBroot ( int oid,
 //------------------------------------------------------------------------------
 // Delete the extents specified and reset hwm
 //------------------------------------------------------------------------------
+void ExtentMap::deleteEmptyColExtentsRBTree(const ExtentsInfoMap_t& extentsInfo)
+{
+#ifdef BRM_INFO
+
+    if (fDebug)
+    {
+        TRACER_WRITELATER("deleteEmptyColExtents");
+        TRACER_WRITE;
+    }
+
+#endif
+
+    grabEMRBTreeEntryTable(WRITE);
+    grabFreeList(WRITE);
+
+    uint32_t fboLo = 0;
+    uint32_t fboHi = 0;
+    uint32_t fboLoPreviousStripe = 0;
+
+    ExtentsInfoMap_t::const_iterator it;
+
+    for (auto emIt = fExtentMapRBTree->begin(), end = fExtentMapRBTree->end(); emIt != end; ++emIt)
+    {
+        auto id = extentsInfo.find(emIt->second.fileID);
+        if (id != extentsInfo.end())
+        {
+            auto& emEntry = emIt->second;
+            // Don't rollback extents that are out of service.
+            if (emEntry.status == EXTENTOUTOFSERVICE)
+                continue;
+
+            // Calculate fbo range for the stripe containing the given hwm.
+            if (fboHi == 0)
+            {
+                uint32_t range = emEntry.range.size * 1024;
+                fboLo = id->second.hwm - (id->second.hwm % range);
+                fboHi = fboLo + range - 1;
+
+                if (fboLo > 0)
+                    fboLoPreviousStripe = fboLo - range;
+            }
+
+            // Delete, update, or ignore this extent:
+            // Later partition:
+            //   case 1: extent in later partition than last extent, so delete
+            // Same partition:
+            //   case 2: extent is in later stripe than last extent, so delete
+            //   case 3: extent is in earlier stripe in the same partition.
+            //           No action necessary for case3B and case3C.
+            //     case 3A: extent is in trailing segment in previous stripe.
+            //              This extent is now the last extent in that segment
+            //              file, so reset the local HWM if it was altered.
+            //     case 3B: extent in previous stripe but not a trailing segment
+            //     case 3C: extent is in stripe that precedes previous stripe
+            //   case 4: extent is in the same partition and stripe as the
+            //           last logical extent we are to keep.
+            //     case 4A: extent is in later segment so can be deleted
+            //     case 4B: extent is in earlier segment, reset HWM if changed
+            //     case 4C: this is last logical extent, reset HWM if changed
+            // Earlier partition:
+            //   case 5: extent is in earlier parition, no action necessary
+
+            if (emEntry.partitionNum > id->second.partitionNum)
+            {
+                deleteExtentRBTree(emIt); // case 1
+            }
+            else if (emEntry.partitionNum == id->second.partitionNum)
+            {
+                if (emEntry.blockOffset > fboHi)
+                {
+                    deleteExtentRBTree(emIt); // case 2
+                }
+                else if (emEntry.blockOffset < fboLo)
+                {
+                    if (emEntry.blockOffset >= fboLoPreviousStripe)
+                    {
+                        if (emEntry.segmentNum > id->second.segmentNum)
+                        {
+                            if (emEntry.HWM != (fboLo - 1))
+                            {
+                                //    makeUndoRecord(&fExtentMap[i], sizeof(EMEntry));
+                                emEntry.HWM = fboLo - 1; // case 3A
+                                emEntry.status = EXTENTAVAILABLE;
+                            }
+                        }
+                    }
+                }
+                else
+                {
+                    // extent is in same stripe
+                    if (emEntry.segmentNum > id->second.segmentNum)
+                    {
+                        deleteExtentRBTree(emIt); // case 4A
+                    }
+                    else if (emEntry.segmentNum < id->second.segmentNum)
+                    {
+                        if (emEntry.HWM != fboHi)
+                        {
+                            //   makeUndoRecord(&fExtentMap[i], sizeof(EMEntry));
+                            emEntry.HWM = fboHi; // case 4B
+                            emEntry.status = EXTENTAVAILABLE;
+                        }
+                    }
+                    else
+                    {
+                        if (emEntry.HWM != id->second.hwm)
+                        {
+                            // mkeUndoRecord(&fExtentMap[i], sizeof(EMEntry));
+                            emEntry.HWM = id->second.hwm; // case 4C
+                            emEntry.status = EXTENTAVAILABLE;
+                        }
+                    }
+                }
+            }
+        } // extent map entry with matching oid
+    }     // loop through the extent map
+}
+
+//------------------------------------------------------------------------------
+// Delete the extents specified and reset hwm
+//------------------------------------------------------------------------------
 void ExtentMap::deleteEmptyColExtents(const ExtentsInfoMap_t& extentsInfo)
 {
 #ifdef BRM_INFO
@@ -6512,6 +6633,33 @@ void ExtentMap::getOutOfServicePartitions(OID_t oid,
     }
 
     releaseEMEntryTable(READ);
+}
+
+//------------------------------------------------------------------------------
+// Delete all extents for the specified dbroot
+//------------------------------------------------------------------------------
+void ExtentMap::deleteDBRootRBTree(uint16_t dbroot)
+{
+#ifdef BRM_INFO
+
+    if (fDebug)
+    {
+        TRACER_WRITENOW("deleteDBRoot");
+        ostringstream oss;
+        oss << "dbroot: " << dbroot;
+        TRACER_WRITEDIRECT(oss.str());
+    }
+
+#endif
+
+    grabEMRBTreeEntryTable(WRITE);
+    grabFreeList(WRITE);
+
+    for (auto it = fExtentMapRBTree->begin(), end = fExtentMapRBTree->end(); it != end; ++it)
+    {
+        if (it->second.dbRoot == dbroot)
+            deleteExtentRBTree(it);
+    }
 }
 
 //------------------------------------------------------------------------------

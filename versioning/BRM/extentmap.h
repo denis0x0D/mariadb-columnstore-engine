@@ -663,6 +663,7 @@ public:
      * @param extentInfo the information for extents
      */
     EXPORT void deleteEmptyColExtents(const ExtentsInfoMap_t& extentsInfo);
+    EXPORT void deleteEmptyColExtentsRBTree(const ExtentsInfoMap_t& extentsInfo);
 
     /** @brief delete of dictionary extents for the specified extents.
      *
@@ -925,6 +926,7 @@ public:
      * @param dbroot (in) the dbroot
      */
     EXPORT void deleteDBRoot(uint16_t dbroot);
+    EXPORT void deleteDBRootRBTree(uint16_t dbroot);
 
     /** @brief Is the specified DBRoot empty with no extents.
      *  Throws exception if extentmap shared memory is not loaded.
