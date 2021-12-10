@@ -3453,10 +3453,10 @@ void ExtentMap::createColumnExtentExactFile(int OID,
     allocdsize = EXTENT_SIZE;
 }
 
-void ExtentMap::createColumnExtentExactFileRBTree(int OID, uint32_t colWidth, uint16_t dbRoot,
-                                                  uint32_t partitionNum, uint16_t segmentNum,
-                                                  execplan::CalpontSystemCatalog::ColDataType colDataType,
-                                                  LBID_t& lbid, int& allocdsize, uint32_t& startBlockOffset)
+void ExtentMap::createColumnExtentExactFileRBTree(
+    int OID, uint32_t colWidth, uint16_t dbRoot, uint32_t partitionNum, uint16_t segmentNum,
+    execplan::CalpontSystemCatalog::ColDataType colDataType, LBID_t& lbid, int& allocdsize,
+    uint32_t& startBlockOffset)
 {
 #ifdef BRM_INFO
 
@@ -6643,6 +6643,9 @@ void ExtentMap::finishChanges()
 
     if (emLocked)
         releaseEMEntryTable(WRITE);
+
+    if (emRBTreeLocked)
+        releaseEMRBTreeEntryTable(WRITE);
 }
 
 const bool* ExtentMap::getEMFLLockStatus()
