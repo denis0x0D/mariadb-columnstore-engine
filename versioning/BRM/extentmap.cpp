@@ -4858,7 +4858,79 @@ void ExtentMap::deleteOID(int OID)
     }
 }
 
+//------------------------------------------------------------------------------
+// Delete all the extents for the specified OID
+//------------------------------------------------------------------------------
+void ExtentMap::deleteOIDRBTree(int OID)
+{
+#ifdef BRM_INFO
 
+    if (fDebug)
+    {
+        TRACER_WRITELATER("deleteOID");
+        TRACER_ADDINPUT(OID);
+        TRACER_WRITE;
+    }
+
+#endif
+
+    bool OIDExists = false;
+
+#ifdef BRM_DEBUG
+
+    if (OID < 0)
+    {
+        log("ExtentMap::deleteOID(): OID must be >= 0", logging::LOG_TYPE_DEBUG);
+        throw invalid_argument("ExtentMap::deleteOID(): OID must be >= 0");
+    }
+
+#endif
+
+    grabEMRBTreeEntryTable(WRITE);
+    grabFreeList(WRITE);
+
+    for (auto it = fExtentMapRBTree->begin(), end = fExtentMapRBTree->end(); it != end; ++it)
+    {
+        if (it->second.fileID == OID)
+        {
+            OIDExists = true;
+            deleteExtentRBTree(it);
+        }
+    }
+
+    if (!OIDExists)
+    {
+        ostringstream oss;
+        oss << "ExtentMap::deleteOID(): There are no extent entries for OID " << OID << endl;
+        log(oss.str(), logging::LOG_TYPE_CRITICAL);
+        throw invalid_argument(oss.str());
+    }
+}
+
+//------------------------------------------------------------------------------
+// Delete all the extents for the specified OIDs
+//------------------------------------------------------------------------------
+void ExtentMap::deleteOIDsRBTree(const OidsMap_t& OIDs)
+{
+#ifdef BRM_INFO
+
+    if (fDebug)
+    {
+        TRACER_WRITELATER("deleteOIDs");
+        TRACER_WRITE;
+    }
+
+#endif
+    grabEMRBTreeEntryTable(WRITE);
+    grabFreeList(WRITE);
+
+    for (auto it = fExtentMapRBTree->begin(), end = fExtentMapRBTree->end(); it != end; ++it)
+    {
+        const auto id = OIDs.find(it->second.fileID);
+        if (id != OIDs.end())
+            deleteExtentRBTree(it);
+    }
+}
 
 //------------------------------------------------------------------------------
 // Delete all the extents for the specified OIDs

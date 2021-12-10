@@ -715,6 +715,7 @@ public:
      * @param OID The OID to delete
      */
     EXPORT void deleteOID(int OID);
+    EXPORT void deleteOIDRBTree(int32_t OID);
 
     /** @brief Deallocates all extents associated with each OID
      *
@@ -722,6 +723,7 @@ public:
      * @param OIDs The OIDs to delete
      */
     EXPORT void deleteOIDs(const OidsMap_t& OIDs);
+    EXPORT void deleteOIDsRBTree(const OidsMap_t& OIDs);
 
     /** @brief Check if any of the given partitions is the last one of a DBroot
      *
