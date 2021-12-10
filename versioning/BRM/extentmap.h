@@ -674,6 +674,7 @@ public:
      * @param extentInfo the information for extents to be resetted
      */
     EXPORT void deleteEmptyDictStoreExtents(const ExtentsInfoMap_t& extentsInfo);
+    EXPORT void deleteEmptyDictStoreExtentsRBTree(const ExtentsInfoMap_t& extentsInfo);
 
     /** @brief Rollback (delete) a set of dict store extents for an OID.
      *

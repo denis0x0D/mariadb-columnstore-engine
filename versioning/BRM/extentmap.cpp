@@ -4810,6 +4810,110 @@ void ExtentMap::deleteEmptyColExtents(const ExtentsInfoMap_t& extentsInfo)
     }      // loop through the extent map
 }
 
+void ExtentMap::deleteEmptyDictStoreExtentsRBTree(const ExtentsInfoMap_t& extentsInfo)
+{
+#ifdef BRM_INFO
+
+    if (fDebug)
+    {
+        TRACER_WRITELATER("deleteEmptyDictStoreExtents");
+        TRACER_WRITE;
+    }
+
+#endif
+
+    grabEMRBTreeEntryTable(WRITE);
+    grabFreeList(WRITE);
+
+    uint32_t fboLo = 0;
+    uint32_t fboHi = 0;
+
+    auto it = extentsInfo.begin();
+    if (it->second.newFile) // The extent is the new extent
+    {
+        for (auto emIt = fExtentMapRBTree->begin(), end = fExtentMapRBTree->end(); emIt != end;
+             ++emIt)
+        {
+            auto& emEntry = emIt->second;
+            it = extentsInfo.find(emEntry.fileID);
+
+            if (it != extentsInfo.end())
+            {
+                if ((emEntry.partitionNum == it->second.partitionNum) &&
+                    (emEntry.segmentNum == it->second.segmentNum) &&
+                    (emEntry.dbRoot == it->second.dbRoot))
+                {
+                    deleteExtentRBTree(emIt);
+                }
+            }
+        }
+    }
+    else //The extent is the old one
+    {
+        for (auto emIt = fExtentMapRBTree->begin(), end = fExtentMapRBTree->end(); emIt != end;
+             ++emIt)
+        {
+            auto& emEntry = emIt->second;
+            {
+                auto it = extentsInfo.find(emEntry.fileID);
+                if (it != extentsInfo.end())
+                {
+                    // Don't rollback extents that are out of service
+                    if (emEntry.status == EXTENTOUTOFSERVICE)
+                        continue;
+
+                    // Calculate fbo
+                    if (fboHi == 0)
+                    {
+                        uint32_t range = emEntry.range.size * 1024;
+                        fboLo = it->second.hwm - (it->second.hwm % range);
+                        fboHi = fboLo + range - 1;
+                    }
+
+                    // Delete, update, or ignore this extent:
+                    // Later partition:
+                    //   case 1: extent is in later partition, so delete the extent
+                    // Same partition:
+                    //   case 2: extent is in partition and segment file of interest
+                    //     case 2A: earlier extent in segment file; no action necessary
+                    //     case 2B: specified HWM falls in this extent, so reset HWM
+                    //     case 2C: later extent in segment file; so delete the extent
+                    // Earlier partition:
+                    //   case 3: extent is in earlier parition, no action necessary
+
+                    if (emEntry.partitionNum > it->second.partitionNum)
+                    {
+                        deleteExtentRBTree(emIt); // case 1
+                    }
+                    else if (emEntry.partitionNum == it->second.partitionNum)
+                    {
+                        if (emEntry.segmentNum == it->second.segmentNum)
+                        {
+                            if (emEntry.blockOffset < fboLo)
+                            {
+                                // no action necessary                           case 2A
+                            }
+                            else if (emEntry.blockOffset == fboLo)
+                            {
+                                if (emEntry.HWM != it->second.hwm)
+                                {
+//                                    makeUndoRecord(&fExtentMap[i], sizeof(EMEntry));
+                                    emEntry.HWM  = it->second.hwm;
+                                    emEntry.status = EXTENTAVAILABLE; // case 2B
+                                }
+                            }
+                            else
+                            {
+                                deleteExtentRBTree(emIt); // case 3C
+                            }
+                        }
+                    }
+                } // extent map entry with matching oid
+            }
+        } // loop through the extent map
+    }
+}
+
 void ExtentMap::deleteEmptyDictStoreExtents(const ExtentsInfoMap_t& extentsInfo)
 {
 #ifdef BRM_INFO
@@ -4925,6 +5029,7 @@ void ExtentMap::deleteEmptyDictStoreExtents(const ExtentsInfoMap_t& extentsInfo)
         }      // loop through the extent map
     }
 }
+
 //------------------------------------------------------------------------------
 // Delete all the extents for the specified OID
 //------------------------------------------------------------------------------
