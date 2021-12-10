@@ -885,6 +885,10 @@ public:
     EXPORT void deletePartition(const std::set<OID_t>& oids,
                                 const std::set<LogicalPartition>& partitionNums, std::string& emsg);
 
+    EXPORT void deletePartitionRBTree(const std::set<OID_t>& oids,
+                                      const std::set<LogicalPartition>& partitionNums,
+                                      std::string& emsg);
+
     /** @brief Mark a Partition for the specified OID(s) as out of service.
      *
      * @param oids (in) the OIDs of interest.

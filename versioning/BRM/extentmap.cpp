@@ -6004,6 +6004,101 @@ void ExtentMap::getSysCatDBRoot(OID_t oid, uint16_t& dbRoot)
 // @bug 5237 - Removed restriction that prevented deletion of segment files in
 //             the last partition (for a DBRoot).
 //------------------------------------------------------------------------------
+void ExtentMap::deletePartitionRBTree(const set<OID_t>& oids,
+                                      const set<LogicalPartition>& partitionNums, string& emsg)
+{
+#ifdef BRM_INFO
+
+    if (fDebug)
+    {
+        TRACER_WRITENOW("deletePartition");
+        ostringstream oss;
+        set<LogicalPartition>::const_iterator partIt;
+        oss << "partitionNums: ";
+        for (partIt = partitionNums.begin(); partIt != partitionNums.end(); ++partIt)
+            oss << (*partIt) << " ";
+
+        oss << endl;
+        oss << "OIDS: ";
+        set<OID_t>::const_iterator it;
+
+        for (it = oids.begin(); it != oids.end(); ++it)
+        {
+            oss << (*it) << ", ";
+        }
+
+        TRACER_WRITEDIRECT(oss.str());
+    }
+
+#endif
+
+    if (oids.size() == 0)
+        return;
+
+    int32_t rc = 0;
+
+    grabEMRBTreeEntryTable(WRITE);
+    grabFreeList(WRITE);
+
+    std::set<LogicalPartition> foundPartitions;
+    std::vector<ExtentMapRBTree::iterator> extents;
+
+    for (auto it = fExtentMapRBTree->begin(), end = fExtentMapRBTree->end(); it != end; ++it)
+    {
+        const auto& emEntry = it->second;
+        LogicalPartition lp(emEntry.dbRoot, emEntry.partitionNum, emEntry.segmentNum);
+
+        if ((partitionNums.find(lp) != partitionNums.end()))
+        {
+            auto id = oids.find(emEntry.fileID);
+            if (id != oids.end())
+            {
+                foundPartitions.insert(lp);
+                extents.push_back(it);
+            }
+        }
+    }
+
+    if (foundPartitions.size() != partitionNums.size())
+    {
+        Message::Args args;
+        ostringstream oss;
+
+        for (auto partIt = partitionNums.begin(), end = partitionNums.end(); partIt != end;
+             ++partIt)
+        {
+            if (foundPartitions.find((*partIt)) == foundPartitions.end())
+            {
+                if (!oss.str().empty())
+                    oss << ", ";
+                oss << (*partIt).toString();
+            }
+        }
+
+        args.add(oss.str());
+        emsg = IDBErrorInfo::instance()->errorMsg(ERR_PARTITION_NOT_EXIST, args);
+        rc = ERR_PARTITION_NOT_EXIST;
+    }
+
+    // This has to be the last error code to set and can not be over-written.
+    if (foundPartitions.empty())
+        rc = WARN_NO_PARTITION_PERFORMED;
+
+    // Really delete extents.
+    for (uint32_t i = 0, e = extents.size(); i < e; ++i)
+        deleteExtentRBTree(extents[i]);
+
+    // @bug 4772 throw exception on any error because they are all warnings.
+    if (rc)
+        throw IDBExcept(emsg, rc);
+}
+
+
+//------------------------------------------------------------------------------
+// Delete all extents for the specified OID(s) and partition number.
+// @bug 5237 - Removed restriction that prevented deletion of segment files in
+//             the last partition (for a DBRoot).
+//------------------------------------------------------------------------------
 void ExtentMap::deletePartition(const set<OID_t>& oids,
                                 const set<LogicalPartition>& partitionNums, string& emsg)
 {
