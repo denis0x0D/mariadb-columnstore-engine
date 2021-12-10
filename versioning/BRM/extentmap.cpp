@@ -1830,8 +1830,7 @@ void ExtentMap::saveRBTree(const string& filename)
     }
     catch (...)
     {
-        // TODO: Add release RBTree.
-        //releaseEMEntryTable(READ);
+        releaseEMRBTreeEntryTable(READ);
         throw;
     }
 
@@ -1839,7 +1838,7 @@ void ExtentMap::saveRBTree(const string& filename)
     {
         log("ExtentMap::save(): got request to save an empty BRM");
         releaseFreeList(READ);
-        //releaseEMEntryTable(READ);
+        releaseEMRBTreeEntryTable(READ);
         throw runtime_error("ExtentMap::save(): got request to save an empty BRM");
     }
 
@@ -1852,7 +1851,7 @@ void ExtentMap::saveRBTree(const string& filename)
     {
         log_errno("ExtentMap::save(): open");
         releaseFreeList(READ);
-        // releaseEMEntryTable(READ);
+        releaseEMRBTreeEntryTable(READ);
         throw ios_base::failure("ExtentMap::save(): open failed. Check the error log.");
     }
 
@@ -1873,7 +1872,7 @@ void ExtentMap::saveRBTree(const string& filename)
     catch (...)
     {
         releaseFreeList(READ);
-        //        releaseEMEntryTable(READ);
+        releaseEMRBTreeEntryTable(READ);
         throw;
     }
 
@@ -1890,7 +1889,7 @@ void ExtentMap::saveRBTree(const string& filename)
             if (err < 0)
             {
                 releaseFreeList(READ);
-                //                releaseEMEntryTable(READ);
+                releaseEMRBTreeEntryTable(READ);
                 throw ios_base::failure("ExtentMap::save(): write failed. Check the error log.");
             }
             progress += err;
@@ -1906,14 +1905,14 @@ void ExtentMap::saveRBTree(const string& filename)
         if (err < 0)
         {
             releaseFreeList(READ);
-            releaseEMEntryTable(READ);
+            releaseEMRBTreeEntryTable(READ);
             throw ios_base::failure("ExtentMap::save(): write failed. Check the error log.");
         }
         progress += err;
     }
 
     releaseFreeList(READ);
-//    releaseEMEntryTable(READ);
+    releaseEMRBTreeEntryTable(READ);
 }
 
 void ExtentMap::save(const string& filename)
@@ -2123,7 +2122,7 @@ void ExtentMap::grabEMRBTreeEntryTable(OPS op)
     else
     {
         fEMRBTreeShminfo = fMST.getTable_write(MasterSegmentTable::EMRBTreeTable);
-        // emLocked = true;
+        emRBTreeLocked = true;
     }
 
     if (!fPExtMapRBTreeImpl || fPExtMapRBTreeImpl->key() != (uint32_t) fEMRBTreeShminfo->tableShmkey)
@@ -2136,14 +2135,13 @@ void ExtentMap::grabEMRBTreeEntryTable(OPS op)
             if (op == READ)
             {
                 fMST.getTable_upgrade(MasterSegmentTable::EMRBTreeTable);
-                //  emLocked = true;
+                emRBTreeLocked = true;
 
-                // TODO: Implement grow for EMShmeg.
                 if (fEMRBTreeShminfo->allocdSize == 0)
-                    growEMShmseg();
+                    growEMRBTreeShmseg();
 
-                // TODO: Add locks.
-                // emLocked = false;	// has to be done holding the write lock
+                // Has to be done holding the write lock.
+                emRBTreeLocked = false;
                 fMST.getTable_downgrade(MasterSegmentTable::EMRBTreeTable);
             }
             else
@@ -2259,6 +2257,17 @@ void ExtentMap::releaseEMEntryTable(OPS op)
          */
         emLocked = false;
         fMST.releaseTable_write(MasterSegmentTable::EMTable);
+    }
+}
+
+void ExtentMap::releaseEMRBTreeEntryTable(OPS op)
+{
+    if (op == READ)
+        fMST.releaseTable_read(MasterSegmentTable::EMRBTreeTable);
+    else
+    {
+        emRBTreeLocked = false;
+        fMST.releaseTable_write(MasterSegmentTable::EMRBTreeTable);
     }
 }
 
@@ -3482,7 +3491,7 @@ void ExtentMap::createColumnExtentExactFileRBTree(int OID, uint32_t colWidth, ui
     // Convert extent size in rows to extent size in 8192-byte blocks.
     // extentRows should be multiple of blocksize (8192).
     const unsigned EXTENT_SIZE = (getExtentRows() * colWidth) / BLOCK_SIZE;
-    grabEMEntryTable(WRITE);
+    grabEMRBTreeEntryTable(WRITE);
     grabFreeList(WRITE);
 
     // FIXME: Make a function call.
@@ -3949,7 +3958,7 @@ void ExtentMap::createDictStoreExtentRBTree(int OID, uint16_t dbRoot, uint32_t p
     // extentRows should be multiple of blocksize (8192).
     const unsigned EXTENT_SIZE = (getExtentRows() * DICT_COL_WIDTH) / BLOCK_SIZE;
 
-    grabEMEntryTable(WRITE);
+    grabEMRBTreeEntryTable(WRITE);
     grabFreeList(WRITE);
 
     if (fEMShminfo->currentSize + EM_RB_TREE_NODE_SIZE == fEMShminfo->allocdSize)

@@ -1028,6 +1028,7 @@ private:
 
     int numUndoRecords;
     bool flLocked, emLocked;
+    bool emRBTreeLocked;
     static boost::mutex mutex; // @bug5355 - made mutex static
     boost::mutex fConfigCacheMutex; // protect access to Config Cache
 
@@ -1081,6 +1082,7 @@ private:
     void grabEMRBTreeEntryTable(OPS op);
     void grabFreeList(OPS op);
     void releaseEMEntryTable(OPS op);
+    void releaseEMRBTreeEntryTable(OPS op);
     void releaseFreeList(OPS op);
     void growEMShmseg(size_t nrows = 0);
     void growEMRBTreeShmseg(size_t nrows = 0);
