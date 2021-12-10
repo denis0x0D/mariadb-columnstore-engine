@@ -4566,6 +4566,174 @@ void ExtentMap::rollbackColumnExtents_DBroot ( int oid,
 //                  hwms[0] applies to segment store file segNums[0];
 //                  hwms[1] applies to segment store file segNums[1]; etc.
 //------------------------------------------------------------------------------
+void ExtentMap::rollbackDictStoreExtents_DBrootRBTree(int oid, uint16_t dbRoot,
+                                                      uint32_t partitionNum,
+                                                      const vector<uint16_t>& segNums,
+                                                      const vector<HWM_t>& hwms)
+{
+    //bool oidExists = false;
+
+#ifdef BRM_INFO
+    if (fDebug)
+    {
+        ostringstream oss;
+
+        for (unsigned int k = 0; k < hwms.size(); k++)
+            oss << "; hwms[" << k << "]-"  << hwms[k];
+
+        const string& hwmString(oss.str());
+
+        // put TRACE inside separate scope {} to insure that temporary
+        // hwmString still exists when tracer destructor tries to print it.
+        {
+            TRACER_WRITELATER("rollbackDictStoreExtents_DBroot");
+            TRACER_ADDINPUT(oid);
+            TRACER_ADDSHORTINPUT(dbRoot);
+            TRACER_ADDINPUT(partitionNum);
+            TRACER_ADDSTRINPUT(hwmString);
+            TRACER_WRITE;
+        }
+    }
+
+#endif
+
+    // Delete all extents for the specified OID and DBRoot,
+    // if we are not given any hwms and segment files.
+    bool bDeleteAll = false;
+
+    if (hwms.size() == 0)
+        bDeleteAll = true;
+
+    // segToHwmMap maps segment file number to corresponding pair<hwm,fboLo>
+    tr1::unordered_map<uint16_t, pair<uint32_t, uint32_t> > segToHwmMap;
+    tr1::unordered_map<uint16_t, pair<uint32_t, uint32_t> >::const_iterator
+    segToHwmMapIter;
+
+    grabEMRBTreeEntryTable(WRITE);
+    grabFreeList(WRITE);
+
+    for (auto emIt = fExtentMapRBTree->begin(), end = fExtentMapRBTree->end(); emIt != end; ++emIt)
+    {
+        auto& emEntry = emIt->second;
+        if ((emEntry.fileID == oid) && (emEntry.dbRoot == dbRoot))
+        {
+            // Don't rollback extents that are out of service
+            if (emEntry.status == EXTENTOUTOFSERVICE)
+                continue;
+
+            // If bDeleteAll is true, then we delete extent w/o regards to
+            // partition number, segment number, or HWM
+            if (bDeleteAll)
+            {
+                deleteExtentRBTree(emIt); // case 0
+                continue;
+            }
+
+            // Calculate fbo's for the list of hwms we are given; and store
+            // the fbo and hwm in a map, using the segment file number as a key.
+            if (segToHwmMap.size() == 0)
+            {
+                uint32_t range = emEntry.range.size * 1024;
+                pair<uint32_t, uint32_t> segToHwmMapEntry;
+
+                for (unsigned int k = 0; k < hwms.size(); k++)
+                {
+                    uint32_t fboLo = hwms[k] - (hwms[k] % range);
+                    segToHwmMapEntry.first    = hwms[k];
+                    segToHwmMapEntry.second   = fboLo;
+                    segToHwmMap[segNums[k]] = segToHwmMapEntry;
+                }
+            }
+
+            // Delete, update, or ignore this extent:
+            // Later partition:
+            //   case 1: extent is in later partition, so delete the extent
+            // Same partition:
+            //   case 2: extent is in trailing seg file we don't need; so delete
+            //   case 3: extent is in partition and segment file of interest
+            //     case 3A: earlier extent in segment file; no action necessary
+            //     case 3B: specified HWM falls in this extent, so reset HWM
+            //     case 3C: later extent in segment file; so delete the extent
+            // Earlier partition:
+            //   case 4: extent is in earlier parition, no action necessary
+
+            if (emEntry.partitionNum > partitionNum)
+            {
+                deleteExtentRBTree(emIt); // case 1
+            }
+            else if (emEntry.partitionNum == partitionNum)
+            {
+                unsigned segNum = emEntry.segmentNum;
+                segToHwmMapIter = segToHwmMap.find(segNum);
+
+                if (segToHwmMapIter == segToHwmMap.end())
+                {
+                    deleteExtentRBTree(emIt); // case 2
+                }
+                else   // segment number in the map of files to keep
+                {
+                    uint32_t fboLo = segToHwmMapIter->second.second;
+
+                    if (emEntry.blockOffset < fboLo)
+                    {
+                        // no action necessary                           case 3A
+                    }
+                    else if (emEntry.blockOffset == fboLo)
+                    {
+                        uint32_t hwm = segToHwmMapIter->second.first;
+
+                        if (emEntry.HWM != hwm)
+                        {
+//                            makeUndoRecord(&fExtentMap[i], sizeof(EMEntry));
+                            emEntry.HWM  = hwm;
+                            emEntry.status = EXTENTAVAILABLE;   // case 3B
+                        }
+                    }
+                    else
+                    {
+                        deleteExtentRBTree(emIt); // case 3C
+                    }
+                }
+            }
+        }  // extent map entry with matching oid
+    }      // loop through the extent map
+
+    // If this function is called, we are already in error recovery mode; so
+    // don't worry about reporting an error if the OID is not found, because
+    // we don't want/need the extents for that OID anyway.
+    //if (!oidExists)
+    //{
+    //	ostringstream oss;
+    //	oss << "ExtentMap::rollbackDictStoreExtents_DBroot(): "
+    //		"Rollback failed: no extents exist for: OID-" << oid <<
+    //		"; dbRoot-"    << dbRoot       <<
+    //		"; partition-" << partitionNum;
+    //	log(oss.str(), logging::LOG_TYPE_CRITICAL);
+    //	throw invalid_argument(oss.str());
+    //}
+}
+
+//------------------------------------------------------------------------------
+// Rollback (delete) the extents that follow the extents in partitionNum,
+// for the given dictionary OID & DBRoot.  The specified hwms represent the HWMs
+// to be reset for each of segment store file in this partition.  An HWM will
+// not be given for "every" segment file if we are rolling back to a point where
+// we had not yet created all the segment files in the partition.  In any case,
+// any extents for the "oid" that follow partitionNum, should be deleted.
+// Likewise, any extents in the same partition, whose segment file is not in
+// segNums[], should be deleted as well.  If hwms is empty, then this DBRoot
+// must have been empty at the start of the job, so all the extents for the
+// specified oid and dbRoot can be deleted.
+// input:
+//   oid          - OID of the "last" extents to be retained
+//   dbRoot       - DBRoot of the extents to be considered.
+//   partitionNum - partition number of the last extents to be retained
+//   segNums      - list of segment files with extents to be restored
+//   hwms         - HWMs to be assigned to the last retained extent in each of
+//                      the corresponding segment store files in segNums.
+//                  hwms[0] applies to segment store file segNums[0];
+//                  hwms[1] applies to segment store file segNums[1]; etc.
+//------------------------------------------------------------------------------
 void ExtentMap::rollbackDictStoreExtents_DBroot ( int oid,
         uint16_t            dbRoot,
         uint32_t            partitionNum,

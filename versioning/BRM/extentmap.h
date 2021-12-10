@@ -686,8 +686,7 @@ public:
      * @param hwms Vector of hwms for the last partition to be kept.
      */
     // Not implemented.
-    EXPORT void rollbackDictStoreExtents(int oid,
-                                         uint32_t        partitionNum,
+    EXPORT void rollbackDictStoreExtents(int oid, uint32_t partitionNum,
                                          const std::vector<HWM_t>& hwms);
 
     /** @brief Rollback (delete) a set of dict store extents for an OID & DBRoot
@@ -704,11 +703,13 @@ public:
      * @param segNums Vector of segment files in last partition to be kept.
      * @param hwms Vector of hwms for the last partition to be kept.
      */
-    EXPORT void rollbackDictStoreExtents_DBroot(int oid,
-            uint16_t  dbRoot,
-            uint32_t  partitionNum,
-            const std::vector<uint16_t>& segNums,
-            const std::vector<HWM_t>& hwms);
+    EXPORT void rollbackDictStoreExtents_DBroot(int oid, uint16_t dbRoot, uint32_t partitionNum,
+                                                const std::vector<uint16_t>& segNums,
+                                                const std::vector<HWM_t>& hwms);
+    EXPORT void rollbackDictStoreExtents_DBrootRBTree(int oid, uint16_t dbRoot,
+                                                      uint32_t partitionNum,
+                                                      const std::vector<uint16_t>& segNums,
+                                                      const std::vector<HWM_t>& hwms);
 
     /** @brief Deallocates all extents associated with OID
      *
