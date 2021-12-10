@@ -631,10 +631,9 @@ public:
      * @param segmentNum Last segment in partitionNum to be kept.
      * @param hwm HWM to be assigned to the last extent that is kept.
      */
-    EXPORT void rollbackColumnExtents(int oid,
-                                      uint32_t partitionNum,
-                                      uint16_t segmentNum,
-                                      HWM_t     hwm);
+    // Not implemented.
+    EXPORT void rollbackColumnExtents(int oid, uint32_t partitionNum, uint16_t segmentNum,
+                                      HWM_t hwm);
 
     /** @brief Rollback (delete) set of extents for specified OID & DBRoot.
      *
@@ -648,12 +647,11 @@ public:
      * @param segmentNum Last segment in partitionNum to be kept.
      * @param hwm HWM to be assigned to the last extent that is kept.
      */
-    EXPORT void rollbackColumnExtents_DBroot(int oid,
-            bool      bDeleteAll,
-            uint16_t dbRoot,
-            uint32_t partitionNum,
-            uint16_t segmentNum,
-            HWM_t     hwm);
+    EXPORT void rollbackColumnExtents_DBroot(int oid, bool bDeleteAll, uint16_t dbRoot,
+                                             uint32_t partitionNum, uint16_t segmentNum, HWM_t hwm);
+    EXPORT void rollbackColumnExtents_DBrootRBTree(int oid, bool bDeleteAll, uint16_t dbRoot,
+                                                   uint32_t partitionNum, uint16_t segmentNum,
+                                                   HWM_t hwm);
 
     /** @brief delete of column extents for the specified extents.
      *
@@ -687,6 +685,7 @@ public:
      * @param partitionNum Last partition to be kept.
      * @param hwms Vector of hwms for the last partition to be kept.
      */
+    // Not implemented.
     EXPORT void rollbackDictStoreExtents(int oid,
                                          uint32_t        partitionNum,
                                          const std::vector<HWM_t>& hwms);

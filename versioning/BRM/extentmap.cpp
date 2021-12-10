@@ -4192,6 +4192,179 @@ void ExtentMap::printFL() const
 //   segmentNum   - segment number of the last logical extent to be retained
 //   hwm          - HWM to be assigned to the last logical extent retained
 //------------------------------------------------------------------------------
+void ExtentMap::rollbackColumnExtents_DBrootRBTree(int oid, bool bDeleteAll, uint16_t dbRoot,
+                                                   uint32_t partitionNum, uint16_t segmentNum,
+                                                   HWM_t hwm)
+{
+    //bool oidExists = false;
+
+#ifdef BRM_INFO
+    if (fDebug)
+    {
+        TRACER_WRITELATER("rollbackColumnExtents");
+        TRACER_ADDINPUT(oid);
+        TRACER_ADDBOOLINPUT(bDeleteAll);
+        TRACER_ADDSHORTINPUT(dbRoot);
+        TRACER_ADDINPUT(partitionNum);
+        TRACER_ADDSHORTINPUT(segmentNum);
+        TRACER_ADDINPUT(hwm);
+        TRACER_WRITE;
+    }
+
+#endif
+
+#ifdef BRM_DEBUG
+
+    if (oid < 0)
+    {
+        log("ExtentMap::rollbackColumnExtents_DBroot(): OID must be >= 0",
+            logging::LOG_TYPE_DEBUG);
+        throw invalid_argument(
+            "ExtentMap::rollbackColumnExtents_DBroot(): OID must be >= 0");
+    }
+
+#endif
+
+    uint32_t fboLo = 0;
+    uint32_t fboHi = 0;
+    uint32_t fboLoPreviousStripe = 0;
+
+    grabEMRBTreeEntryTable(WRITE);
+    grabFreeList(WRITE);
+
+    for (auto emIt = fExtentMapRBTree->begin(), end = fExtentMapRBTree->end(); emIt != end; ++emIt)
+    {
+        auto& emEntry = emIt->second;
+        if ((emEntry.fileID == oid) && (emEntry.dbRoot == dbRoot))
+        {
+            // Don't rollback extents that are out of service
+            if (emEntry.status == EXTENTOUTOFSERVICE)
+                continue;
+
+            // If bDeleteAll is true, then we delete extent w/o regards to
+            // partition number, segment number, or HWM
+            if (bDeleteAll)
+            {
+                deleteExtentRBTree(emIt); // case 0
+                continue;
+            }
+
+            // Calculate fbo range for the stripe containing the given hwm
+            if (fboHi == 0)
+            {
+                uint32_t range = emEntry.range.size * 1024;
+                fboLo = hwm - (hwm % range);
+                fboHi = fboLo + range - 1;
+
+                if (fboLo > 0)
+                    fboLoPreviousStripe = fboLo - range;
+            }
+
+            // Delete, update, or ignore this extent:
+            // Later partition:
+            //   case 1: extent in later partition than last extent, so delete
+            // Same partition:
+            //   case 2: extent is in later stripe than last extent, so delete
+            //   case 3: extent is in earlier stripe in the same partition.
+            //           No action necessary for case3B and case3C.
+            //     case 3A: extent is in trailing segment in previous stripe.
+            //              This extent is now the last extent in that segment
+            //              file, so reset the local HWM if it was altered.
+            //     case 3B: extent in previous stripe but not a trailing segment
+            //     case 3C: extent is in stripe that precedes previous stripe
+            //   case 4: extent is in the same partition and stripe as the
+            //           last logical extent we are to keep.
+            //     case 4A: extent is in later segment so can be deleted
+            //     case 4B: extent is in earlier segment, reset HWM if changed
+            //     case 4C: this is last logical extent, reset HWM if changed
+            // Earlier partition:
+            //   case 5: extent is in earlier parition, no action necessary
+
+            if (emEntry.partitionNum > partitionNum)
+            {
+                deleteExtentRBTree(emIt); // case 1
+            }
+            else if (emEntry.partitionNum == partitionNum)
+            {
+                if (emEntry.blockOffset > fboHi)
+                {
+                    deleteExtentRBTree(emIt); // case 2
+                }
+                else if (emEntry.blockOffset < fboLo)
+                {
+                    if (emEntry.blockOffset >= fboLoPreviousStripe)
+                    {
+                        if (emEntry.segmentNum > segmentNum)
+                        {
+                            if (emEntry.HWM != (fboLo - 1))
+                            {
+                                //                  makeUndoRecord(&fExtentMap[i], sizeof(EMEntry));
+                                emEntry.HWM    = fboLo - 1;      //case 3A
+                                emEntry.status = EXTENTAVAILABLE;
+                            }
+                        }
+                    }
+                }
+                else   // extent is in same stripe
+                {
+                    if (emEntry.segmentNum > segmentNum)
+                    {
+                        deleteExtentRBTree(emIt); // case 4A
+                    }
+                    else if (emEntry.segmentNum < segmentNum)
+                    {
+                        if (emEntry.HWM != fboHi)
+                        {
+//                            makeUndoRecord(&fExtentMap[i], sizeof(EMEntry));
+                            emEntry.HWM    = fboHi;             // case 4B
+                            emEntry.status = EXTENTAVAILABLE;
+                        }
+                    }
+                    else   // fExtentMap[i].segmentNum == segmentNum
+                    {
+                        if (emEntry.HWM != hwm)
+                        {
+                            //makeUndoRecord(&fExtentMap[i], sizeof(EMEntry));
+                            emEntry.HWM = hwm; // case 4C
+                            emEntry.status = EXTENTAVAILABLE;
+                        }
+                    }
+                }
+            }
+        }  // extent map entry with matching oid
+    }      // loop through the extent map
+
+    // If this function is called, we are already in error recovery mode; so
+    // don't worry about reporting an error if the OID is not found, because
+    // we don't want/need the extents for that OID anyway.
+    //if (!oidExists)
+    //{
+    //	ostringstream oss;
+    //	oss << "ExtentMap::rollbackColumnExtents_DBroot(): "
+    //		"Rollback failed: no extents exist for: OID-" << oid <<
+    //		"; dbRoot-"    << dbRoot       <<
+    //		"; partition-" << partitionNum <<
+    //		"; segment-"   << segmentNum   <<
+    //		"; hwm-"       << hwm;
+    //	log(oss.str(), logging::LOG_TYPE_CRITICAL);
+    //	throw invalid_argument(oss.str());
+    //}
+}
+
+
+//------------------------------------------------------------------------------
+// Rollback (delete) the extents that logically follow the specified extent for
+// the given OID and DBRoot.  HWM for the last extent is reset to the specified
+// value.
+// input:
+//   oid          - OID of the last logical extent to be retained
+//   bDeleteAll   - Flag indicates whether all extents for oid and dbroot are
+//                  to be deleted; else part#, seg#, and hwm are used.
+//   dbRoot       - DBRoot of the extents to be considered.
+//   partitionNum - partition number of the last logical extent to be retained
+//   segmentNum   - segment number of the last logical extent to be retained
+//   hwm          - HWM to be assigned to the last logical extent retained
+//------------------------------------------------------------------------------
 void ExtentMap::rollbackColumnExtents_DBroot ( int oid,
         bool      bDeleteAll,
         uint16_t dbRoot,
