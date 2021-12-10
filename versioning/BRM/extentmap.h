@@ -1072,6 +1072,7 @@ private:
     template <typename T>
     bool isValidCPRange(const T& max, const T& min, execplan::CalpontSystemCatalog::ColDataType type) const;
     void deleteExtent(int emIndex);
+    void deleteExtentRBTree(ExtentMapRBTree::iterator it);
     LBID_t getLBIDsFromFreeList(uint32_t size);
     void reserveLBIDRange(LBID_t start, uint8_t size);    // used by load() to allocate pre-existing LBIDs
 

@@ -4891,6 +4891,137 @@ void ExtentMap::deleteOIDs(const OidsMap_t& OIDs)
     }
 }
 
+//------------------------------------------------------------------------------
+// Delete the specified extent from the extentmap and return to the free list.
+// emIndex - the index (from the extent map) of the extent to be deleted
+//------------------------------------------------------------------------------
+void ExtentMap::deleteExtentRBTree(ExtentMapRBTree::iterator it)
+{
+    int flIndex, freeFLIndex, flEntries, preceedingExtent, succeedingExtent;
+    LBID_t flBlockEnd, emBlockEnd;
+
+    flEntries = fFLShminfo->allocdSize / sizeof(InlineLBIDRange);
+    auto& emEntry = it->second;
+
+    emBlockEnd = emEntry.range.start + (static_cast<LBID_t>(emEntry.range.size) * 1024);
+
+    // Scan the freelist to see where this entry fits in.
+    for (flIndex = 0, preceedingExtent = -1, succeedingExtent = -1, freeFLIndex = -1;
+            flIndex < flEntries; flIndex++)
+    {
+        if (fFreeList[flIndex].size == 0)
+            freeFLIndex = flIndex;
+        else
+        {
+            flBlockEnd = fFreeList[flIndex].start +
+                         (static_cast<LBID_t>(fFreeList[flIndex].size) * 1024);
+
+            if (emBlockEnd == fFreeList[flIndex].start)
+                succeedingExtent = flIndex;
+            else if (flBlockEnd == emEntry.range.start)
+                preceedingExtent = flIndex;
+        }
+    }
+
+    // Update the freelist.
+    // This space is in between 2 blocks in the FL.
+    if (preceedingExtent != -1 && succeedingExtent != -1)
+    {
+        makeUndoRecord(&fFreeList[preceedingExtent], sizeof(InlineLBIDRange));
+
+        // Migrate the entry upward if there's a space.
+        if (freeFLIndex < preceedingExtent && freeFLIndex != -1)
+        {
+            makeUndoRecord(&fFreeList[freeFLIndex], sizeof(InlineLBIDRange));
+            memcpy(&fFreeList[freeFLIndex], &fFreeList[preceedingExtent], sizeof(InlineLBIDRange));
+            fFreeList[preceedingExtent].size = 0;
+            preceedingExtent = freeFLIndex;
+        }
+
+        fFreeList[preceedingExtent].size += fFreeList[succeedingExtent].size + emEntry.range.size;
+        makeUndoRecord(&fFreeList[succeedingExtent], sizeof(InlineLBIDRange));
+        fFreeList[succeedingExtent].size = 0;
+        makeUndoRecord(fFLShminfo, sizeof(MSTEntry));
+        fFLShminfo->currentSize -= sizeof(InlineLBIDRange);
+    }
+
+    // This space has a free block at the end.
+    else if (succeedingExtent != -1)
+    {
+        makeUndoRecord(&fFreeList[succeedingExtent], sizeof(InlineLBIDRange));
+
+        // Migrate the entry upward if there's a space.
+        if (freeFLIndex < succeedingExtent && freeFLIndex != -1)
+        {
+            makeUndoRecord(&fFreeList[freeFLIndex], sizeof(InlineLBIDRange));
+            memcpy(&fFreeList[freeFLIndex], &fFreeList[succeedingExtent], sizeof(InlineLBIDRange));
+            fFreeList[succeedingExtent].size = 0;
+            succeedingExtent = freeFLIndex;
+        }
+
+        fFreeList[succeedingExtent].start = emEntry.range.start;
+        fFreeList[succeedingExtent].size += emEntry.range.size;
+    }
+
+    // This space has a free block at the beginning.
+    else if (preceedingExtent != -1)
+    {
+        makeUndoRecord(&fFreeList[preceedingExtent], sizeof(InlineLBIDRange));
+
+        // Migrate the entry upward if there's a space.
+        if (freeFLIndex < preceedingExtent && freeFLIndex != -1)
+        {
+            makeUndoRecord(&fFreeList[freeFLIndex], sizeof(InlineLBIDRange));
+            memcpy(&fFreeList[freeFLIndex], &fFreeList[preceedingExtent], sizeof(InlineLBIDRange));
+            fFreeList[preceedingExtent].size = 0;
+            preceedingExtent = freeFLIndex;
+        }
+
+        fFreeList[preceedingExtent].size += emEntry.range.size;
+    }
+
+    // The freelist has no adjacent blocks, so make a new entry.
+    else
+    {
+        if (fFLShminfo->currentSize == fFLShminfo->allocdSize)
+        {
+            growFLShmseg();
+#ifdef BRM_DEBUG
+
+            if (freeFLIndex != -1)
+            {
+                log("ExtentMap::deleteOID(): found a free FL entry in a supposedly full shmseg", logging::LOG_TYPE_DEBUG);
+                throw logic_error("ExtentMap::deleteOID(): found a free FL entry in a supposedly full shmseg");
+            }
+
+#endif
+            freeFLIndex = flEntries;  // happens to be the right index
+            flEntries = fFLShminfo->allocdSize / sizeof(InlineLBIDRange);
+        }
+
+#ifdef BRM_DEBUG
+
+        if (freeFLIndex == -1)
+        {
+            log("ExtentMap::deleteOID(): no available free list entries?", logging::LOG_TYPE_DEBUG);
+            throw logic_error("ExtentMap::deleteOID(): no available free list entries?");
+        }
+
+#endif
+        makeUndoRecord(&fFreeList[freeFLIndex], sizeof(InlineLBIDRange));
+        fFreeList[freeFLIndex].start = emEntry.range.start;
+        fFreeList[freeFLIndex].size = emEntry.range.size;
+        makeUndoRecord(&fFLShminfo, sizeof(MSTEntry));
+        fFLShminfo->currentSize += sizeof(InlineLBIDRange);
+    }
+
+    //    makeUndoRecord(&fExtentMap[emIndex], sizeof(EMEntry));
+    // Erase a node for the given iterator.
+    fExtentMapRBTree->erase(it);
+    makeUndoRecord(&fEMRBTreeShminfo, sizeof(MSTEntry));
+    fEMRBTreeShminfo->currentSize -= EM_RB_TREE_NODE_SIZE;
+}
+
 
 //------------------------------------------------------------------------------
 // Delete the specified extent from the extentmap and return to the free list.
