@@ -1809,6 +1809,113 @@ template <typename T> void ExtentMap::load(T* in)
     }
 }
 
+void ExtentMap::saveRBTree(const string& filename)
+{
+#ifdef BRM_INFO
+
+    if (fDebug)
+    {
+        TRACER_WRITELATER("save");
+        TRACER_ADDSTRINPUT(filename);
+        TRACER_WRITE;
+    }
+
+#endif
+
+    grabEMRBTreeEntryTable(READ);
+
+    try
+    {
+        grabFreeList(READ);
+    }
+    catch (...)
+    {
+        // TODO: Add release RBTree.
+        //releaseEMEntryTable(READ);
+        throw;
+    }
+
+    if (fEMShminfo->currentSize == 0)
+    {
+        log("ExtentMap::save(): got request to save an empty BRM");
+        releaseFreeList(READ);
+        //releaseEMEntryTable(READ);
+        throw runtime_error("ExtentMap::save(): got request to save an empty BRM");
+    }
+
+    const char* filename_p = filename.c_str();
+    scoped_ptr<IDBDataFile> out(IDBDataFile::open(
+                                    IDBPolicy::getType(filename_p, IDBPolicy::WRITEENG),
+                                    filename_p, "wb", IDBDataFile::USE_VBUF));
+
+    if (!out)
+    {
+        log_errno("ExtentMap::save(): open");
+        releaseFreeList(READ);
+        // releaseEMEntryTable(READ);
+        throw ios_base::failure("ExtentMap::save(): open failed. Check the error log.");
+    }
+
+    uint32_t loadSize[3];
+    loadSize[0] = EM_MAGIC_V5;
+    // The size of the `RBTree`.
+    loadSize[1] = fExtentMapRBTree->size();
+    loadSize[2] = fFLShminfo->allocdSize / sizeof(InlineLBIDRange); // needs to send all entries
+
+    try
+    {
+        const int32_t wsize = 3 * sizeof(uint32_t);
+        const int32_t bytes = out->write((char*) loadSize, wsize);
+
+        if (bytes != wsize)
+            throw ios_base::failure("ExtentMap::save(): write failed. Check the error log.");
+    }
+    catch (...)
+    {
+        releaseFreeList(READ);
+        //        releaseEMEntryTable(READ);
+        throw;
+    }
+
+    for (auto& lbidEMEntryPair : *fExtentMapRBTree)
+    {
+        EMEntry& emEntry = lbidEMEntryPair.second;
+        const uint32_t writeSize = sizeof(EMEntry);
+        char* writePos = reinterpret_cast<char*>(&emEntry);
+        uint32_t progress = 0;
+
+        while (progress < writeSize)
+        {
+            auto err = out->write(writePos + progress, writeSize - progress);
+            if (err < 0)
+            {
+                releaseFreeList(READ);
+                //                releaseEMEntryTable(READ);
+                throw ios_base::failure("ExtentMap::save(): write failed. Check the error log.");
+            }
+            progress += err;
+        }
+    }
+
+    uint32_t progress = 0;
+    const uint32_t writeSize = fFLShminfo->allocdSize;
+    char* writePos = reinterpret_cast<char*>(fFreeList);
+    while (progress < writeSize)
+    {
+        auto err = out->write(writePos + progress, writeSize - progress);
+        if (err < 0)
+        {
+            releaseFreeList(READ);
+            releaseEMEntryTable(READ);
+            throw ios_base::failure("ExtentMap::save(): write failed. Check the error log.");
+        }
+        progress += err;
+    }
+
+    releaseFreeList(READ);
+//    releaseEMEntryTable(READ);
+}
+
 void ExtentMap::save(const string& filename)
 {
 #ifdef BRM_INFO

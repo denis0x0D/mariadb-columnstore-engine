@@ -413,6 +413,8 @@ public:
      */
     EXPORT void save(const std::string& filename);
 
+    EXPORT void saveRBTree(const std::string& filename);
+
     // @bug 1509.  Added new version of lookup below.
     /** @brief Returns the first and last LBID in the range for a given LBID
      *
