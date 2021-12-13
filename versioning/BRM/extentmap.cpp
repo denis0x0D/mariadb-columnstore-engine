@@ -6310,6 +6310,79 @@ void ExtentMap::getExtentState(int OID, uint32_t partitionNum,
     releaseEMEntryTable(READ);
 }
 
+HWM_t ExtentMap::getLocalHWMRBTree(int OID, uint32_t partitionNum, uint16_t segmentNum, int& status)
+{
+#ifdef BRM_INFO
+
+    if (fDebug)
+    {
+        TRACER_WRITELATER("getLocalHWM");
+        TRACER_ADDINPUT(OID);
+        TRACER_ADDINPUT(partitionNum);
+        TRACER_ADDSHORTINPUT(segmentNum);
+        TRACER_ADDOUTPUT(status);
+        TRACER_WRITE;
+    }
+
+#endif
+
+#ifdef EM_AS_A_TABLE_POC__
+
+    if (OID == 1084)
+    {
+        return 0;
+    }
+
+#endif
+
+    int i, emEntries;
+    HWM_t ret = 0;
+    bool OIDPartSegExists = false;
+
+    if (OID < 0)
+    {
+        ostringstream oss;
+        oss << "ExtentMap::getLocalHWM(): invalid OID requested: " << OID;
+        log(oss.str(), logging::LOG_TYPE_CRITICAL);
+        throw invalid_argument(oss.str());
+    }
+
+    grabEMRBTreeEntryTable(READ);
+
+    for (auto emIt = fExtentMapRBTree->begin(), end = fExtentMapRBTree->end(); emIt != end; ++emIt)
+    {
+        const auto& emEntry = emIt->second;
+        if ((emEntry.fileID == OID) && (emEntry.partitionNum == partitionNum) &&
+            (emEntry.segmentNum == segmentNum))
+        {
+            OIDPartSegExists = true;
+            status = emEntry.status;
+
+            if (emEntry.HWM != 0)
+            {
+                ret = emEntry.HWM;
+                releaseEMRBTreeEntryTable(READ);
+                return ret;
+            }
+        }
+    }
+
+    releaseEMRBTreeEntryTable(READ);
+
+    if (OIDPartSegExists)
+        return 0;
+    else
+    {
+        ostringstream oss;
+        oss << "ExtentMap::getLocalHWM(): There are no extent entries for OID " <<
+            OID << "; partition " << partitionNum << "; segment " <<
+            segmentNum << endl;
+        log(oss.str(), logging::LOG_TYPE_CRITICAL);
+        throw invalid_argument(oss.str());
+    }
+}
+
+
 //------------------------------------------------------------------------------
 // Returns the HWM for the specified OID, partition, and segment numbers.
 // Used to get the HWM for a specific column or dictionary store segment file.
@@ -6389,6 +6462,100 @@ HWM_t ExtentMap::getLocalHWM(int OID, uint32_t partitionNum,
         throw invalid_argument(oss.str());
     }
 }
+
+//------------------------------------------------------------------------------
+// Sets the HWM for the specified OID, partition, and segment number.
+// In addition, the HWM for the old HWM extent (for this segment file),
+// is set to 0, so that the latest HWM is only carried in the last extent
+// (per segment file).
+// Used for dictionary or column OIDs to set the HWM for specific segment file.
+//------------------------------------------------------------------------------
+void ExtentMap::setLocalHWMRBTree(int OID, uint32_t partitionNum, uint16_t segmentNum, HWM_t newHWM,
+                                  bool firstNode, bool uselock)
+{
+#ifdef BRM_INFO
+
+    if (fDebug)
+    {
+        TRACER_WRITELATER("setLocalHWM");
+        TRACER_ADDINPUT(OID);
+        TRACER_ADDINPUT(partitionNum);
+        TRACER_ADDSHORTINPUT(segmentNum);
+        TRACER_ADDINPUT(newHWM);
+        TRACER_WRITE;
+    }
+
+    bool addedAnExtent = false;
+
+    if (OID < 0)
+    {
+        log("ExtentMap::setLocalHWM(): OID must be >= 0",
+            logging::LOG_TYPE_DEBUG);
+        throw invalid_argument(
+            "ExtentMap::setLocalHWM(): OID must be >= 0");
+    }
+
+#endif
+
+    ExtentMapRBTree::iterator lastIt = fExtentMapRBTree->end();
+    ExtentMapRBTree::iterator oldIt = fExtentMapRBTree->end();
+    uint32_t highestOffset = 0;
+
+    if (uselock)
+        grabEMRBTreeEntryTable(WRITE);
+
+    for (auto emIt = fExtentMapRBTree->begin(), end = fExtentMapRBTree->end(); emIt != end; ++emIt)
+    {
+        const auto &emEntry = emIt->second;
+        if ((emEntry.fileID == OID) && (emEntry.partitionNum == partitionNum) &&
+            (emEntry.segmentNum == segmentNum))
+        {
+            // Find current HWM extent in case of multiple extents per segment file.
+            if (emEntry.blockOffset >= highestOffset)
+            {
+                highestOffset = emEntry.blockOffset;
+                lastIt = emIt;
+            }
+
+            // Find previous HWM extent.
+            if (emEntry.HWM != 0)
+                oldIt = emIt;
+        }
+    }
+
+    if (lastIt == fExtentMapRBTree->end())
+    {
+        ostringstream oss;
+        oss << "ExtentMap::setLocalHWM(): Bad OID/partition/segment argument; "
+            "no extent entries for OID " << OID << "; partition " <<
+            partitionNum << "; segment " << segmentNum << endl;
+        log(oss.str(), logging::LOG_TYPE_CRITICAL);
+        throw invalid_argument(oss.str());
+    }
+
+    if (newHWM >= (lastIt->second.blockOffset + lastIt->second.range.size * 1024))
+    {
+        ostringstream oss;
+        oss << "ExtentMap::setLocalHWM(): "
+            "new HWM is past the end of the file for OID " << OID << "; partition " <<
+            partitionNum << "; segment " << segmentNum << "; HWM " << newHWM;
+        log(oss.str(), logging::LOG_TYPE_DEBUG);
+        throw invalid_argument(oss.str());
+    }
+
+    // Save HWM in last extent for this segment file; and mark as AVAILABLE
+//    makeUndoRecord(&fExtentMap[lastExtentIndex], sizeof(EMEntry));
+    lastIt->second.HWM = newHWM;
+    lastIt->second.status = EXTENTAVAILABLE;
+
+    // Reset HWM in old HWM extent to 0
+    if ((oldIt != fExtentMapRBTree->end()) && (oldIt != lastIt))
+    {
+//        makeUndoRecord(&fExtentMap[oldHWMExtentIndex], sizeof(EMEntry));
+          oldIt->second.HWM = 0;
+    }
+}
+
 
 //------------------------------------------------------------------------------
 // Sets the HWM for the specified OID, partition, and segment number.

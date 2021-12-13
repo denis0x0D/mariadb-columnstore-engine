@@ -771,8 +771,9 @@ public:
      * @return The last file block number written to in the specified
      * partition/segment file for the given OID.
      */
-    EXPORT HWM_t getLocalHWM(int OID, uint32_t partitionNum,
-                             uint16_t segmentNum, int& status);
+    EXPORT HWM_t getLocalHWM(int OID, uint32_t partitionNum, uint16_t segmentNum, int& status);
+    EXPORT HWM_t getLocalHWMRBTree(int OID, uint32_t partitionNum, uint16_t segmentNum,
+                                   int& status);
 
     /** @brief Sets the current high water mark of an OID,partition,segment
      *
@@ -786,6 +787,9 @@ public:
     EXPORT void setLocalHWM(int OID, uint32_t partitionNum,
                             uint16_t segmentNum, HWM_t HWM, bool firstNode,
                             bool uselock = true);
+
+    EXPORT void setLocalHWMRBTree(int OID, uint32_t partitionNum, uint16_t segmentNum, HWM_t HWM,
+                                  bool firstNode, bool uselock = true);
 
     EXPORT void bulkSetHWM(const std::vector<BulkSetHWMArg>&, bool firstNode);
 
