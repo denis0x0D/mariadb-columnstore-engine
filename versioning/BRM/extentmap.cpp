@@ -4196,8 +4196,6 @@ void ExtentMap::rollbackColumnExtents_DBrootRBTree(int oid, bool bDeleteAll, uin
                                                    uint32_t partitionNum, uint16_t segmentNum,
                                                    HWM_t hwm)
 {
-    //bool oidExists = false;
-
 #ifdef BRM_INFO
     if (fDebug)
     {
@@ -5806,6 +5804,85 @@ void ExtentMap::deleteExtent(int emIndex)
 // If no available or outOfService extent is found, then bFound is returned
 // as false.
 //------------------------------------------------------------------------------
+HWM_t ExtentMap::getLastHWM_DBrootRBTree(int OID, uint16_t dbRoot, uint32_t& partitionNum,
+                                         uint16_t& segmentNum, int& status, bool& bFound)
+{
+#ifdef BRM_INFO
+
+    if (fDebug)
+    {
+        TRACER_WRITELATER("getLastHWM_DBroot");
+        TRACER_ADDINPUT(OID);
+        TRACER_ADDSHORTINPUT(dbRoot);
+        TRACER_ADDOUTPUT(partitionNum);
+        TRACER_ADDSHORTOUTPUT(segmentNum);
+        TRACER_ADDOUTPUT(status);
+        TRACER_WRITE;
+    }
+
+#endif
+
+    uint32_t lastExtent = 0;
+    ExtentMapRBTree::iterator lastIt = fExtentMapRBTree->end();
+    partitionNum = 0;
+    segmentNum = 0;
+    HWM_t hwm = 0;
+    bFound = false;
+
+    if (OID < 0)
+    {
+        ostringstream oss;
+        oss << "ExtentMap::getLastHWM_DBroot(): invalid OID requested: " << OID;
+        log(oss.str(), logging::LOG_TYPE_CRITICAL);
+        throw invalid_argument(oss.str());
+    }
+
+    grabEMRBTreeEntryTable(READ);
+
+    for (auto emIt = fExtentMapRBTree->begin(), end = fExtentMapRBTree->end(); emIt != end; ++emIt)
+    {
+        const auto& emEntry = emIt->second;
+        if ((emEntry.fileID == OID) && (emEntry.dbRoot == dbRoot) &&
+            ((emEntry.status == EXTENTAVAILABLE) || (emEntry.status == EXTENTOUTOFSERVICE)))
+        {
+            if ((emEntry.partitionNum > partitionNum) ||
+                ((emEntry.partitionNum == partitionNum) && (emEntry.blockOffset > lastExtent)) ||
+                ((emEntry.partitionNum == partitionNum) && (emEntry.blockOffset == lastExtent) &&
+                 (emEntry.segmentNum >= segmentNum)))
+            {
+                lastExtent = emEntry.blockOffset;
+                partitionNum = emEntry.partitionNum;
+                segmentNum = emEntry.segmentNum;
+                lastIt = emIt;
+            }
+        }
+    }
+
+    // save additional information before we release the read-lock
+    if (lastIt != fExtentMapRBTree->end())
+    {
+        hwm = lastIt->second.HWM;
+        status = lastIt->second.status;
+        bFound = true;
+    }
+
+    releaseEMRBTreeEntryTable(READ);
+
+    return hwm;
+}
+
+
+//------------------------------------------------------------------------------
+// Returns the last local HWM for the specified OID for the given DBroot.
+// Also returns the DBRoot, and partition, and segment numbers for the relevant
+// segment file. Technically, this function finds the "last" extent for the
+// specified OID, and returns the HWM for that extent.  It is assumed that the
+// HWM for the segment file containing this "last" extent, has been stored in
+// that extent's hwm; and that the hwm is not still hanging around in a previous
+// extent for the same segment file.
+// If no available or outOfService extent is found, then bFound is returned
+// as false.
+//------------------------------------------------------------------------------
 HWM_t ExtentMap::getLastHWM_DBroot(int OID, uint16_t dbRoot,
                                    uint32_t& partitionNum, uint16_t& segmentNum, int& status, bool& bFound)
 {
@@ -6027,6 +6104,153 @@ void ExtentMap::getDbRootHWMInfo(int OID, uint16_t pmNumber,
                 emDbRootMap.begin(); iter != emDbRootMap.end(); ++iter)
     {
         emDbRootHwmInfos.push_back( iter->second );
+    }
+}
+
+
+//------------------------------------------------------------------------------
+// For the specified OID and PM number, this function will return a vector
+// of objects carrying HWM info (for the last segment file) and block count
+// information about each DBRoot assigned to the specified PM.
+//------------------------------------------------------------------------------
+void ExtentMap::getDbRootHWMInfoRBTree(int OID, uint16_t pmNumber,
+                                       EmDbRootHWMInfo_v& emDbRootHwmInfos)
+{
+#ifdef BRM_INFO
+
+    if (fDebug)
+    {
+        TRACER_WRITELATER("getDbRootHWMInfo");
+        TRACER_ADDINPUT(OID);
+        TRACER_ADDSHORTINPUT(pmNumber);
+        TRACER_WRITE;
+    }
+
+#endif
+
+    if (OID < 0)
+    {
+        ostringstream oss;
+        oss << "ExtentMap::getDbRootHWMInfo(): invalid OID requested: " << OID;
+        log(oss.str(), logging::LOG_TYPE_CRITICAL);
+        throw invalid_argument(oss.str());
+    }
+
+    // Determine List of DBRoots for specified PM, and construct map of
+    // EmDbRootHWMInfo objects.
+    tr1::unordered_map<uint16_t, EmDbRootHWMInfo> emDbRootMap;
+    vector<int> dbRootList;
+    getPmDbRoots(pmNumber, dbRootList);
+
+    if (dbRootList.size() > 0)
+    {
+        for (unsigned int iroot = 0; iroot < dbRootList.size(); iroot++)
+        {
+            uint16_t rootID = dbRootList[iroot];
+            EmDbRootHWMInfo emDbRootInfo(rootID);
+            emDbRootMap[rootID] = emDbRootInfo;
+        }
+    }
+    else
+    {
+        ostringstream oss;
+        oss << "ExtentMap::getDbRootHWMInfo(): "
+            "There are no DBRoots for OID " << OID <<
+            " and PM " << pmNumber << endl;
+        log(oss.str(), logging::LOG_TYPE_CRITICAL);
+        throw invalid_argument(oss.str());
+    }
+
+    grabEMRBTreeEntryTable(READ);
+    tr1::unordered_map<uint16_t, EmDbRootHWMInfo>::iterator emIter;
+
+    // Searching the array in reverse order should be faster since the last
+    // extent is usually at the bottom.  We still have to search the entire
+    // array (just in case), but the number of operations per loop iteration
+    // will be less.
+
+    uint32_t i = 0;
+    for (auto it = fExtentMapRBTree->begin(), end = fExtentMapRBTree->end(); it != end; ++it)
+    {
+        auto& emEntry = it->second;
+        if (emEntry.fileID == OID)
+        {
+            // Include this extent in the search, only if the extent's
+            // DBRoot falls in the list of DBRoots for this PM.
+            emIter = emDbRootMap.find(emEntry.dbRoot);
+
+            if (emIter == emDbRootMap.end())
+                continue;
+
+            EmDbRootHWMInfo& emDbRoot = emIter->second;
+            if ((emEntry.status != EXTENTOUTOFSERVICE) && (emEntry.HWM != 0))
+                emDbRoot.totalBlocks += (fExtentMap[i].HWM + 1);
+
+            if ((emEntry.partitionNum > emDbRoot.partitionNum) ||
+                ((emEntry.partitionNum == emDbRoot.partitionNum) &&
+                 (emEntry.blockOffset > emDbRoot.fbo)) ||
+                ((emEntry.partitionNum == emDbRoot.partitionNum) &&
+                 (emEntry.blockOffset == emDbRoot.fbo) &&
+                 (emEntry.segmentNum >= emDbRoot.segmentNum)))
+            {
+                emDbRoot.fbo = emEntry.blockOffset;
+                emDbRoot.partitionNum = emEntry.partitionNum;
+                emDbRoot.segmentNum = emEntry.segmentNum;
+                emDbRoot.localHWM = emEntry.HWM;
+                emDbRoot.startLbid = emEntry.range.start;
+                emDbRoot.status = emEntry.status;
+                // TODO: This indicates that we found a extent, update to a flag.
+                emDbRoot.hwmExtentIndex = i;
+            }
+        }
+        ++i;
+    }
+
+    releaseEMRBTreeEntryTable(READ);
+
+    for (tr1::unordered_map<uint16_t, EmDbRootHWMInfo>::iterator iter =
+                emDbRootMap.begin(); iter != emDbRootMap.end(); ++iter)
+    {
+        EmDbRootHWMInfo& emDbRoot = iter->second;
+
+        if (emDbRoot.hwmExtentIndex != -1)
+        {
+            // @bug 5349: make sure HWM extent for each DBRoot is AVAILABLE
+            if (emDbRoot.status == EXTENTUNAVAILABLE)
+            {
+                ostringstream oss;
+                oss << "ExtentMap::getDbRootHWMInfo(): " <<
+                    "OID " << OID <<
+                    " has HWM extent that is UNAVAILABLE for " <<
+                    "DBRoot"      << emDbRoot.dbRoot       <<
+                    "; part#: "   << emDbRoot.partitionNum <<
+                    ", seg#: "    << emDbRoot.segmentNum   <<
+                    ", fbo: "     << emDbRoot.fbo          <<
+                    ", localHWM: " << emDbRoot.localHWM     <<
+                    ", lbid: "    << emDbRoot.startLbid    << endl;
+                log(oss.str(), logging::LOG_TYPE_CRITICAL);
+                throw runtime_error(oss.str());
+            }
+
+            // In the loop above we ignored "all" the extents with HWM of 0,
+            // which is okay most of the time, because each segment file's HWM
+            // is carried in the last extent only.  BUT if we have a segment
+            // file with HWM=0, having a single extent and a single block at
+            // the "end" of the data, we still need to account for this last
+            // block.  So we increment the block count for this isolated case.
+            if ((emDbRoot.localHWM == 0) &&
+                    (emDbRoot.status == EXTENTAVAILABLE))
+            {
+                emDbRoot.totalBlocks++;
+            }
+        }
+    }
+
+    // Copy internal map to the output vector argument
+    for (tr1::unordered_map<uint16_t, EmDbRootHWMInfo>::iterator iter = emDbRootMap.begin();
+         iter != emDbRootMap.end(); ++iter)
+    {
+        emDbRootHwmInfos.push_back(iter->second);
     }
 }
 

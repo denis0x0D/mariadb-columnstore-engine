@@ -757,6 +757,9 @@ public:
                                    uint32_t& partitionNum, uint16_t& segmentNum,
                                    int& status, bool& bFound);
 
+    EXPORT HWM_t getLastHWM_DBrootRBTree(int OID, uint16_t dbRoot, uint32_t& partitionNum,
+                                         uint16_t& segmentNum, int& status, bool& bFound);
+
     /** @brief Gets the current high water mark of an OID,partition,segment
      *
      * Get current local high water mark of an OID, partition, segment;
@@ -800,6 +803,9 @@ public:
      */
     EXPORT void getDbRootHWMInfo(int OID, uint16_t pmNumber,
                                  EmDbRootHWMInfo_v& emDbRootHwmInfos);
+
+    EXPORT void getDbRootHWMInfoRBTree(int OID, uint16_t pmNumber,
+                                       EmDbRootHWMInfo_v& emDbRootHwmInfos);
 
     /** @brief Get the status (AVAILABLE, OUTOFSERVICE, etc) for the
      * segment file represented by the specified OID, part# and seg#.
