@@ -6939,6 +6939,68 @@ void ExtentMap::getExtents(int OID, vector<struct EMEntry>& entries,
         sort<vector<struct EMEntry>::iterator>(entries.begin(), entries.end());
 }
 
+void ExtentMap::getExtents_dbrootRBTree(int OID, vector<struct EMEntry>& entries,
+                                        const uint16_t dbroot)
+{
+#ifdef BRM_INFO
+
+    if (fDebug)
+    {
+        TRACER_WRITELATER("getExtents");
+        TRACER_ADDINPUT(OID);
+        TRACER_WRITE;
+    }
+
+#endif
+
+#ifdef EM_AS_A_TABLE_POC__
+
+    if (OID == 1084)
+    {
+        EMEntry fakeEntry;
+        fakeEntry.range.start = (1LL << 54);
+        fakeEntry.range.size = 4;
+        fakeEntry.fileID = 1084;
+        fakeEntry.blockOffset = 0;
+        fakeEntry.HWM = 1;
+        fakeEntry.partitionNum = 0;
+        fakeEntry.segmentNum = 0;
+        fakeEntry.dbRoot = 1;
+        fakeEntry.colWid = 4;
+        fakeEntry.status = EXTENTAVAILABLE;
+        fakeEntry.partition.cprange.hiVal = numeric_limits<int64_t>::min() + 2;
+        fakeEntry.partition.cprange.loVal = numeric_limits<int64_t>::max();
+        fakeEntry.partition.cprange.sequenceNum = 0;
+        fakeEntry.partition.cprange.isValid = CP_INVALID;
+        entries.push_back(fakeEntry);
+        return;
+    }
+
+#endif
+
+    entries.clear();
+
+    if (OID < 0)
+    {
+        ostringstream oss;
+        oss << "ExtentMap::getExtents(): invalid OID requested: " << OID;
+        log(oss.str(), logging::LOG_TYPE_CRITICAL);
+        throw invalid_argument(oss.str());
+    }
+
+    grabEMRBTreeEntryTable(READ);
+
+    for (auto emIt = fExtentMapRBTree->begin(), end = fExtentMapRBTree->end(); emIt != end; ++emIt)
+    {
+        const auto& emEntry = emIt->second;
+        if ((emEntry.fileID == OID) && (emEntry.dbRoot == dbroot))
+            entries.push_back(emEntry);
+    }
+
+    releaseEMRBTreeEntryTable(READ);
+}
+
+
 void ExtentMap::getExtents_dbroot(int OID, vector<struct EMEntry>& entries, const uint16_t dbroot)
 {
 #ifdef BRM_INFO
@@ -6999,6 +7061,51 @@ void ExtentMap::getExtents_dbroot(int OID, vector<struct EMEntry>& entries, cons
 
     releaseEMEntryTable(READ);
 }
+
+//------------------------------------------------------------------------------
+// Get the number of extents for the specified OID and DBRoot.
+// OutOfService extents are included/excluded depending on the
+// value of the incOutOfService flag.
+//------------------------------------------------------------------------------
+void ExtentMap::getExtentCount_dbrootRBTree(int OID, uint16_t dbroot, bool incOutOfService,
+                                            uint64_t& numExtents)
+{
+    if (OID < 0)
+    {
+        ostringstream oss;
+        oss << "ExtentMap::getExtentsCount_dbroot(): invalid OID requested: " <<
+            OID;
+        log(oss.str(), logging::LOG_TYPE_CRITICAL);
+        throw invalid_argument(oss.str());
+    }
+
+    grabEMRBTreeEntryTable(READ);
+
+    if (incOutOfService)
+    {
+        for (auto emIt = fExtentMapRBTree->begin(), end = fExtentMapRBTree->end(); emIt != end;
+             ++emIt)
+        {
+            const auto& emEntry = emIt->second;
+            if ((emEntry.fileID == OID) && (emEntry.dbRoot == dbroot))
+                numExtents++;
+        }
+    }
+    else
+    {
+        for (auto emIt = fExtentMapRBTree->begin(), end = fExtentMapRBTree->end(); emIt != end;
+             ++emIt)
+        {
+            const auto& emEntry = emIt->second;
+            if ((emEntry.fileID == OID) && (emEntry.dbRoot == dbroot) &&
+                (emEntry.status != EXTENTOUTOFSERVICE))
+                numExtents++;
+        }
+    }
+
+    releaseEMRBTreeEntryTable(READ);
+}
+
 
 //------------------------------------------------------------------------------
 // Get the number of extents for the specified OID and DBRoot.

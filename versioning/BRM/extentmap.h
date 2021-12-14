@@ -864,6 +864,9 @@ public:
     EXPORT void getExtents_dbroot(int OID, std::vector<struct EMEntry>& entries,
                                   const uint16_t dbroot);
 
+    EXPORT void getExtents_dbrootRBTree(int OID, std::vector<struct EMEntry>& entries,
+                                        const uint16_t dbroot);
+
     /** @brief Gets the number of extents for the specified OID and DBRoot
      *
      * @param OID (in) The OID of interest
@@ -874,6 +877,9 @@ public:
      */
     EXPORT void getExtentCount_dbroot(int OID, uint16_t dbroot,
                                       bool incOutOfService, uint64_t& numExtents);
+
+    EXPORT void getExtentCount_dbrootRBTree(int OID, uint16_t dbroot, bool incOutOfService,
+                                            uint64_t& numExtents);
 
     /** @brief Gets the size of an extent in rows
      *
