@@ -7754,6 +7754,80 @@ void ExtentMap::markAllPartitionForDeletion(const set<OID_t>& oids)
 //------------------------------------------------------------------------------
 // Restore all extents for the specified OID(s) and partition number.
 //------------------------------------------------------------------------------
+void ExtentMap::restorePartitionRBTree(const set<OID_t>& oids,
+                                       const set<LogicalPartition>& partitionNums, string& emsg)
+{
+    if (oids.size() == 0)
+        return;
+
+    set<OID_t>::const_iterator it;
+    grabEMRBTreeEntryTable(WRITE);
+
+    vector<ExtentMapRBTree::iterator> extents;
+    set<LogicalPartition> foundPartitions;
+    bool partitionAlreadyEnabled = false;
+
+    for (auto emIt = fExtentMapRBTree->begin(), end = fExtentMapRBTree->end(); emIt != end; ++emIt)
+    {
+        auto& emEntry = emIt->second;
+        LogicalPartition lp(emEntry.dbRoot, emEntry.partitionNum, emEntry.segmentNum);
+
+        if (partitionNums.find(lp) != partitionNums.end())
+        {
+            it = oids.find(emEntry.fileID);
+
+            if (it != oids.end())
+            {
+                if (emEntry.status == EXTENTAVAILABLE)
+                {
+                    partitionAlreadyEnabled = true;
+                }
+
+                extents.push_back(emIt);
+                foundPartitions.insert(lp);
+            }
+        }
+    }
+
+    if (foundPartitions.size() != partitionNums.size())
+    {
+        Message::Args args;
+        ostringstream oss;
+
+        for (auto partIt = partitionNums.begin(); partIt != partitionNums.end(); ++partIt)
+        {
+            if (foundPartitions.empty() || foundPartitions.find((*partIt)) == foundPartitions.end())
+            {
+                if (!oss.str().empty())
+                    oss << ", ";
+
+                oss << (*partIt).toString();
+            }
+        }
+
+        args.add(oss.str());
+        emsg = IDBErrorInfo::instance()->errorMsg(ERR_PARTITION_NOT_EXIST, args);
+        throw IDBExcept(emsg, ERR_PARTITION_NOT_EXIST);
+    }
+
+    // really enable partitions
+    for (uint32_t i = 0; i < extents.size(); i++)
+    {
+//        makeUndoRecord(&fExtentMap[extents[i]], sizeof(EMEntry));
+extents[i]->second.status = EXTENTAVAILABLE;
+    }
+
+    if (partitionAlreadyEnabled)
+    {
+        emsg = IDBErrorInfo::instance()->errorMsg(ERR_PARTITION_ALREADY_ENABLED);
+        throw IDBExcept(emsg, ERR_PARTITION_ALREADY_ENABLED);
+    }
+}
+
+
+//------------------------------------------------------------------------------
+// Restore all extents for the specified OID(s) and partition number.
+//------------------------------------------------------------------------------
 void ExtentMap::restorePartition(const set<OID_t>& oids,
                                  const set<LogicalPartition>& partitionNums, string& emsg)
 {

@@ -935,7 +935,11 @@ public:
      * @param partitionNums (in) the set of partitions to be restored.
      */
     EXPORT void restorePartition(const std::set<OID_t>& oids,
-                                 const std::set<LogicalPartition>& partitionNums, std::string& emsg);
+                                 const std::set<LogicalPartition>& partitionNums,
+                                 std::string& emsg);
+    EXPORT void restorePartitionRBTree(const std::set<OID_t>& oids,
+                                       const std::set<LogicalPartition>& partitionNums,
+                                       std::string& emsg);
 
     /** @brief Get the list of out-of-service partitions for a given OID
      *
