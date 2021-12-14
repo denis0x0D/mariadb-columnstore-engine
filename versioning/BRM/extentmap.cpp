@@ -7162,6 +7162,51 @@ void ExtentMap::getExtentCount_dbroot(int OID, uint16_t dbroot,
 // a single DBRoot, as the function only searches for and returns the first
 // DBRoot entry that is found in the extent map.
 //------------------------------------------------------------------------------
+void ExtentMap::getSysCatDBRootRBTree(OID_t oid, uint16_t& dbRoot)
+{
+#ifdef BRM_INFO
+
+    if (fDebug)
+    {
+        TRACER_WRITELATER("getSysCatDBRoot");
+        TRACER_ADDINPUT(oid);
+        TRACER_ADDSHORTOUTPUT(dbRoot);
+        TRACER_WRITE;
+    }
+
+#endif
+
+    bool bFound = false;
+    grabEMRBTreeEntryTable(READ);
+
+    for (auto emIt = fExtentMapRBTree->begin(), end = fExtentMapRBTree->end(); emIt != end; ++emIt)
+    {
+        const auto& emEntry = emIt->second;
+        if ((emEntry.fileID == oid))
+        {
+            dbRoot = emEntry.dbRoot;
+            bFound = true;
+            break;
+        }
+    }
+
+    releaseEMRBTreeEntryTable(READ);
+
+    if (!bFound)
+    {
+        ostringstream oss;
+        oss << "ExtentMap::getSysCatDBRoot(): OID not found: " << oid;
+        log(oss.str(), logging::LOG_TYPE_WARNING);
+        throw logic_error(oss.str());
+    }
+}
+
+//------------------------------------------------------------------------------
+// Gets the DBRoot for the specified system catalog OID.
+// Function assumes the specified System Catalog OID is fully contained on
+// a single DBRoot, as the function only searches for and returns the first
+// DBRoot entry that is found in the extent map.
+//------------------------------------------------------------------------------
 void ExtentMap::getSysCatDBRoot(OID_t oid, uint16_t& dbRoot)
 {
 #ifdef BRM_INFO

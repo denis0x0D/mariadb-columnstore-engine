@@ -900,6 +900,7 @@ public:
      * @param dbRoot (out) the DBRoot holding the system catalog OID
      */
     EXPORT void getSysCatDBRoot(OID_t oid, uint16_t& dbRoot);
+    EXPORT void getSysCatDBRootRBTree(OID_t oid, uint16_t& dbRoot);
 
     /** @brief Delete a Partition for the specified OID(s).
      *
