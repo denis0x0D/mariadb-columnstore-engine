@@ -792,8 +792,10 @@ public:
                                   bool firstNode, bool uselock = true);
 
     EXPORT void bulkSetHWM(const std::vector<BulkSetHWMArg>&, bool firstNode);
+    EXPORT void bulkSetHWMRBTree(const std::vector<BulkSetHWMArg>&, bool firstNode);
 
     EXPORT void bulkUpdateDBRoot(const std::vector<BulkUpdateDBRootArg>&);
+    EXPORT void bulkUpdateDBRootRBTree(const std::vector<BulkUpdateDBRootArg>&);
 
     /** @brief Get HWM information about last segment file for each DBRoot
      *  assigned to a specific PM.
@@ -824,9 +826,11 @@ public:
      * @param bFound (out) Indicates if extent was found or not
      * @param status (out) The state of the extents in the specified
      *        segment file.
-    */
+     */
     EXPORT void getExtentState(int OID, uint32_t partitionNum,
                                uint16_t segmentNum, bool& bFound, int& status);
+    EXPORT void getExtentStateRBTree(int OID, uint32_t partitionNum, uint16_t segmentNum,
+                                     bool& bFound, int& status);
 
     /** @brief Gets the extents of a given OID
      *

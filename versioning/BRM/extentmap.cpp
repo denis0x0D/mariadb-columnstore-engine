@@ -6699,6 +6699,14 @@ void ExtentMap::setLocalHWM(int OID, uint32_t partitionNum,
 #endif
 }
 
+void ExtentMap::bulkSetHWMRBTree(const vector<BulkSetHWMArg>& v, bool firstNode)
+{
+    grabEMRBTreeEntryTable(WRITE);
+
+    for (uint32_t i = 0; i < v.size(); i++)
+        setLocalHWM(v[i].oid, v[i].partNum, v[i].segNum, v[i].hwm, firstNode, false);
+}
+
 void ExtentMap::bulkSetHWM(const vector<BulkSetHWMArg>& v, bool firstNode)
 {
     grabEMEntryTable(WRITE);
@@ -6724,6 +6732,29 @@ public:
         return b1.startLBID == b2.startLBID;
     }
 };
+
+void ExtentMap::bulkUpdateDBRootRBTree(const vector<BulkUpdateDBRootArg>& args)
+{
+    tr1::unordered_set<BulkUpdateDBRootArg, BUHasher, BUEqual> sArgs;
+    tr1::unordered_set<BulkUpdateDBRootArg, BUHasher, BUEqual>::iterator sit;
+    BulkUpdateDBRootArg key;
+    int emEntries;
+
+    for (uint32_t i = 0; i < args.size(); i++)
+        sArgs.insert(args[i]);
+
+    grabEMRBTreeEntryTable(WRITE);
+
+    for (auto emIt = fExtentMapRBTree->begin(), end = fExtentMapRBTree->end(); emIt != end; ++emIt)
+    {
+        auto& emEntry = emIt->second;
+        key.startLBID = emEntry.range.start;
+        sit = sArgs.find(key);
+
+        if (sit != sArgs.end())
+            emEntry.dbRoot = sit->dbRoot;
+    }
+}
 
 void ExtentMap::bulkUpdateDBRoot(const vector<BulkUpdateDBRootArg>& args)
 {
