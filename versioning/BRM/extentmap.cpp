@@ -8070,6 +8070,47 @@ void ExtentMap::deleteDBRoot(uint16_t dbroot)
 // Does the specified DBRoot have any extents.
 // Throws exception if extentmap shared memory is not loaded.
 //------------------------------------------------------------------------------
+bool ExtentMap::isDBRootEmptyRBTree(uint16_t dbroot)
+{
+#ifdef BRM_INFO
+
+    if (fDebug)
+    {
+        TRACER_WRITELATER("isDBRootEmpty");
+        TRACER_ADDINPUT(dbroot);
+        TRACER_WRITE;
+    }
+
+#endif
+
+    bool bEmpty = true;
+    grabEMRBTreeEntryTable(READ);
+
+    if (fEMShminfo->currentSize == 0)
+    {
+        throw runtime_error(
+            "ExtentMap::isDBRootEmpty() shared memory not loaded");
+    }
+
+    for (auto it = fExtentMapRBTree->begin(), end = fExtentMapRBTree->end(); it != end; ++it)
+    {
+        if (it->second.dbRoot == dbroot)
+        {
+            bEmpty = false;
+            break;
+        }
+    }
+
+    releaseEMRBTreeEntryTable(READ);
+
+    return bEmpty;
+}
+
+
+//------------------------------------------------------------------------------
+// Does the specified DBRoot have any extents.
+// Throws exception if extentmap shared memory is not loaded.
+//------------------------------------------------------------------------------
 bool ExtentMap::isDBRootEmpty(uint16_t dbroot)
 {
 #ifdef BRM_INFO
