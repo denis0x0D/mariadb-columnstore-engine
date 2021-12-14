@@ -947,8 +947,9 @@ public:
      * @param partitionNums (out) the out-of-service partitions for the oid.
      * partitionNums will be in sorted order.
      */
-    EXPORT void getOutOfServicePartitions(OID_t oid,
-                                          std::set<LogicalPartition>& partitionNums);
+    EXPORT void getOutOfServicePartitions(OID_t oid, std::set<LogicalPartition>& partitionNums);
+    EXPORT void getOutOfServicePartitionsRBTree(OID_t oid,
+                                                std::set<LogicalPartition>& partitionNums);
 
     /** @brief Delete all extent map rows for the specified dbroot
      *

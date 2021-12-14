@@ -7924,6 +7924,47 @@ void ExtentMap::restorePartition(const set<OID_t>& oids,
     }
 }
 
+void ExtentMap::getOutOfServicePartitionsRBTree(OID_t oid, set<LogicalPartition>& partitionNums)
+{
+#ifdef BRM_INFO
+
+    if (fDebug)
+    {
+        TRACER_WRITELATER("getExtents");
+        TRACER_ADDINPUT(oid);
+        TRACER_WRITE;
+    }
+
+#endif
+
+    partitionNums.clear();
+
+    if (oid < 0)
+    {
+        ostringstream oss;
+        oss << "ExtentMap::getOutOfServicePartitions(): "
+            "invalid OID requested: " << oid;
+        log(oss.str(), logging::LOG_TYPE_CRITICAL);
+        throw invalid_argument(oss.str());
+    }
+
+    grabEMRBTreeEntryTable(READ);
+
+    for (auto emIt = fExtentMapRBTree->begin(), end = fExtentMapRBTree->end(); emIt != end; ++emIt)
+    {
+        const auto& emEntry = emIt->second;
+        if ((emEntry.fileID == oid) && (emEntry.status == EXTENTOUTOFSERVICE))
+        {
+            // need to be logical partition number
+            LogicalPartition lp(emEntry.dbRoot, emEntry.partitionNum, emEntry.segmentNum);
+            partitionNums.insert(lp);
+        }
+    }
+
+    releaseEMRBTreeEntryTable(READ);
+}
+
+
 //------------------------------------------------------------------------------
 // Return all the out-of-service partitions for the specified OID.
 //------------------------------------------------------------------------------
