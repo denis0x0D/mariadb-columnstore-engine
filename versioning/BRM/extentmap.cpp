@@ -7451,6 +7451,99 @@ void ExtentMap::deletePartition(const set<OID_t>& oids,
 // @bug 5237 - Removed restriction that prevented deletion of segment files in
 //             the last partition (for a DBRoot).
 //------------------------------------------------------------------------------
+void ExtentMap::markPartitionForDeletionRBTree(const set<OID_t>& oids,
+                                               const set<LogicalPartition>& partitionNums,
+                                               string& emsg)
+{
+    if (oids.size() == 0)
+        return;
+
+    int rc = 0;
+
+    grabEMRBTreeEntryTable(WRITE);
+
+    set<LogicalPartition> foundPartitions;
+    vector<ExtentMapRBTree::iterator> extents;
+    bool partitionAlreadyDisabled = false;
+
+    // Identify not exists partition first. Then mark disable.
+    std::set<OID_t>::const_iterator it;
+    for (auto emIt = fExtentMapRBTree->begin(), end = fExtentMapRBTree->end(); emIt != end; ++emIt)
+    {
+        const auto& emEntry = emIt->second;
+        LogicalPartition lp(emEntry.dbRoot, emEntry.partitionNum, emEntry.segmentNum);
+
+        if ((emEntry.range.size != 0) && (partitionNums.find(lp) != partitionNums.end()))
+        {
+            auto it = oids.find(emEntry.fileID);
+
+            if (it != oids.end())
+            {
+                if (emEntry.status == EXTENTOUTOFSERVICE)
+                    partitionAlreadyDisabled = true;
+
+                foundPartitions.insert(lp);
+                extents.push_back(emIt);
+            }
+        }
+    }
+
+    // really disable partitions
+    for (uint32_t i = 0; i < extents.size(); i++)
+    {
+        ///        makeUndoRecord(&fExtentMap[extents[i]], sizeof(EMEntry));
+        extents[i]->second.status = EXTENTOUTOFSERVICE;
+    }
+
+    // validate against referencing non-existent logical partitions
+    if (foundPartitions.size() != partitionNums.size())
+    {
+        Message::Args args;
+        ostringstream oss;
+
+        for (auto partIt = partitionNums.begin(); partIt != partitionNums.end(); ++partIt)
+        {
+            if (foundPartitions.find((*partIt)) == foundPartitions.end())
+            {
+                if (!oss.str().empty())
+                    oss << ", ";
+
+                oss << (*partIt).toString();
+            }
+        }
+
+        args.add(oss.str());
+        emsg =
+            emsg + string("\n") + IDBErrorInfo::instance()->errorMsg(ERR_PARTITION_NOT_EXIST, args);
+        rc = ERR_PARTITION_NOT_EXIST;
+    }
+
+    // check already disabled error now, which could be a non-error
+    if (partitionAlreadyDisabled)
+    {
+        emsg = emsg + string("\n") +
+               IDBErrorInfo::instance()->errorMsg(ERR_PARTITION_ALREADY_DISABLED);
+        rc = ERR_PARTITION_ALREADY_DISABLED;
+    }
+
+    // this rc has to be the last one set and can not be over-written by others.
+    if (foundPartitions.empty())
+    {
+        rc = WARN_NO_PARTITION_PERFORMED;
+    }
+
+    // @bug 4772 throw exception on any error because they are all warnings.
+    if (rc)
+        throw IDBExcept(emsg, rc);
+}
+
+
+//------------------------------------------------------------------------------
+// Mark all extents as out of service, for the specified OID(s) and partition
+// number.
+// @bug 5237 - Removed restriction that prevented deletion of segment files in
+//             the last partition (for a DBRoot).
+//------------------------------------------------------------------------------
 void ExtentMap::markPartitionForDeletion(const set<OID_t>& oids,
         const set<LogicalPartition>& partitionNums, string& emsg)
 {
@@ -7566,6 +7659,50 @@ void ExtentMap::markPartitionForDeletion(const set<OID_t>& oids,
     if (rc)
         throw IDBExcept(emsg, rc);
 }
+
+//------------------------------------------------------------------------------
+// Mark all extents as out of service, for the specified OID(s)
+//------------------------------------------------------------------------------
+void ExtentMap::markAllPartitionForDeletionRBTree(const set<OID_t>& oids)
+{
+#ifdef BRM_INFO
+
+    if (fDebug)
+    {
+        TRACER_WRITENOW("markPartitionForDeletion");
+        ostringstream oss;
+        oss << "OIDS: ";
+        set<OID_t>::const_iterator it;
+
+        for (it = oids.begin(); it != oids.end(); ++it)
+        {
+            oss << (*it) << ", ";
+        }
+
+        TRACER_WRITEDIRECT(oss.str());
+    }
+
+#endif
+
+    if (oids.size() == 0)
+        return;
+
+    set<OID_t>::const_iterator it;
+
+    grabEMRBTreeEntryTable(WRITE);
+    for (auto emIt = fExtentMapRBTree->begin(), end = fExtentMapRBTree->end(); emIt != end; ++emIt)
+    {
+        auto& emEntry = emIt->second;
+        it = oids.find(emEntry.fileID);
+
+        if (it != oids.end())
+        {
+            //            makeUndoRecord(&fExtentMap[i], sizeof(EMEntry));
+            emEntry.status = EXTENTOUTOFSERVICE;
+        }
+    }
+}
+
 
 //------------------------------------------------------------------------------
 // Mark all extents as out of service, for the specified OID(s)

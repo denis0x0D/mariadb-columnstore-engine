@@ -756,7 +756,6 @@ public:
     EXPORT HWM_t getLastHWM_DBroot(int OID, uint16_t dbRoot,
                                    uint32_t& partitionNum, uint16_t& segmentNum,
                                    int& status, bool& bFound);
-
     EXPORT HWM_t getLastHWM_DBrootRBTree(int OID, uint16_t dbRoot, uint32_t& partitionNum,
                                          uint16_t& segmentNum, int& status, bool& bFound);
 
@@ -787,12 +786,13 @@ public:
     EXPORT void setLocalHWM(int OID, uint32_t partitionNum,
                             uint16_t segmentNum, HWM_t HWM, bool firstNode,
                             bool uselock = true);
-
     EXPORT void setLocalHWMRBTree(int OID, uint32_t partitionNum, uint16_t segmentNum, HWM_t HWM,
                                   bool firstNode, bool uselock = true);
 
+
     EXPORT void bulkSetHWM(const std::vector<BulkSetHWMArg>&, bool firstNode);
     EXPORT void bulkSetHWMRBTree(const std::vector<BulkSetHWMArg>&, bool firstNode);
+
 
     EXPORT void bulkUpdateDBRoot(const std::vector<BulkUpdateDBRootArg>&);
     EXPORT void bulkUpdateDBRootRBTree(const std::vector<BulkUpdateDBRootArg>&);
@@ -827,8 +827,8 @@ public:
      * @param status (out) The state of the extents in the specified
      *        segment file.
      */
-    EXPORT void getExtentState(int OID, uint32_t partitionNum,
-                               uint16_t segmentNum, bool& bFound, int& status);
+    EXPORT void getExtentState(int OID, uint32_t partitionNum, uint16_t segmentNum, bool& bFound,
+                               int& status);
     EXPORT void getExtentStateRBTree(int OID, uint32_t partitionNum, uint16_t segmentNum,
                                      bool& bFound, int& status);
 
@@ -848,7 +848,6 @@ public:
      */
     EXPORT void getExtents(int OID, std::vector<struct EMEntry>& entries, bool sorted = true,
                            bool notFoundErr = true, bool incOutOfService = false);
-
     EXPORT void getExtentsRBTree(int OID, std::vector<struct EMEntry>& entries, bool sorted = true,
                                  bool notFoundErr = true, bool incOutOfService = false);
 
@@ -863,7 +862,6 @@ public:
      */
     EXPORT void getExtents_dbroot(int OID, std::vector<struct EMEntry>& entries,
                                   const uint16_t dbroot);
-
     EXPORT void getExtents_dbrootRBTree(int OID, std::vector<struct EMEntry>& entries,
                                         const uint16_t dbroot);
 
@@ -877,7 +875,6 @@ public:
      */
     EXPORT void getExtentCount_dbroot(int OID, uint16_t dbroot,
                                       bool incOutOfService, uint64_t& numExtents);
-
     EXPORT void getExtentCount_dbrootRBTree(int OID, uint16_t dbroot, bool incOutOfService,
                                             uint64_t& numExtents);
 
@@ -909,7 +906,6 @@ public:
      */
     EXPORT void deletePartition(const std::set<OID_t>& oids,
                                 const std::set<LogicalPartition>& partitionNums, std::string& emsg);
-
     EXPORT void deletePartitionRBTree(const std::set<OID_t>& oids,
                                       const std::set<LogicalPartition>& partitionNums,
                                       std::string& emsg);
@@ -920,13 +916,18 @@ public:
      * @param partitionNums (in) the set of partitions to be marked out of service.
      */
     EXPORT void markPartitionForDeletion(const std::set<OID_t>& oids,
-                                         const std::set<LogicalPartition>& partitionNums, std::string& emsg);
+                                         const std::set<LogicalPartition>& partitionNums,
+                                         std::string& emsg);
+    EXPORT void markPartitionForDeletionRBTree(const std::set<OID_t>& oids,
+                                               const std::set<LogicalPartition>& partitionNums,
+                                               std::string& emsg);
 
     /** @brief Mark all Partition for the specified OID(s) as out of service.
      *
      * @param oids (in) the OIDs of interest.
      */
     EXPORT void markAllPartitionForDeletion(const std::set<OID_t>& oids);
+    EXPORT void markAllPartitionForDeletionRBTree(const std::set<OID_t>& oids);
 
     /** @brief Restore a Partition for the specified OID(s).
      *
