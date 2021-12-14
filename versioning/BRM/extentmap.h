@@ -964,6 +964,7 @@ public:
      * @param dbroot DBRoot of interest
      */
     EXPORT bool isDBRootEmpty(uint16_t dbroot);
+    EXPORT bool isDBRootEmptyRBTree(uint16_t dbroot);
 
     /** @brief Performs internal consistency checks (for testing only)
      *
@@ -981,11 +982,12 @@ public:
 
     EXPORT int markInvalid(const LBID_t lbid,
                            const execplan::CalpontSystemCatalog::ColDataType colDataType);
+
     EXPORT int markInvalid(const std::vector<LBID_t>& lbids,
                            const std::vector<execplan::CalpontSystemCatalog::ColDataType>& colDataTypes);
 
-    EXPORT int setMaxMin(const LBID_t lbidRange, const int64_t max, const int64_t min, const int32_t seqNum,
-                         bool firstNode);
+    EXPORT int setMaxMin(const LBID_t lbidRange, const int64_t max, const int64_t min,
+                         const int32_t seqNum, bool firstNode);
 
     // @bug 1970.  Added setExtentsMaxMin function below.
 
@@ -997,6 +999,8 @@ public:
      * @return 0 if all tests pass, -1 (or throws logic_error) if not.
     */
     EXPORT void setExtentsMaxMin(const CPMaxMinMap_t& cpMap, bool firstNode, bool useLock = true);
+    EXPORT void setExtentsMaxMinRBTree(const CPMaxMinMap_t& cpMap, bool firstNode,
+                                       bool useLock = true);
 
     /** @brief Merges the CP info for the extents contained in cpMap.
      * @param cpMap - The key must be the starting LBID in the range.

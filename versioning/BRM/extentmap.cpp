@@ -612,6 +612,173 @@ int ExtentMap::setMaxMin(const LBID_t lbid,
 
 // @bug 1970.  Added updateExtentsMaxMin function.
 // @note - The key passed in the map must the the first LBID in the extent.
+void ExtentMap::setExtentsMaxMinRBTree(const CPMaxMinMap_t& cpMap, bool firstNode, bool useLock)
+{
+    CPMaxMinMap_t::const_iterator it;
+
+#ifdef BRM_DEBUG
+    log("ExtentMap::setExtentsMaxMin()", logging::LOG_TYPE_DEBUG);
+
+    for (it = cpMap.begin(); it != cpMap.end(); ++it)
+    {
+        ostringstream os;
+        os << "FirstLBID=" << it->first <<
+           " min=" << it->second.min <<
+           " max=" << it->second.max <<
+           " seq=" << it->second.seqNum;
+        log(os.str(), logging::LOG_TYPE_DEBUG);
+    }
+
+#endif
+
+#ifdef BRM_INFO
+
+    if (fDebug)
+    {
+        TRACER_WRITELATER("setExtentsMaxMin");
+
+        for (it = cpMap.begin(); it != cpMap.end(); ++it)
+        {
+            TRACER_ADDINPUT((*it).first);
+            TRACER_ADDINPUT((*it).second.max);
+            TRACER_ADDINPUT((*it).second.min);
+            TRACER_ADDINPUT((*it).second.seqNum);
+            TRACER_WRITE;
+        }
+    }
+
+#endif
+    int32_t curSequence;
+    const int32_t extentsToUpdate = cpMap.size();
+    int32_t extentsUpdated = 0;
+
+#ifdef BRM_DEBUG
+
+    if (extentsToUpdate <= 0)
+        throw invalid_argument("ExtentMap::setExtentsMaxMin(): cpMap must be populated");
+
+#endif
+
+    if (useLock)
+        grabEMRBTreeEntryTable(WRITE);
+
+    for (auto emIt = fExtentMapRBTree->begin(), end = fExtentMapRBTree->end(); emIt != end; ++emIt)
+    {
+        auto& emEntry = emIt->second;
+        {
+            it = cpMap.find(emEntry.range.start);
+
+            if (it != cpMap.end())
+            {
+                curSequence = emEntry.partition.cprange.sequenceNum;
+
+                if (curSequence == it->second.seqNum &&
+                    emEntry.partition.cprange.isValid == CP_INVALID)
+                {
+//                    makeUndoRecord(&fExtentMap[i], sizeof(struct EMEntry));
+                    if (it->second.isBinaryColumn)
+                    {
+                        emEntry.partition.cprange.bigHiVal = it->second.bigMax;
+                        emEntry.partition.cprange.bigLoVal = it->second.bigMin;
+                    }
+                    else
+                    {
+                        emEntry.partition.cprange.hiVal = it->second.max;
+                        emEntry.partition.cprange.loVal = it->second.min;
+                    }
+                    emEntry.partition.cprange.isValid = CP_VALID;
+                    incSeqNum(emEntry.partition.cprange.sequenceNum);
+                    extentsUpdated++;
+                }
+                //special val to indicate a reset -- ignore the min/max
+                else if (it->second.seqNum == SEQNUM_MARK_INVALID)
+                {
+                    //makeUndoRecord(&fExtentMap[i], sizeof(struct EMEntry));
+                    // We set hiVal and loVal to correct values for signed or unsigned
+                    // during the markinvalid step, which sets the invalid variable to CP_UPDATING.
+                    // During this step (seqNum == SEQNUM_MARK_INVALID), the min and max passed in are not reliable
+                    // and should not be used.
+                    emEntry.partition.cprange.isValid = CP_INVALID;
+                    incSeqNum(emEntry.partition.cprange.sequenceNum);
+                    extentsUpdated++;
+                }
+                //special val to indicate a reset -- assign the min/max
+                else if (it->second.seqNum == SEQNUM_MARK_INVALID_SET_RANGE)
+                {
+//                    makeUndoRecord(&fExtentMap[i], sizeof(struct EMEntry));
+                    if (it->second.isBinaryColumn)
+                    {
+                        emEntry.partition.cprange.bigHiVal = it->second.bigMax;
+                        emEntry.partition.cprange.bigLoVal = it->second.bigMin;
+                    }
+                    else
+                    {
+                        emEntry.partition.cprange.hiVal = it->second.max;
+                        emEntry.partition.cprange.loVal = it->second.min;
+                    }
+                    emEntry.partition.cprange.isValid = CP_INVALID;
+                    incSeqNum(emEntry.partition.cprange.sequenceNum);
+                    extentsUpdated++;
+                }
+                else if (it->second.seqNum == SEQNUM_MARK_UPDATING_INVALID_SET_RANGE)
+                {
+                    //makeUndoRecord(&fExtentMap[i], sizeof(struct EMEntry));
+                    if (emEntry.partition.cprange.isValid == CP_UPDATING)
+                    {
+                        if (it->second.isBinaryColumn)
+                        {
+                            emEntry.partition.cprange.bigHiVal = it->second.bigMax;
+                            emEntry.partition.cprange.bigLoVal = it->second.bigMin;
+                        }
+                        else
+                        {
+                            emEntry.partition.cprange.hiVal = it->second.max;
+                            emEntry.partition.cprange.loVal = it->second.min;
+                        }
+                        emEntry.partition.cprange.isValid = CP_INVALID;
+                    }
+                    incSeqNum(emEntry.partition.cprange.sequenceNum);
+                    extentsUpdated++;
+                }
+                // else sequence has changed since start of the query.  Don't update the EM entry.
+                else
+                {
+                    extentsUpdated++;
+                }
+
+                if (extentsUpdated == extentsToUpdate)
+                {
+                    return;
+                }
+            }
+        }
+    }
+
+    ostringstream oss;
+    oss << "ExtentMap::setExtentsMaxMin(): LBIDs not allocated:";
+    for (it = cpMap.begin(); it != cpMap.end(); it++)
+    {
+        auto emIt = fExtentMapRBTree->begin();
+        auto emEnd = fExtentMapRBTree->end();
+        for (; emIt != emEnd; ++emIt)
+        {
+            if (emIt->second.range.start == it->first)
+            {
+                break;
+            }
+        }
+        if (emIt != emEnd)
+        {
+            continue;
+        }
+        oss << " " << it->first;
+    }
+
+    throw logic_error(oss.str());
+}
+
+// @bug 1970.  Added updateExtentsMaxMin function.
+// @note - The key passed in the map must the the first LBID in the extent.
 void ExtentMap::setExtentsMaxMin(const CPMaxMinMap_t& cpMap, bool firstNode, bool useLock)
 {
     CPMaxMinMap_t::const_iterator it;
