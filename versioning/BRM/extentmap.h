@@ -846,9 +846,11 @@ public:
      * @param notFoundErr (in) indicates if no extents is considered an err
      * @param incOutOfService (in) include/exclude out of service extents
      */
-    EXPORT void getExtents(int OID, std::vector<struct EMEntry>& entries,
-                           bool sorted = true, bool notFoundErr = true,
-                           bool incOutOfService = false);
+    EXPORT void getExtents(int OID, std::vector<struct EMEntry>& entries, bool sorted = true,
+                           bool notFoundErr = true, bool incOutOfService = false);
+
+    EXPORT void getExtentsRBTree(int OID, std::vector<struct EMEntry>& entries, bool sorted = true,
+                                 bool notFoundErr = true, bool incOutOfService = false);
 
     /** @brief Gets the extents of a given OID under specified dbroot
      *

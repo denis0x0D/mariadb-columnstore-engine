@@ -6262,6 +6262,60 @@ void ExtentMap::getDbRootHWMInfoRBTree(int OID, uint16_t pmNumber,
 // The value returned in the "status" variable is based on the first extent
 // found, since all the extents in a segment file should have the same state.
 //------------------------------------------------------------------------------
+void ExtentMap::getExtentStateRBTree(int OID, uint32_t partitionNum, uint16_t segmentNum,
+                                     bool& bFound, int& status)
+{
+#ifdef BRM_INFO
+
+    if (fDebug)
+    {
+        TRACER_WRITELATER("getExtentState");
+        TRACER_ADDINPUT(OID);
+        TRACER_ADDINPUT(partitionNum);
+        TRACER_ADDSHORTINPUT(segmentNum);
+        TRACER_ADDOUTPUT(status);
+        TRACER_WRITE;
+    }
+
+#endif
+    int i, emEntries;
+    bFound = false;
+    status = EXTENTAVAILABLE;
+
+    if (OID < 0)
+    {
+        ostringstream oss;
+        oss << "ExtentMap::getExtentState(): invalid OID requested: " << OID;
+        log(oss.str(), logging::LOG_TYPE_CRITICAL);
+        throw invalid_argument(oss.str());
+    }
+
+    grabEMRBTreeEntryTable(READ);
+
+    for (auto emIt = fExtentMapRBTree->begin(), end = fExtentMapRBTree->end(); emIt != end; ++emIt)
+    {
+        const auto& emEntry = emIt->second;
+        if ((emEntry.fileID == OID) && (emEntry.partitionNum == partitionNum) &&
+            (emEntry.segmentNum == segmentNum))
+        {
+            bFound = true;
+            status = emEntry.status;
+            break;
+        }
+    }
+
+    releaseEMRBTreeEntryTable(READ);
+}
+
+
+//------------------------------------------------------------------------------
+// Return the existence (bFound) and state (status) for the segment file
+// containing the extents for the specified OID, partition, and segment.
+// If no extents are found, no exception is thrown.  We instead just return
+// bFound=false, so that the application can take the necessary action.
+// The value returned in the "status" variable is based on the first extent
+// found, since all the extents in a segment file should have the same state.
+//------------------------------------------------------------------------------
 void ExtentMap::getExtentState(int OID, uint32_t partitionNum,
                                uint16_t segmentNum, bool& bFound, int& status)
 {
@@ -6778,6 +6832,59 @@ void ExtentMap::bulkUpdateDBRoot(const vector<BulkUpdateDBRootArg>& args)
         if (sit != sArgs.end())
             fExtentMap[i].dbRoot = sit->dbRoot;
     }
+}
+
+void ExtentMap::getExtentsRBTree(int OID, vector<struct EMEntry>& entries, bool sorted,
+                                 bool notFoundErr, bool incOutOfService)
+{
+#ifdef BRM_INFO
+
+    if (fDebug)
+    {
+        TRACER_WRITELATER("getExtents");
+        TRACER_ADDINPUT(OID);
+        TRACER_WRITE;
+    }
+
+#endif
+    entries.clear();
+
+    if (OID < 0)
+    {
+        ostringstream oss;
+        oss << "ExtentMap::getExtents(): invalid OID requested: " << OID;
+        log(oss.str(), logging::LOG_TYPE_CRITICAL);
+        throw invalid_argument(oss.str());
+    }
+
+    grabEMRBTreeEntryTable(READ);
+    entries.reserve(fExtentMapRBTree->size());
+
+    if (incOutOfService)
+    {
+        for (auto emIt = fExtentMapRBTree->begin(), end = fExtentMapRBTree->end(); emIt != end;
+             ++emIt)
+        {
+            const auto& emEntry = emIt->second;
+            if ((emEntry.fileID == OID) && (emEntry.range.size != 0))
+                entries.push_back(emEntry);
+        }
+    }
+    else
+    {
+        for (auto emIt = fExtentMapRBTree->begin(), end = fExtentMapRBTree->end(); emIt != end;
+             ++emIt)
+        {
+            const auto& emEntry = emIt->second;
+            if ((emEntry.fileID == OID) && (emEntry.status != EXTENTOUTOFSERVICE))
+                entries.push_back(emEntry);
+        }
+    }
+
+    releaseEMRBTreeEntryTable(READ);
+
+    if (sorted)
+        sort<vector<struct EMEntry>::iterator>(entries.begin(), entries.end());
 }
 
 void ExtentMap::getExtents(int OID, vector<struct EMEntry>& entries,
