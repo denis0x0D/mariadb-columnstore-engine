@@ -1007,6 +1007,7 @@ public:
      * @return 0 if all tests pass, -1 (or throws logic_error) if not.
     */
     void mergeExtentsMaxMin(CPMaxMinMergeMap_t& cpMap, bool useLock = true);
+    void mergeExtentsMaxMinRBTree(CPMaxMinMergeMap_t& cpMap, bool useLock = true);
 
     template <typename T>
     EXPORT int getMaxMin(const LBID_t lbidRange, T& max, T& min, int32_t& seqNum);
@@ -1022,6 +1023,17 @@ public:
         }
 
         return (fEMShminfo->currentSize == 0);
+    }
+
+    inline bool emptyRBTree()
+    {
+        if (fEMRBTreeShminfo == 0)
+        {
+            grabEMRBTreeEntryTable(READ);
+            releaseEMRBTreeEntryTable(READ);
+        }
+
+        return (fEMRBTreeShminfo->currentSize == 0);
     }
 
     EXPORT std::vector<InlineLBIDRange> getFreeListEntries();

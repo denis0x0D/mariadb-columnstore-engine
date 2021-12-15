@@ -978,6 +978,218 @@ void ExtentMap::setExtentsMaxMin(const CPMaxMinMap_t& cpMap, bool firstNode, boo
 // ments the sequence number and changes the state to CP_INVALID at that time.
 // We may want/need to reconsider this at some point.
 //------------------------------------------------------------------------------
+void ExtentMap::mergeExtentsMaxMinRBTree(CPMaxMinMergeMap_t& cpMap, bool useLock)
+{
+    CPMaxMinMergeMap_t::const_iterator it;
+
+    // TODO MCOL-641 Add support in the debugging outputs here.
+    const int32_t extentsToMerge = cpMap.size();
+    int32_t extentsMerged = 0;
+
+    if (useLock)
+        grabEMRBTreeEntryTable(WRITE);
+
+    for (auto emIt = fExtentMapRBTree->begin(), end = fExtentMapRBTree->end(); emIt != end; ++emIt)
+    {
+        auto& emEntry = emIt->second;
+        {
+            it = cpMap.find(emEntry.range.start);
+            if (it != cpMap.end())
+            {
+                bool isBinaryColumn = it->second.colWidth > 8;
+                switch (emEntry.partition.cprange.isValid)
+                {
+                    // Merge input min/max with current min/max
+                case CP_VALID: {
+                    if ((!isBinaryColumn &&
+                         !isValidCPRange(it->second.max, it->second.min, it->second.type)) ||
+                        (isBinaryColumn &&
+                         !isValidCPRange(it->second.bigMax, it->second.bigMin, it->second.type)))
+                    {
+                        break;
+                    }
+
+                    //                        makeUndoRecord(&fExtentMap[i], sizeof(struct
+                    //                        EMEntry));
+
+                    // We check the validity of the current min/max,
+                    // because isValid could be CP_VALID for an extent
+                    // having all NULL values, in which case the current
+                    // min/max needs to be set instead of merged.
+                    if ((!isBinaryColumn &&
+                         isValidCPRange(emEntry.partition.cprange.hiVal,
+                                        emEntry.partition.cprange.loVal, it->second.type)) ||
+                        (isBinaryColumn &&
+                         isValidCPRange(emEntry.partition.cprange.bigHiVal,
+                                        emEntry.partition.cprange.bigLoVal, it->second.type)))
+                    {
+                        // Swap byte order to do binary string comparison
+                        if (isCharType(it->second.type))
+                        {
+                            uint64_t newMinVal = static_cast<uint64_t>(
+                                uint64ToStr(static_cast<uint64_t>(it->second.min)));
+                            uint64_t newMaxVal = static_cast<uint64_t>(
+                                uint64ToStr(static_cast<uint64_t>(it->second.max)));
+                            uint64_t oldMinVal = static_cast<uint64_t>(uint64ToStr(
+                                static_cast<uint64_t>(emEntry.partition.cprange.loVal)));
+                            uint64_t oldMaxVal = static_cast<uint64_t>(uint64ToStr(
+                                static_cast<uint64_t>(emEntry.partition.cprange.hiVal)));
+
+                            if (newMinVal < oldMinVal)
+                                emEntry.partition.cprange.loVal = it->second.min;
+                            if (newMaxVal > oldMaxVal)
+                                emEntry.partition.cprange.hiVal = it->second.max;
+                        }
+                        else if (isUnsigned(it->second.type))
+                        {
+                            if (!isBinaryColumn)
+                            {
+                                if (static_cast<uint64_t>(it->second.min) <
+                                    static_cast<uint64_t>(emEntry.partition.cprange.loVal))
+                                {
+                                    emEntry.partition.cprange.loVal = it->second.min;
+                                }
+
+                                if (static_cast<uint64_t>(it->second.max) >
+                                    static_cast<uint64_t>(emEntry.partition.cprange.hiVal))
+                                {
+                                    emEntry.partition.cprange.hiVal = it->second.max;
+                                }
+                            }
+                            else
+                            {
+                                if (static_cast<uint128_t>(it->second.bigMin) <
+                                    static_cast<uint128_t>(emEntry.partition.cprange.bigLoVal))
+                                {
+                                    emEntry.partition.cprange.bigLoVal = it->second.bigMin;
+                                }
+
+                                if (static_cast<uint128_t>(it->second.bigMax) >
+                                    static_cast<uint128_t>(emEntry.partition.cprange.bigHiVal))
+                                {
+                                    emEntry.partition.cprange.bigHiVal = it->second.bigMax;
+                                }
+                            }
+                        }
+                        else
+                        {
+                            if (!isBinaryColumn)
+                            {
+                                if (it->second.min < emEntry.partition.cprange.loVal)
+                                    emEntry.partition.cprange.loVal = it->second.min;
+
+                                if (it->second.max > emEntry.partition.cprange.hiVal)
+                                    emEntry.partition.cprange.hiVal = it->second.max;
+                            }
+                            else
+                            {
+                                if (it->second.bigMin < emEntry.partition.cprange.bigLoVal)
+                                    emEntry.partition.cprange.bigLoVal = it->second.bigMin;
+
+                                if (it->second.bigMax > emEntry.partition.cprange.bigHiVal)
+                                    emEntry.partition.cprange.bigHiVal = it->second.bigMax;
+                            }
+                        }
+                    }
+                    else
+                    {
+                        if (!isBinaryColumn)
+                        {
+                            emEntry.partition.cprange.loVal = it->second.min;
+                            emEntry.partition.cprange.hiVal = it->second.max;
+                        }
+                        else
+                        {
+                            emEntry.partition.cprange.bigLoVal = it->second.bigMin;
+                            emEntry.partition.cprange.bigHiVal = it->second.bigMax;
+                        }
+                    }
+
+                    incSeqNum(emEntry.partition.cprange.sequenceNum);
+                    break;
+                }
+
+                // DML is updating; just increment seqnum.
+                // This case is here for completeness.  Table lock should
+                // prevent this state from occurring (see notes at top of
+                // this function)
+                case CP_UPDATING: {
+                    //                        makeUndoRecord(&fExtentMap[i], sizeof(struct
+                    //                        EMEntry));
+                    incSeqNum(emEntry.partition.cprange.sequenceNum);
+                    break;
+                }
+
+                // Reset min/max to new min/max only "if" we can treat this
+                // as a new extent, else leave the extent marked as INVALID
+                case CP_INVALID:
+                default: {
+                    //                        makeUndoRecord(&fExtentMap[i], sizeof(struct
+                    //                        EMEntry));
+
+                    if (it->second.newExtent)
+                    {
+                        if ((!isBinaryColumn &&
+                             isValidCPRange(it->second.max, it->second.min, it->second.type)) ||
+                            (isBinaryColumn &&
+                             isValidCPRange(it->second.bigMax, it->second.bigMin, it->second.type)))
+                        {
+                            if (!isBinaryColumn)
+                            {
+                                emEntry.partition.cprange.loVal = it->second.min;
+                                emEntry.partition.cprange.hiVal = it->second.max;
+                            }
+                            else
+                            {
+                                emEntry.partition.cprange.bigLoVal = it->second.bigMin;
+                                emEntry.partition.cprange.bigHiVal = it->second.bigMax;
+                            }
+                        }
+
+                        // Even if invalid range; we set state to CP_VALID,
+                        // because the extent is valid, it is just empty.
+                        emEntry.partition.cprange.isValid = CP_VALID;
+                    }
+
+                    incSeqNum(emEntry.partition.cprange.sequenceNum);
+                    break;
+                }
+                } // switch on isValid state
+
+                extentsMerged++;
+
+                if (extentsMerged == extentsToMerge)
+                {
+                    return; // Leave when all extents in map are matched
+                }
+
+                // Deleting objects from map, may speed up successive searches
+                cpMap.erase(it);
+
+            } // found a matching extent in the Map
+        }     // extent map range size != 0
+    }         // end of loop through extent map
+
+    throw logic_error("ExtentMap::mergeExtentsMaxMin(): lbid not found");
+}
+
+//------------------------------------------------------------------------------
+// @bug 1970.  Added mergeExtentsMaxMin to merge CP info for list of extents.
+// @note - The key passed in the map must the starting LBID in the extent.
+// Used by cpimport to update extentmap casual partition min/max.
+// NULL or empty values should not be passed in as min/max values.
+// seqNum in the input struct is not currently used.
+//
+// Note that DML calls markInvalid() to flag an extent as CP_UPDATING and incre-
+// ments the sequence number prior to any change, and then marks the extent as
+// CP_INVALID at transaction's end.
+// Since cpimport locks the entire table prior to making any changes, it is
+// assumed that the state of an extent will not be changed (by anyone else)
+// during an import; so cpimport does not employ the intermediate CP_UPDATING
+// state that DML uses.  cpimport just waits till the end of the job and incre-
+// ments the sequence number and changes the state to CP_INVALID at that time.
+// We may want/need to reconsider this at some point.
+//------------------------------------------------------------------------------
 void ExtentMap::mergeExtentsMaxMin(CPMaxMinMergeMap_t& cpMap, bool useLock)
 {
     CPMaxMinMergeMap_t::const_iterator it;
