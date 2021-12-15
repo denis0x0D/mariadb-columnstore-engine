@@ -1615,6 +1615,93 @@ bool ExtentMap::isValidCPRange(const T& max, const T& min, execplan::CalpontSyst
 }
 
 /**
+ * @brief retrieve the hiVal and loVal or sequenceNum of the extent containing the LBID lbid.
+ *
+ * For the extent containing the LBID lbid, return the max/min values if the extent range values
+ * are valid and a -1 in the seqNum parameter. If the range values are flaged as invalid
+ * return the sequenceNum of the extent and the max/min values as -1.
+ **/
+
+template <typename T>
+int ExtentMap::getMaxMinRBTree(const LBID_t lbid, T& max, T& min, int32_t& seqNum)
+{
+#ifdef BRM_INFO
+    if (fDebug)
+    {
+        TRACER_WRITELATER("getMaxMin");
+        TRACER_ADDINPUT(lbid);
+        TRACER_ADDOUTPUT(max);
+        TRACER_ADDOUTPUT(min);
+        TRACER_ADDOUTPUT(seqNum);
+        TRACER_WRITE;
+    }
+
+#endif
+    if (typeid(T) == typeid(int128_t))
+    {
+        int128_t tmpMax, tmpMin;
+        utils::int128Min(tmpMax);
+        utils::int128Max(tmpMin);
+        max = tmpMax;
+        min = tmpMin;
+    }
+    else
+    {
+        max = numeric_limits<int64_t>::min();
+        min = numeric_limits<int64_t>::max();
+    }
+    seqNum *= (-1);
+    int entries;
+    int i;
+    LBID_t lastBlock;
+    int isValid = CP_INVALID;
+
+#ifdef BRM_DEBUG
+
+    if (lbid < 0)
+        throw invalid_argument("ExtentMap::getMaxMin(): lbid must be >= 0");
+
+#endif
+
+    grabEMRBTreeEntryTable(READ);
+
+    auto emIt = findByLBID(lbid);
+    if (emIt == fExtentMapRBTree->end())
+        throw logic_error("ExtentMap::getMaxMin(): that lbid isn't allocated");
+
+    auto& emEntry = emIt->second;
+    {
+        if (emEntry.range.size != 0)
+        {
+            lastBlock = emEntry.range.start + (static_cast<LBID_t>(emEntry.range.size) * 1024) - 1;
+
+            if (lbid >= emEntry.range.start && lbid <= lastBlock)
+            {
+                if (typeid(T) == typeid(int128_t))
+                {
+                    max = emEntry.partition.cprange.bigHiVal;
+                    min = emEntry.partition.cprange.bigLoVal;
+                }
+                else
+                {
+                    max = emEntry.partition.cprange.hiVal;
+                    min = emEntry.partition.cprange.loVal;
+                }
+                seqNum = emEntry.partition.cprange.sequenceNum;
+                isValid = emEntry.partition.cprange.isValid;
+
+                releaseEMRBTreeEntryTable(READ);
+                return isValid;
+            }
+        }
+    }
+
+    releaseEMRBTreeEntryTable(READ);
+    throw logic_error("ExtentMap::getMaxMin(): that lbid isn't allocated");
+}
+
+
+/**
 * @brief retrieve the hiVal and loVal or sequenceNum of the extent containing the LBID lbid.
 *
 * For the extent containing the LBID lbid, return the max/min values if the extent range values
