@@ -1011,8 +1011,13 @@ public:
 
     template <typename T>
     EXPORT int getMaxMin(const LBID_t lbidRange, T& max, T& min, int32_t& seqNum);
+    template <typename T>
+    EXPORT int getMaxMinRBTree(const LBID_t lbidRange, T& max, T& min, int32_t& seqNum);
 
-    EXPORT void getCPMaxMin(const LBID_t lbidRange, CPMaxMin& cpMaxMin); /** @brief Get whole record for untyped use. */
+    /** @brief Get whole record for untyped use. */
+    EXPORT void getCPMaxMin(const LBID_t lbidRange, CPMaxMin& cpMaxMin);
+    /** @brief Get whole record for untyped use. */
+    EXPORT void getCPMaxMinRBTree(const LBID_t lbidRange, CPMaxMin& cpMaxMin);
 
     inline bool empty()
     {

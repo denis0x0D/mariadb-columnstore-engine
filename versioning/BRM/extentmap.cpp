@@ -1701,6 +1701,46 @@ int ExtentMap::getMaxMin(const LBID_t lbid,
 //   	return -1;
 }
 
+void ExtentMap::getCPMaxMinRBTree(const BRM::LBID_t lbid, BRM::CPMaxMin& cpMaxMin)
+{
+
+#ifdef BRM_DEBUG
+    if (lbid < 0)
+        throw invalid_argument("ExtentMap::getMaxMin(): lbid must be >= 0");
+#endif
+
+    grabEMRBTreeEntryTable(READ);
+
+    auto emIt = findByLBID(lbid);
+    if (emIt == fExtentMapRBTree->end())
+        throw logic_error("ExtentMap::getMaxMin(): that lbid isn't allocated");
+
+    {
+        auto& emEntry = emIt->second;
+        if (emEntry.range.size != 0)
+        {
+            LBID_t lastBlock =
+                emEntry.range.start + (static_cast<LBID_t>(emEntry.range.size) * 1024) - 1;
+
+            if (lbid >= emEntry.range.start && lbid <= lastBlock)
+            {
+                cpMaxMin.bigMax = emEntry.partition.cprange.bigHiVal;
+                cpMaxMin.bigMin = emEntry.partition.cprange.bigLoVal;
+                cpMaxMin.max    = emEntry.partition.cprange.hiVal;
+                cpMaxMin.min    = emEntry.partition.cprange.loVal;
+                cpMaxMin.seqNum = emEntry.partition.cprange.sequenceNum;
+
+                releaseEMRBTreeEntryTable(READ);
+                return ;
+            }
+        }
+    }
+
+    releaseEMRBTreeEntryTable(READ);
+    throw logic_error("ExtentMap::getMaxMin(): that lbid isn't allocated");
+}
+
+
 void ExtentMap::getCPMaxMin(const BRM::LBID_t lbid, BRM::CPMaxMin& cpMaxMin)
 {
     int entries;
