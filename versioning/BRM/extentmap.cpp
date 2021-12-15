@@ -3030,6 +3030,59 @@ void ExtentMap::growFLShmseg()
     fFreeList = fPFreeListImpl->get();
 }
 
+int ExtentMap::lookupRBTree(LBID_t lbid, LBID_t& firstLbid, LBID_t& lastLbid)
+{
+#ifdef BRM_INFO
+
+    if (fDebug)
+    {
+        TRACER_WRITELATER("lookup");
+        TRACER_ADDINPUT(lbid);
+        TRACER_ADDOUTPUT(firstLbid);
+        TRACER_ADDOUTPUT(lastLbid);
+        TRACER_WRITE;
+    }
+
+#endif
+    LBID_t lastBlock;
+
+#ifdef BRM_DEBUG
+
+//printEM();
+    if (lbid < 0)
+    {
+        log("ExtentMap::lookup(): lbid must be >= 0", logging::LOG_TYPE_DEBUG);
+        cout << "ExtentMap::lookup(): lbid must be >= 0.  Lbid passed was " << lbid << endl;
+        throw invalid_argument("ExtentMap::lookup(): lbid must be >= 0");
+    }
+
+#endif
+
+    grabEMRBTreeEntryTable(READ);
+
+    auto emIt = findByLBID(lbid);
+    if (emIt == fExtentMapRBTree->end())
+        return -1;
+
+    {
+        auto& emEntry = emIt->second;
+        {
+            lastBlock = emEntry.range.start + (static_cast<LBID_t>(emEntry.range.size) * 1024) - 1;
+            if (lbid >= emEntry.range.start && lbid <= lastBlock)
+            {
+                firstLbid = emEntry.range.start;
+                lastLbid = lastBlock;
+                releaseEMRBTreeEntryTable(READ);
+                return 0;
+            }
+        }
+    }
+
+    releaseEMRBTreeEntryTable(READ);
+    return -1;
+}
+
+
 // @bug 1509.  Added new version of lookup that returns the first and last lbid for the extent that contains the
 // given lbid.
 int ExtentMap::lookup(LBID_t lbid, LBID_t& firstLbid, LBID_t& lastLbid)
@@ -3086,7 +3139,84 @@ int ExtentMap::lookup(LBID_t lbid, LBID_t& firstLbid, LBID_t& lastLbid)
 }
 
 // @bug 1055+.  New functions added for multiple files per OID enhancement.
-int ExtentMap::lookupLocal(LBID_t lbid, int& OID, uint16_t& dbRoot, uint32_t& partitionNum, uint16_t& segmentNum, uint32_t& fileBlockOffset)
+int ExtentMap::lookupLocalRBTree(LBID_t lbid, int& OID, uint16_t& dbRoot, uint32_t& partitionNum,
+                                 uint16_t& segmentNum, uint32_t& fileBlockOffset)
+{
+#ifdef BRM_INFO
+
+    if (fDebug)
+    {
+        TRACER_WRITELATER("lookupLocal");
+        TRACER_ADDINPUT(lbid);
+        TRACER_ADDOUTPUT(OID);
+        TRACER_ADDSHORTOUTPUT(dbRoot);
+        TRACER_ADDOUTPUT(partitionNum);
+        TRACER_ADDSHORTOUTPUT(segmentNum);
+        TRACER_ADDOUTPUT(fileBlockOffset);
+        TRACER_WRITE;
+    }
+
+#endif
+#ifdef EM_AS_A_TABLE_POC__
+
+    if (lbid >= (1LL << 54))
+    {
+        OID = 1084;
+        dbRoot = 1;
+        partitionNum = 0;
+        segmentNum = 0;
+        fileBlockOffset = 0;
+        return 0;
+    }
+
+#endif
+    int entries, i, offset;
+    LBID_t lastBlock;
+
+    if (lbid < 0)
+    {
+        ostringstream oss;
+        oss << "ExtentMap::lookupLocal(): invalid lbid requested: " << lbid;
+        log(oss.str(), logging::LOG_TYPE_CRITICAL);
+        throw invalid_argument(oss.str());
+    }
+
+    grabEMRBTreeEntryTable(READ);
+
+    auto emIt = findByLBID(lbid);
+    if (emIt == fExtentMapRBTree->end())
+        return -1;
+
+    {
+        auto& emEntry = emIt->second;
+        if (emEntry.range.size != 0)
+        {
+            lastBlock = emEntry.range.start + (static_cast<LBID_t>(emEntry.range.size) * 1024) - 1;
+            if (lbid >= emEntry.range.start && lbid <= lastBlock)
+            {
+                OID = emEntry.fileID;
+                dbRoot = emEntry.dbRoot;
+                segmentNum = emEntry.segmentNum;
+                partitionNum = emEntry.partitionNum;
+
+                // TODO:  Offset logic.
+                offset = lbid - emEntry.range.start;
+                fileBlockOffset = emEntry.blockOffset + offset;
+
+                releaseEMRBTreeEntryTable(READ);
+                return 0;
+            }
+        }
+    }
+
+    releaseEMRBTreeEntryTable(READ);
+    return -1;
+}
+
+
+// @bug 1055+.  New functions added for multiple files per OID enhancement.
+int ExtentMap::lookupLocal(LBID_t lbid, int& OID, uint16_t& dbRoot, uint32_t& partitionNum,
+                           uint16_t& segmentNum, uint32_t& fileBlockOffset)
 {
 #ifdef BRM_INFO
 

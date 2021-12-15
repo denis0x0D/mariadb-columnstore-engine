@@ -425,6 +425,7 @@ public:
      * @return 0 on success, -1 on error
      */
     EXPORT int lookup(LBID_t LBID, LBID_t& firstLBID, LBID_t& lastLBID);
+    EXPORT int lookupRBTree(LBID_t LBID, LBID_t& firstLBID, LBID_t& lastLBID);
 
     // @bug 1055+.  New functions added for multiple files per OID enhancement.
 
@@ -440,7 +441,10 @@ public:
      * with LBID
      * @return 0 on success, -1 on error
      */
-    EXPORT int lookupLocal(LBID_t LBID, int& OID, uint16_t& dbRoot, uint32_t& partitionNum, uint16_t& segmentNum, uint32_t& fileBlockOffset);
+    EXPORT int lookupLocal(LBID_t LBID, int& OID, uint16_t& dbRoot, uint32_t& partitionNum,
+                           uint16_t& segmentNum, uint32_t& fileBlockOffset);
+    EXPORT int lookupLocalRBTree(LBID_t LBID, int& OID, uint16_t& dbRoot, uint32_t& partitionNum,
+                                 uint16_t& segmentNum, uint32_t& fileBlockOffset);
 
     /** @brief Look up the LBID associated with a given OID, offset, partition, and segment.
      *
@@ -452,7 +456,8 @@ public:
      * @param LBID (out) The LBID associated with the given offset of the OID.
      * @return 0 on success, -1 on error
      */
-    EXPORT int lookupLocal(int OID, uint32_t partitionNum, uint16_t segmentNum, uint32_t fileBlockOffset, LBID_t& LBID);
+    EXPORT int lookupLocal(int OID, uint32_t partitionNum, uint16_t segmentNum,
+                           uint32_t fileBlockOffset, LBID_t& LBID);
 
     /** @brief Look up the LBID associated with a given dbroot, OID, offset,
      * partition, and segment.
@@ -465,9 +470,8 @@ public:
      * @param LBID (out) The LBID associated with the given offset of the OID.
      * @return 0 on success, -1 on error
      */
-    EXPORT int lookupLocal_DBroot(int OID, uint16_t dbroot,
-                                  uint32_t partitionNum, uint16_t segmentNum, uint32_t fileBlockOffset,
-                                  LBID_t& LBID);
+    EXPORT int lookupLocal_DBroot(int OID, uint16_t dbroot, uint32_t partitionNum,
+                                  uint16_t segmentNum, uint32_t fileBlockOffset, LBID_t& LBID);
 
     // @bug 1055-.
 
@@ -513,6 +517,7 @@ public:
      * @param extents (out) list of lbids, numBlks, and fbo for new extents
      * @return 0 on success, -1 on error
      */
+    // Not used.
     EXPORT void createStripeColumnExtents(
         const std::vector<CreateStripeColumnExtentsArgIn>& cols,
         uint16_t  dbRoot,
@@ -545,6 +550,7 @@ public:
      */
     // @bug 4091: To be deprecated as public function.  Should just be a
     // private function used by createStripeColumnExtents().
+    // Not used.
     EXPORT void createColumnExtent_DBroot(int OID,
                                           uint32_t  colWidth,
                                           uint16_t  dbRoot,
