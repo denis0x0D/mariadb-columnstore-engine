@@ -1153,7 +1153,12 @@ private:
 
     bool fDebug;
 
-    int _markInvalid(const LBID_t lbid, const execplan::CalpontSystemCatalog::ColDataType colDataType);
+    int _markInvalid(const LBID_t lbid,
+                     const execplan::CalpontSystemCatalog::ColDataType colDataType);
+    int _markInvalidRBTree(const LBID_t lbid,
+                           const execplan::CalpontSystemCatalog::ColDataType colDataType);
+
+    ExtentMapRBTree::iterator findByLBID(const LBID_t lbid);
 
     template <class T> void load(T* in);
     /** @brief Loads the extent map from a file into memory.

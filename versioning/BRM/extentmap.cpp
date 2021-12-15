@@ -340,6 +340,90 @@ ExtentMap::~ExtentMap()
     fPmDbRootMap.clear();
 }
 
+ExtentMapRBTree::iterator ExtentMap::findByLBID(const LBID_t lbid)
+{
+    auto emIt = fExtentMapRBTree->lower_bound(lbid);
+    auto end = fExtentMapRBTree->end();
+    if (emIt == end)
+        return end;
+
+    // Lower bound returns the first element not less than the given key.
+    if (emIt->first != lbid)
+    {
+        if (emIt == fExtentMapRBTree->begin())
+            return end;
+        --emIt;
+    }
+
+    return emIt;
+}
+
+/**
+ * @brief mark the max/min values of an extent as invalid
+ *
+ * mark the extent containing the lbid as invalid and
+ * increment the sequenceNum value. If the lbid is found
+ * in the extent map a 0 is returned otherwise a 1.
+ *
+ **/
+int ExtentMap::_markInvalidRBTree(const LBID_t lbid,
+                                  const execplan::CalpontSystemCatalog::ColDataType colDataType)
+{
+    LBID_t lastBlock;
+
+    auto emIt = findByLBID(lbid);
+    if (emIt == fExtentMapRBTree->end())
+        throw logic_error("ExtentMap::markInvalid(): lbid isn't allocated");
+
+    auto& emEntry = emIt->second;
+    {
+        lastBlock = emEntry.range.start + (static_cast<LBID_t>(emEntry.range.size) * 1024) - 1;
+
+        {
+            // FIXME: Remove this check, since we use tree.
+            if (lbid >= emEntry.range.start && lbid <= lastBlock)
+            {
+                //   makeUndoRecord(&fExtentMap[i], sizeof(struct EMEntry));
+                emEntry.partition.cprange.isValid = CP_UPDATING;
+
+                if (isUnsigned(colDataType))
+                {
+                    if (emEntry.colWid != datatypes::MAXDECIMALWIDTH)
+                    {
+                        emEntry.partition.cprange.loVal = numeric_limits<uint64_t>::max();
+                        emEntry.partition.cprange.hiVal = numeric_limits<uint64_t>::min();
+                    }
+                    else
+                    {
+                        // XXX: unsigned wide decimals do not exceed rang of signed wide
+                        // decimals.
+                        emEntry.partition.cprange.bigLoVal = -1;
+                        emEntry.partition.cprange.bigHiVal = 0;
+                    }
+                }
+                else
+                {
+                    if (emEntry.colWid != datatypes::MAXDECIMALWIDTH)
+                    {
+                        emEntry.partition.cprange.loVal = numeric_limits<int64_t>::max();
+                        emEntry.partition.cprange.hiVal = numeric_limits<int64_t>::min();
+                    }
+                    else
+                    {
+                        utils::int128Max(emEntry.partition.cprange.bigLoVal);
+                        utils::int128Min(emEntry.partition.cprange.bigHiVal);
+                    }
+                }
+
+                incSeqNum(emEntry.partition.cprange.sequenceNum);
+                return 0;
+            }
+        }
+    }
+
+    throw logic_error("ExtentMap::markInvalid(): lbid isn't allocated");
+}
+
 // Casual Partioning support
 //
 
