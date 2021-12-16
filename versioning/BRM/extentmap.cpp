@@ -3391,6 +3391,55 @@ int ExtentMap::lookupLocal(int OID, uint32_t partitionNum, uint16_t segmentNum,
     return -1;
 }
 
+int ExtentMap::lookupLocal_DBrootRBTree(int OID, uint16_t dbroot, uint32_t partitionNum,
+                                        uint16_t segmentNum, uint32_t fileBlockOffset, LBID_t& LBID)
+{
+#ifdef BRM_INFO
+
+    if (fDebug)
+    {
+        TRACER_WRITELATER("lookupLocal");
+        TRACER_ADDINPUT(OID);
+        TRACER_ADDINPUT(partitionNum);
+        TRACER_ADDSHORTINPUT(segmentNum);
+        TRACER_ADDINPUT(fileBlockOffset);
+        TRACER_ADDOUTPUT(LBID);
+        TRACER_WRITE;
+    }
+
+#endif
+    int32_t offset;
+
+    if (OID < 0)
+    {
+        log("ExtentMap::lookup(): OID and FBO must be >= 0", logging::LOG_TYPE_DEBUG);
+        throw invalid_argument("ExtentMap::lookup(): OID and FBO must be >= 0");
+    }
+
+    grabEMRBTreeEntryTable(READ);
+
+    for (auto emIt = fExtentMapRBTree->begin(), end = fExtentMapRBTree->end(); emIt != end; ++emIt)
+    {
+        const auto& emEntry = emIt->second;
+        // TODO:  Blockoffset logic.
+        if (emEntry.fileID == OID && emEntry.dbRoot == dbroot &&
+            emEntry.partitionNum == partitionNum && emEntry.segmentNum == segmentNum &&
+            emEntry.blockOffset <= fileBlockOffset &&
+            fileBlockOffset <=
+                (emEntry.blockOffset + (static_cast<LBID_t>(emEntry.range.size) * 1024) - 1))
+        {
+
+            offset = fileBlockOffset - emEntry.blockOffset;
+            LBID = emEntry.range.start + offset;
+            releaseEMRBTreeEntryTable(READ);
+            return 0;
+        }
+    }
+
+    releaseEMRBTreeEntryTable(READ);
+    return -1;
+}
+
 int ExtentMap::lookupLocal_DBroot(int OID, uint16_t dbroot, uint32_t partitionNum, uint16_t segmentNum,
                                   uint32_t fileBlockOffset, LBID_t& LBID)
 {
@@ -3504,6 +3553,58 @@ int ExtentMap::lookupLocalStartLbid(int      OID,
 
     return -1;
 }
+
+//------------------------------------------------------------------------------
+// Lookup/return starting LBID for the specified OID, partition, segment, and
+// file block offset.
+//------------------------------------------------------------------------------
+int ExtentMap::lookupLocalStartLbidRBTree(int OID, uint32_t partitionNum, uint16_t segmentNum,
+                                          uint32_t fileBlockOffset, LBID_t& LBID)
+{
+#ifdef BRM_INFO
+
+    if (fDebug)
+    {
+        TRACER_WRITELATER("lookupLocalStartLbid");
+        TRACER_ADDINPUT(OID);
+        TRACER_ADDINPUT(partitionNum);
+        TRACER_ADDSHORTINPUT(segmentNum);
+        TRACER_ADDINPUT(fileBlockOffset);
+        TRACER_ADDOUTPUT(LBID);
+        TRACER_WRITE;
+    }
+
+#endif
+
+    if (OID < 0)
+    {
+        log("ExtentMap::lookupLocalStartLbid(): OID and FBO must be >= 0",
+            logging::LOG_TYPE_DEBUG);
+        throw invalid_argument("ExtentMap::lookupLocalStartLbid(): "
+                               "OID and FBO must be >= 0");
+    }
+
+    grabEMRBTreeEntryTable(READ);
+
+    for (auto emIt = fExtentMapRBTree->begin(), end = fExtentMapRBTree->end(); emIt != end; ++emIt)
+    {
+        const auto& emEntry = emIt->second;
+        if (emEntry.fileID == OID && emEntry.partitionNum == partitionNum &&
+            emEntry.segmentNum == segmentNum && emEntry.blockOffset <= fileBlockOffset &&
+            fileBlockOffset <=
+                (emEntry.blockOffset + (static_cast<LBID_t>(emEntry.range.size) * 1024) - 1))
+        {
+            LBID = emEntry.range.start;
+            releaseEMRBTreeEntryTable(READ);
+            return 0;
+        }
+    }
+
+    releaseEMRBTreeEntryTable(READ);
+
+    return -1;
+}
+
 
 //------------------------------------------------------------------------------
 // Creates a "stripe" of column extents across a table, for the specified

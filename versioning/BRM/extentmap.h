@@ -412,7 +412,6 @@ public:
      * @param filename The file to save to.
      */
     EXPORT void save(const std::string& filename);
-
     EXPORT void saveRBTree(const std::string& filename);
 
     // @bug 1509.  Added new version of lookup below.
@@ -474,6 +473,9 @@ public:
      */
     EXPORT int lookupLocal_DBroot(int OID, uint16_t dbroot, uint32_t partitionNum,
                                   uint16_t segmentNum, uint32_t fileBlockOffset, LBID_t& LBID);
+    EXPORT int lookupLocal_DBrootRBTree(int OID, uint16_t dbroot, uint32_t partitionNum,
+                                        uint16_t segmentNum, uint32_t fileBlockOffset,
+                                        LBID_t& LBID);
 
     // @bug 1055-.
 
@@ -488,17 +490,17 @@ public:
      *        containing the given offset
      * @return 0 on success, -1 on error
      */
-    int lookupLocalStartLbid(int OID,
-                             uint32_t partitionNum,
-                             uint16_t segmentNum,
-                             uint32_t fileBlockOffset,
-                             LBID_t& LBID);
+    int lookupLocalStartLbid(int OID, uint32_t partitionNum, uint16_t segmentNum,
+                             uint32_t fileBlockOffset, LBID_t& LBID);
+    int lookupLocalStartLbidRBTree(int OID, uint32_t partitionNum, uint16_t segmentNum,
+                                   uint32_t fileBlockOffset, LBID_t& LBID);
 
     /** @brief Get a complete list of LBID ranges assigned to an OID
      *
      * Get a complete list of LBID ranges assigned to an OID.
      */
     EXPORT void lookup(OID_t oid, LBIDRange_v& ranges);
+    EXPORT void lookupRBTree(OID_t oid, LBIDRange_v& ranges);
 
     /** @brief Allocate a "stripe" of extents for columns in a table (in DBRoot)
      *
@@ -520,12 +522,10 @@ public:
      * @return 0 on success, -1 on error
      */
     // Not used.
-    EXPORT void createStripeColumnExtents(
-        const std::vector<CreateStripeColumnExtentsArgIn>& cols,
-        uint16_t  dbRoot,
-        uint32_t& partitionNum,
-        uint16_t& segmentNum,
-        std::vector<CreateStripeColumnExtentsArgOut>& extents);
+    EXPORT void createStripeColumnExtents(const std::vector<CreateStripeColumnExtentsArgIn>& cols,
+                                          uint16_t dbRoot, uint32_t& partitionNum,
+                                          uint16_t& segmentNum,
+                                          std::vector<CreateStripeColumnExtentsArgOut>& extents);
 
     /** @brief Allocates an extent for a column file
      *
@@ -553,16 +553,11 @@ public:
     // @bug 4091: To be deprecated as public function.  Should just be a
     // private function used by createStripeColumnExtents().
     // Not used.
-    EXPORT void createColumnExtent_DBroot(int OID,
-                                          uint32_t  colWidth,
-                                          uint16_t  dbRoot,
+    EXPORT void createColumnExtent_DBroot(int OID, uint32_t colWidth, uint16_t dbRoot,
                                           execplan::CalpontSystemCatalog::ColDataType colDataType,
-                                          uint32_t& partitionNum,
-                                          uint16_t& segmentNum,
-                                          LBID_t&    lbid,
-                                          int&       allocdsize,
-                                          uint32_t& startBlockOffset,
-                                          bool       useLock = true);
+                                          uint32_t& partitionNum, uint16_t& segmentNum,
+                                          LBID_t& lbid, int& allocdsize, uint32_t& startBlockOffset,
+                                          bool useLock = true);
 
     /** @brief Allocates extent for exact file that is specified
      *
