@@ -458,6 +458,8 @@ public:
      */
     EXPORT int lookupLocal(int OID, uint32_t partitionNum, uint16_t segmentNum,
                            uint32_t fileBlockOffset, LBID_t& LBID);
+    EXPORT int lookupLocalRBTree(int OID, uint32_t partitionNum, uint16_t segmentNum,
+                                 uint32_t fileBlockOffset, LBID_t& LBID);
 
     /** @brief Look up the LBID associated with a given dbroot, OID, offset,
      * partition, and segment.
@@ -586,20 +588,16 @@ public:
      * @param allocdSize (out) The total number of LBIDs allocated.
      * @param startBlockOffset (out) The first block of the extent created.
      */
-    EXPORT void createColumnExtentExactFile(int OID,
-                                            uint32_t  colWidth,
-                                            uint16_t  dbRoot,
-                                            uint32_t  partitionNum,
-                                            uint16_t  segmentNum,
+    EXPORT void createColumnExtentExactFile(int OID, uint32_t colWidth, uint16_t dbRoot,
+                                            uint32_t partitionNum, uint16_t segmentNum,
                                             execplan::CalpontSystemCatalog::ColDataType colDataType,
-                                            LBID_t&    lbid,
-                                            int&       allocdsize,
+                                            LBID_t& lbid, int& allocdsize,
                                             uint32_t& startBlockOffset);
-
-    EXPORT void createColumnExtentExactFileRBTree(int OID, uint32_t colWidth, uint16_t dbRoot,
-                                                  uint32_t partitionNum, uint16_t segmentNum,
-                                                  execplan::CalpontSystemCatalog::ColDataType colDataType,
-                                                  LBID_t& lbid, int& allocdsize, uint32_t& startBlockOffset);
+    EXPORT void
+    createColumnExtentExactFileRBTree(int OID, uint32_t colWidth, uint16_t dbRoot,
+                                      uint32_t partitionNum, uint16_t segmentNum,
+                                      execplan::CalpontSystemCatalog::ColDataType colDataType,
+                                      LBID_t& lbid, int& allocdsize, uint32_t& startBlockOffset);
 
     /** @brief Allocates an extent for a dictionary store file
      *
@@ -618,13 +616,8 @@ public:
      * @param lbid (out) The first LBID of the extent created.
      * @param allocdsize (out) The total number of LBIDs allocated.
      */
-    EXPORT void createDictStoreExtent(int OID,
-                                      uint16_t   dbRoot,
-                                      uint32_t   partitionNum,
-                                      uint16_t   segmentNum,
-                                      LBID_t&    lbid,
-                                      int&       allocdsize);
-
+    EXPORT void createDictStoreExtent(int OID, uint16_t dbRoot, uint32_t partitionNum,
+                                      uint16_t segmentNum, LBID_t& lbid, int& allocdsize);
     EXPORT void createDictStoreExtentRBTree(int OID, uint16_t dbRoot, uint32_t partitionNum,
                                             uint16_t segmentNum, LBID_t& lbid, int& allocdsize);
 
