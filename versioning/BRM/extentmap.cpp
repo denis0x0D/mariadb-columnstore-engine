@@ -9021,6 +9021,76 @@ bool ExtentMap::isDBRootEmpty(uint16_t dbroot)
     return bEmpty;
 }
 
+void ExtentMap::lookupRBTree(OID_t OID, LBIDRange_v& ranges)
+{
+#ifdef BRM_INFO
+
+    if (fDebug)
+    {
+        TRACER_WRITELATER("lookup");
+        TRACER_ADDINPUT(OID);
+        TRACER_WRITE;
+    }
+
+#endif
+
+#ifdef EM_AS_A_TABLE_POC__
+
+    if (OID == 1084)
+    {
+        EMEntry fakeEntry;
+        fakeEntry.range.start = (1LL << 54);
+        fakeEntry.range.size = 4;
+#if 0
+        fakeEntry.fileID = 1084;
+        fakeEntry.blockOffset = 0;
+        fakeEntry.HWM = 1;
+        fakeEntry.partitionNum = 0;
+        fakeEntry.segmentNum = 0;
+        fakeEntry.dbRoot = 1;
+        fakeEntry.colWid = 4;
+        fakeEntry.status = EXTENTAVAILABLE;
+        fakeEntry.partition.cprange.hiVal = numeric_limits<int64_t>::min() + 2;
+        fakeEntry.partition.cprange.loVal = numeric_limits<int64_t>::max();
+        fakeEntry.partition.cprange.sequenceNum = 0;
+        fakeEntry.partition.cprange.isValid = CP_INVALID;
+#endif
+        ranges.push_back(fakeEntry.range);
+        return;
+    }
+
+#endif
+
+    int i, emEntries;
+    LBIDRange tmp;
+
+    ranges.clear();
+
+    if (OID < 0)
+    {
+        ostringstream oss;
+        oss << "ExtentMap::lookup(): invalid OID requested: " << OID;
+        log(oss.str(), logging::LOG_TYPE_CRITICAL);
+        throw invalid_argument(oss.str());
+    }
+
+    grabEMRBTreeEntryTable(READ);
+
+    for (auto it = fExtentMapRBTree->begin(), end = fExtentMapRBTree->end(); it != end; ++it)
+    {
+        const auto& emEntry = it->second;
+        if ((emEntry.fileID == OID) && (emEntry.status != EXTENTOUTOFSERVICE))
+        {
+            tmp.start = emEntry.range.start;
+            tmp.size = emEntry.range.size * 1024;
+            ranges.push_back(tmp);
+        }
+    }
+
+    releaseEMRBTreeEntryTable(READ);
+}
+
+
 void ExtentMap::lookup(OID_t OID, LBIDRange_v& ranges)
 {
 #ifdef BRM_INFO
