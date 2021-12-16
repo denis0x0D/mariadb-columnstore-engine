@@ -395,6 +395,7 @@ public:
      * if the file "looks" bad.
      */
     EXPORT void load(const std::string& filename, bool fixFL = false);
+    EXPORT void loadRBTree(const std::string& filename, bool fixFL = false);
 
     /** @brief Loads the ExtentMap entries from a binayr blob.
      *
@@ -974,14 +975,22 @@ public:
 
     EXPORT virtual void confirmChanges();
 
+    // RBTRee start.
     EXPORT int markInvalid(const LBID_t lbid,
                            const execplan::CalpontSystemCatalog::ColDataType colDataType);
+    EXPORT int markInvalidRBTree(const LBID_t lbid,
+                                 const execplan::CalpontSystemCatalog::ColDataType colDataType);
 
-    EXPORT int markInvalid(const std::vector<LBID_t>& lbids,
-                           const std::vector<execplan::CalpontSystemCatalog::ColDataType>& colDataTypes);
+    EXPORT int
+    markInvalid(const std::vector<LBID_t>& lbids,
+                const std::vector<execplan::CalpontSystemCatalog::ColDataType>& colDataTypes);
+    EXPORT int
+    markInvalidRBTree(const std::vector<LBID_t>& lbids,
+                      const std::vector<execplan::CalpontSystemCatalog::ColDataType>& colDataTypes);
 
     EXPORT int setMaxMin(const LBID_t lbidRange, const int64_t max, const int64_t min,
                          const int32_t seqNum, bool firstNode);
+    // RBTree end.
 
     // @bug 1970.  Added setExtentsMaxMin function below.
 
@@ -1124,23 +1133,36 @@ private:
 
     template <typename T>
     bool isValidCPRange(const T& max, const T& min, execplan::CalpontSystemCatalog::ColDataType type) const;
+
+    // Delete extent.
     void deleteExtent(int emIndex);
     void deleteExtentRBTree(ExtentMapRBTree::iterator it);
-    LBID_t getLBIDsFromFreeList(uint32_t size);
-    void reserveLBIDRange(LBID_t start, uint8_t size);    // used by load() to allocate pre-existing LBIDs
 
+    LBID_t getLBIDsFromFreeList(uint32_t size);
+    // Used by load() to allocate pre-existing LBIDs.
+    void reserveLBIDRange(LBID_t start, uint8_t size);
+
+    // Choose key.
     key_t chooseEMShmkey();  //see the code for how keys are segmented
     key_t chooseFLShmkey();  //see the code for how keys are segmented
     key_t chooseEMRBTreeShmkey();
+
+    // Grab table.
     void grabEMEntryTable(OPS op);
     void grabEMRBTreeEntryTable(OPS op);
     void grabFreeList(OPS op);
+
+    // Release table.
     void releaseEMEntryTable(OPS op);
     void releaseEMRBTreeEntryTable(OPS op);
     void releaseFreeList(OPS op);
+
+    // Grow memory.
     void growEMShmseg(size_t nrows = 0);
     void growEMRBTreeShmseg(size_t nrows = 0);
     void growFLShmseg();
+
+    // Finish changes.
     void finishChanges();
 
     EXPORT unsigned getFilesPerColumnPartition();
@@ -1160,6 +1182,8 @@ private:
     ExtentMapRBTree::iterator findByLBID(const LBID_t lbid);
 
     template <class T> void load(T* in);
+    template <class T> void loadRBTree(T* in);
+
     /** @brief Loads the extent map from a file into memory.
      *
      * @param in (in) the file to load the extent map from.

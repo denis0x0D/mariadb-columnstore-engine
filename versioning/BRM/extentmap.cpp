@@ -502,6 +502,37 @@ int ExtentMap::_markInvalid(const LBID_t lbid, const execplan::CalpontSystemCata
     throw logic_error("ExtentMap::markInvalid(): lbid isn't allocated");
 }
 
+int ExtentMap::markInvalidRBTree(const LBID_t lbid,
+                                 const execplan::CalpontSystemCatalog::ColDataType colDataType)
+{
+#ifdef BRM_DEBUG
+
+    if (lbid < 0)
+        throw invalid_argument("ExtentMap::markInvalid(): lbid must be >= 0");
+
+#endif
+#ifdef BRM_INFO
+
+    if (fDebug)
+    {
+        TRACER_WRITELATER("_markInvalid");
+        TRACER_ADDINPUT(lbid);
+        TRACER_WRITE;
+    }
+
+#endif
+
+#ifdef BRM_DEBUG
+    ostringstream os;
+    os << "ExtentMap::markInvalid(" << lbid << "," << colDataType << ")";
+    log(os.str(), logging::LOG_TYPE_DEBUG);
+#endif
+
+    grabEMRBTreeEntryTable(WRITE);
+    return _markInvalid(lbid, colDataType);
+}
+
+
 int ExtentMap::markInvalid(const LBID_t lbid,
                            const execplan::CalpontSystemCatalog::ColDataType colDataType)
 {
@@ -536,6 +567,57 @@ int ExtentMap::markInvalid(const LBID_t lbid,
 * @brief calls markInvalid(LBID_t lbid) for each extent containing any lbid in vector<LBID_t>& lbids
 *
 **/
+
+int ExtentMap::markInvalidRBTree(
+    const vector<LBID_t>& lbids,
+    const vector<execplan::CalpontSystemCatalog::ColDataType>& colDataTypes)
+{
+    uint32_t i, size = lbids.size();
+
+#ifdef BRM_DEBUG
+
+    for (i = 0; i < size; ++i)
+        if (lbids[i] < 0)
+            throw invalid_argument("ExtentMap::markInvalid(vector): all lbids must be >= 0");
+
+#endif
+#ifdef BRM_INFO
+
+    if (fDebug)
+    {
+        TRACER_WRITELATER("_markInvalid");
+        TRACER_ADDINPUT(size);
+        TRACER_WRITE;
+    }
+
+#endif
+
+    grabEMRBTreeEntryTable(WRITE);
+
+    // XXXPAT: what's the proper return code when one and only one fails?
+    for (i = 0; i < size; ++i)
+    {
+#ifdef BRM_DEBUG
+        ostringstream os;
+        os << "ExtentMap::markInvalid() lbids[" << i << "]=" << lbids[i] <<
+           " colDataTypes[" << i << "]=" << colDataTypes[i];
+        log(os.str(), logging::LOG_TYPE_DEBUG);
+#endif
+
+        try
+        {
+            _markInvalidRBTree(lbids[i], colDataTypes[i]);
+        }
+        catch (std::exception& e)
+        {
+            cerr << "ExtentMap::markInvalid(vector): warning!  lbid " << lbids[i] <<
+                 " caused " << e.what() << endl;
+        }
+    }
+
+    return 0;
+}
+
 
 int ExtentMap::markInvalid(const vector<LBID_t>& lbids,
                            const vector<execplan::CalpontSystemCatalog::ColDataType>& colDataTypes)
