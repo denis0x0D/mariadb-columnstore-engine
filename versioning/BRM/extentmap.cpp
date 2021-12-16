@@ -2352,6 +2352,62 @@ void ExtentMap::loadVersion4or5(T* in, bool upgradeV4ToV5)
 #endif
 }
 
+void ExtentMap::loadRBTree(const string& filename, bool fixFL)
+{
+#ifdef BRM_INFO
+
+    if (fDebug)
+    {
+        TRACER_WRITELATER("load");
+        TRACER_ADDSTRINPUT(filename);
+        TRACER_WRITE;
+    }
+
+#endif
+
+    grabEMRBTreeEntryTable(WRITE);
+
+    try
+    {
+        grabFreeList(WRITE);
+    }
+    catch (...)
+    {
+        releaseEMRBTreeEntryTable(WRITE);
+        throw;
+    }
+
+    const char* filename_p = filename.c_str();
+    scoped_ptr<IDBDataFile>  in(IDBDataFile::open(
+                                    IDBPolicy::getType(filename_p, IDBPolicy::WRITEENG),
+                                    filename_p, "r", 0));
+
+    if (!in)
+    {
+        log_errno("ExtentMap::load(): open");
+        releaseFreeList(WRITE);
+        releaseEMRBTreeEntryTable(WRITE);
+        throw ios_base::failure("ExtentMap::load(): open failed. Check the error log.");
+    }
+
+    try
+    {
+        loadRBTree(in.get());
+    }
+
+    catch (...)
+    {
+        releaseFreeList(WRITE);
+        releaseEMRBTreeEntryTable(WRITE);
+        throw;
+    }
+
+    releaseFreeList(WRITE);
+    releaseEMRBTreeEntryTable(WRITE);
+    //	checkConsistency();
+}
+
+
 void ExtentMap::load(const string& filename, bool fixFL)
 {
 #ifdef BRM_INFO
@@ -2452,6 +2508,33 @@ void ExtentMap::loadFromBinaryBlob(const char* blob)
 
     releaseFreeList(WRITE);
     releaseEMEntryTable(WRITE);
+}
+
+template <typename T> void ExtentMap::loadRBTree(T* in)
+{
+    if (!in)
+        return;
+
+    try
+    {
+        int emVersion = 0;
+        int bytes = in->read((char*) &emVersion, sizeof(int));
+
+        if (bytes == (int) sizeof(int) &&
+            (emVersion == EM_MAGIC_V4 || emVersion == EM_MAGIC_V5))
+        {
+            loadVersion4or5RBTree(in, emVersion == EM_MAGIC_V4);
+        }
+        else
+        {
+            log("ExtentMap::load(): That file is not a valid ExtentMap image");
+            throw runtime_error("ExtentMap::load(): That file is not a valid ExtentMap image");
+        }
+    }
+    catch (...)
+    {
+        throw;
+    }
 }
 
 template <typename T> void ExtentMap::load(T* in)

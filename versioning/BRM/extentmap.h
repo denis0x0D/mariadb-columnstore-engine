@@ -988,8 +988,10 @@ public:
     markInvalidRBTree(const std::vector<LBID_t>& lbids,
                       const std::vector<execplan::CalpontSystemCatalog::ColDataType>& colDataTypes);
 
+    // Not used.
     EXPORT int setMaxMin(const LBID_t lbidRange, const int64_t max, const int64_t min,
                          const int32_t seqNum, bool firstNode);
+
     // RBTree end.
 
     // @bug 1970.  Added setExtentsMaxMin function below.
