@@ -2161,9 +2161,9 @@ void ExtentMap::loadVersion4or5RBTree(T *in, bool upgradeV4ToV5)
         std::cout << emNumElements << " extents successfully upgraded" << std::endl;
     }
 
-    for (const auto& lbidEMEntryPair : *fExtentMapRBTree)
+    for (auto& lbidEMEntryPair : *fExtentMapRBTree)
     {
-        const EMEntry& emEntry = lbidEMEntryPair.second;
+        EMEntry& emEntry = lbidEMEntryPair.second;
         reserveLBIDRange(emEntry.range.start, emEntry.range.size);
 
         //@bug 1911 - verify status value is valid
@@ -9801,6 +9801,36 @@ vector<InlineLBIDRange> ExtentMap::getFreeListEntries()
     releaseEMEntryTable(READ);
     return v;
 }
+
+void ExtentMap::dumpToRBTree(ostream& os)
+{
+    grabEMRBTreeEntryTable(READ);
+
+    for (auto emIt = fExtentMapRBTree->begin(), end = fExtentMapRBTree->end(); emIt != end; ++emIt)
+    {
+        const auto& emEntry = emIt->second;
+        {
+            os << emEntry.range.start << '|'
+               << emEntry.range.size << '|'
+               << emEntry.fileID << '|'
+               << emEntry.blockOffset << '|'
+               << emEntry.HWM << '|'
+               << emEntry.partitionNum << '|'
+               << emEntry.segmentNum << '|'
+               << emEntry.dbRoot << '|'
+               << emEntry.colWid << '|'
+               << emEntry.status << '|'
+               << emEntry.partition.cprange.hiVal << '|'
+               << emEntry.partition.cprange.loVal << '|'
+               << emEntry.partition.cprange.sequenceNum << '|'
+               << (int)emEntry.partition.cprange.isValid << '|'
+               << endl;
+        }
+    }
+
+    releaseEMRBTreeEntryTable(READ);
+}
+
 
 void ExtentMap::dumpTo(ostream& os)
 {

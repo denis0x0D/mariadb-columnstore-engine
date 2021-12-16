@@ -1049,6 +1049,8 @@ public:
     EXPORT std::vector<InlineLBIDRange> getFreeListEntries();
 
     EXPORT void dumpTo(std::ostream& os);
+    EXPORT void dumpToRBTree(std::ostream& os);
+
     EXPORT const bool* getEMLockStatus();
     EXPORT const bool* getEMFLLockStatus();
 
