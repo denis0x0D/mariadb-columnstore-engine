@@ -267,8 +267,8 @@ ExtentMapRBTreeImpl::ExtentMapRBTreeImpl(unsigned key, off_t size, bool readOnly
 {
     VoidAllocator allocator(fManagedShm.fShmSegment->get_segment_manager());
     // TODO: Take a right name for container.
-    fExtentMapRBTree =
-        fManagedShm.fShmSegment->construct<ExtentMapRBTree>("EmMapRBTree")(std::less<int64_t>(), allocator);
+    fExtentMapRBTree = fManagedShm.fShmSegment->find_or_construct<ExtentMapRBTree>("EmMapRBTree")(
+        std::less<int64_t>(), allocator);
 }
 
 /*static*/
@@ -2883,7 +2883,9 @@ void ExtentMap::grabEMRBTreeEntryTable(OPS op)
     if (!fPExtMapRBTreeImpl || fPExtMapRBTreeImpl->key() != (uint32_t) fEMRBTreeShminfo->tableShmkey)
     {
         if (fExtentMapRBTree)
-            fExtentMap = nullptr;
+        {
+            fExtentMapRBTree = nullptr;
+        }
 
         if (fEMRBTreeShminfo->allocdSize == 0)
         {
@@ -3042,8 +3044,9 @@ key_t ExtentMap::chooseEMShmkey()
     int fixedKeys = 1;
     key_t ret;
 
-    if (fEMShminfo->tableShmkey + 1 == (key_t) (fShmKeys.KEYRANGE_EXTENTMAP_BASE +
-            fShmKeys.KEYRANGE_SIZE - 1) || (unsigned)fEMShminfo->tableShmkey < fShmKeys.KEYRANGE_EXTENTMAP_BASE)
+    if (fEMShminfo->tableShmkey + 1 ==
+            (key_t)(fShmKeys.KEYRANGE_EXTENTMAP_BASE + fShmKeys.KEYRANGE_SIZE - 1) ||
+        (unsigned) fEMShminfo->tableShmkey < fShmKeys.KEYRANGE_EXTENTMAP_BASE)
         ret = fShmKeys.KEYRANGE_EXTENTMAP_BASE + fixedKeys;
     else
         ret = fEMShminfo->tableShmkey + 1;
@@ -3053,17 +3056,7 @@ key_t ExtentMap::chooseEMShmkey()
 
 key_t ExtentMap::chooseEMRBTreeShmkey()
 {
-    int fixedKeys = 1;
-    key_t ret;
-
-    if (fEMRBTreeShminfo->tableShmkey + 1 ==
-            (key_t)(fShmKeys.KEYRANGE_EXTENTMAP_RB_TREE_BASE + fShmKeys.KEYRANGE_SIZE - 1) ||
-        (unsigned) fEMShminfo->tableShmkey < fShmKeys.KEYRANGE_EXTENTMAP_RB_TREE_BASE)
-        ret = fShmKeys.KEYRANGE_EXTENTMAP_RB_TREE_BASE + fixedKeys;
-    else
-        ret = fEMShminfo->tableShmkey + 1;
-
-    return ret;
+    return (key_t)(fShmKeys.KEYRANGE_EXTENTMAP_RB_TREE_BASE + 1);
 }
 
 key_t ExtentMap::chooseFLShmkey()
@@ -3121,36 +3114,27 @@ void ExtentMap::growEMRBTreeShmseg(size_t size)
 {
     size_t allocSize;
 
-    if (fEMRBTreeShminfo->allocdSize == 0)
-    {
-        if (fEMRBTreeShminfo->tableShmkey == -1)
-            fEMRBTreeShminfo->tableShmkey = chooseEMRBTreeShmkey();
+    if (fEMRBTreeShminfo->tableShmkey == 0)
+        fEMRBTreeShminfo->tableShmkey = chooseEMRBTreeShmkey();
 
+    if (fEMRBTreeShminfo->allocdSize == 0)
         allocSize = EM_RB_TREE_INITIAL_SIZE;
-    }
     else
-    {
         allocSize = fEMRBTreeShminfo->allocdSize + EM_RB_TREE_INCREMENT;
-    }
 
     allocSize = std::max(size, allocSize);
 
     ASSERT((allocSize == EM_RB_TREE_INITIAL_SIZE && !fPExtMapRBTreeImpl) || fPExtRBTreeMapImpl);
 
     if (!fPExtMapRBTreeImpl)
-    {
-        fPExtMapRBTreeImpl =
-            ExtentMapRBTreeImpl::makeExtentMapRBTreeImpl(fEMRBTreeShminfo->tableShmkey, allocSize, r_only);
-    }
+        fPExtMapRBTreeImpl = ExtentMapRBTreeImpl::makeExtentMapRBTreeImpl(
+            fEMRBTreeShminfo->tableShmkey, allocSize, r_only);
     else
-    {
         fPExtMapRBTreeImpl->grow(allocSize);
-    }
 
     uint64_t freeMemory = fPExtMapRBTreeImpl->getFreeMemory();
     ASSERT(freeMemory >= allocSize);
     fEMRBTreeShminfo->allocdSize = allocSize;
-    fEMRBTreeShminfo->currentSize = freeMemory - allocSize;
     // if (r_only)
     //   fPExtMapImpl->makeReadOnly();
 
@@ -4471,20 +4455,21 @@ void ExtentMap::createColumnExtentExactFile(int OID,
     // Convert extent size in rows to extent size in 8192-byte blocks.
     // extentRows should be multiple of blocksize (8192).
     const unsigned EXTENT_SIZE = (getExtentRows() * colWidth) / BLOCK_SIZE;
+
     grabEMEntryTable(WRITE);
     grabFreeList(WRITE);
 
     if (fEMShminfo->currentSize == fEMShminfo->allocdSize)
         growEMShmseg();
 
-//  size is the number of multiples of 1024 blocks.
-//  ex: size=1 --> 1024 blocks
-//      size=2 --> 2048 blocks
-//      size=3 --> 3072 blocks, etc.
+    //  size is the number of multiples of 1024 blocks.
+    //  ex: size=1 --> 1024 blocks
+    //      size=2 --> 2048 blocks
+    //      size=3 --> 3072 blocks, etc.
     uint32_t size = EXTENT_SIZE / 1024;
 
-    lbid = _createColumnExtentExactFile(size, OID, colWidth,
-                                        dbRoot, partitionNum, segmentNum, colDataType, startBlockOffset);
+    lbid = _createColumnExtentExactFile(size, OID, colWidth, dbRoot, partitionNum, segmentNum,
+                                        colDataType, startBlockOffset);
 
     allocdsize = EXTENT_SIZE;
 }
@@ -4531,7 +4516,7 @@ void ExtentMap::createColumnExtentExactFileRBTree(
     grabFreeList(WRITE);
 
     // FIXME: Make a function call.
-    if (fEMShminfo->currentSize + EM_RB_TREE_NODE_SIZE < fEMShminfo->allocdSize)
+    if (fEMRBTreeShminfo->currentSize + EM_RB_TREE_NODE_SIZE < fEMShminfo->allocdSize)
         growEMRBTreeShmseg();
 
     //  size is the number of multiples of 1024 blocks.
@@ -4620,11 +4605,15 @@ LBID_t ExtentMap::_createColumnExtentExactFileRBTree(uint32_t size, int OID, uin
     // else
     //   blockOffset is extrapolated from the last extent
     newEmEntry.HWM = 0;
-    if (lastEmEntry)
+    if (!lastEmEntry)
+    {
         newEmEntry.blockOffset = 0;
+    }
     else
+    {
         newEmEntry.blockOffset =
             static_cast<uint64_t>(lastEmEntry->range.size) * 1024 + lastEmEntry->blockOffset;
+    }
 
     if ((newEmEntry.partitionNum == 0) && (newEmEntry.segmentNum == 0) && (newEmEntry.blockOffset == 0))
         newEmEntry.partition.cprange.isValid = CP_VALID;
@@ -4634,10 +4623,9 @@ LBID_t ExtentMap::_createColumnExtentExactFileRBTree(uint32_t size, int OID, uin
     // Create and insert a pair of `lbid` and `EMEntry`.
     std::pair<int64_t, EMEntry> lbidEmEntryPair = make_pair(startLBID, newEmEntry);
     fExtentMapRBTree->insert(lbidEmEntryPair);
-
     startBlockOffset = newEmEntry.blockOffset;
     //    makeUndoRecord(fEMShminfo, sizeof(MSTEntry));
-    fEMShminfo->currentSize += EM_RB_TREE_NODE_SIZE;
+    fEMRBTreeShminfo->currentSize += EM_RB_TREE_NODE_SIZE;
 
     return startLBID;
 }
@@ -4997,7 +4985,7 @@ void ExtentMap::createDictStoreExtentRBTree(int OID, uint16_t dbRoot, uint32_t p
     grabEMRBTreeEntryTable(WRITE);
     grabFreeList(WRITE);
 
-    if (fEMShminfo->currentSize + EM_RB_TREE_NODE_SIZE == fEMShminfo->allocdSize)
+    if (fEMRBTreeShminfo->currentSize + EM_RB_TREE_NODE_SIZE == fEMRBTreeShminfo->allocdSize)
         growEMRBTreeShmseg();
 
 //  size is the number of multiples of 1024 blocks.
@@ -5086,7 +5074,7 @@ LBID_t ExtentMap::_createDictStoreExtentRBTree(uint32_t size, int OID, uint16_t 
     fExtentMapRBTree->insert(lbidEmEntryPair);
 
     //    makeUndoRecord(fEMShminfo, sizeof(MSTEntry));
-    fEMShminfo->currentSize += EM_RB_TREE_NODE_SIZE;
+    fEMRBTreeShminfo->currentSize += EM_RB_TREE_NODE_SIZE;
 
     return startLBID;
 }
