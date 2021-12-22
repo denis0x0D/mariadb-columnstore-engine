@@ -306,19 +306,24 @@ FreeListImpl::FreeListImpl(unsigned key, off_t size, bool readOnly) :
 
 ExtentMap::ExtentMap()
 {
+#ifdef DEFAULT_EM
     fExtentMap = nullptr;
+    fCurrentEMShmkey = -1;
+    fEMShminfo = nullptr;
+    fPExtMapImpl = nullptr;
+    emRBTreeLocked = false;
+#endif
+
     fExtentMapRBTree = nullptr;
     fFreeList = nullptr;
-    fCurrentEMShmkey = -1;
     fCurrentFLShmkey = -1;
-    fEMShminfo = nullptr;
+    fEMRBTreeShminfo = nullptr;
     fFLShminfo = nullptr;
     r_only = false;
     flLocked = false;
-    emLocked = false;
-    fPExtMapImpl = nullptr;
     fPExtMapRBTreeImpl = nullptr;
     fPFreeListImpl = nullptr;
+    emLocked = false;
 
 #ifdef BRM_INFO
     fDebug = ("Y" == config::Config::makeConfig()->getConfig("DBRM", "Debug"));
@@ -2086,7 +2091,7 @@ void ExtentMap::loadVersion4or5RBTree(T *in, bool upgradeV4ToV5)
     // Calculate how much memory we need.
     const uint32_t memorySizeNeeded = (emNumElements * EM_RB_TREE_NODE_SIZE) + EM_RB_TREE_META_SIZE;
 
-    if (fEMShminfo->allocdSize < memorySizeNeeded)
+    if (fEMRBTreeShminfo->allocdSize < memorySizeNeeded)
         growEMRBTreeShmseg(memorySizeNeeded);
 
     int err;
@@ -4518,7 +4523,7 @@ void ExtentMap::createColumnExtentExactFileRBTree(
     grabFreeList(WRITE);
 
     // FIXME: Make a function call.
-    if (fEMRBTreeShminfo->currentSize + EM_RB_TREE_NODE_SIZE < fEMShminfo->allocdSize)
+    if (fEMRBTreeShminfo->currentSize + EM_RB_TREE_NODE_SIZE < fEMRBTreeShminfo->allocdSize)
         growEMRBTreeShmseg();
 
     //  size is the number of multiples of 1024 blocks.
@@ -9905,7 +9910,7 @@ template
 int ExtentMap::getMaxMin<int64_t>(const LBID_t lbidRange, int64_t& max, int64_t& min, int32_t& seqNum);
 #endif
 
-#ifdef RBTREE
+#ifdef RBTREE_EM
 ExtentMapRBTree::iterator ExtentMap::findByLBID(const LBID_t lbid)
 {
     auto emIt = fExtentMapRBTree->lower_bound(lbid);
@@ -10016,7 +10021,7 @@ int ExtentMap::markInvalid(const LBID_t lbid,
     log(os.str(), logging::LOG_TYPE_DEBUG);
 #endif
 
-    grabEMRBTreeEntryTable(WRITE);
+    grabEMEntryTable(WRITE);
     return _markInvalid(lbid, colDataType);
 }
 
@@ -10048,7 +10053,7 @@ int ExtentMap::markInvalid(const vector<LBID_t>& lbids,
 
 #endif
 
-    grabEMRBTreeEntryTable(WRITE);
+    grabEMEntryTable(WRITE);
 
     // XXXPAT: what's the proper return code when one and only one fails?
     for (i = 0; i < size; ++i)
@@ -10124,7 +10129,7 @@ void ExtentMap::setExtentsMaxMin(const CPMaxMinMap_t& cpMap, bool firstNode, boo
 #endif
 
     if (useLock)
-        grabEMRBTreeEntryTable(WRITE);
+        grabEMEntryTable(WRITE);
 
     for (auto emIt = fExtentMapRBTree->begin(), end = fExtentMapRBTree->end(); emIt != end; ++emIt)
     {
@@ -10267,7 +10272,7 @@ void ExtentMap::mergeExtentsMaxMin(CPMaxMinMergeMap_t& cpMap, bool useLock)
     int32_t extentsMerged = 0;
 
     if (useLock)
-        grabEMRBTreeEntryTable(WRITE);
+        grabEMEntryTable(WRITE);
 
     for (auto emIt = fExtentMapRBTree->begin(), end = fExtentMapRBTree->end(); emIt != end; ++emIt)
     {
@@ -10557,7 +10562,7 @@ template <typename T> int ExtentMap::getMaxMin(const LBID_t lbid, T& max, T& min
 
 #endif
 
-    grabEMRBTreeEntryTable(READ);
+    grabEMEntryTable(READ);
 
     auto emIt = findByLBID(lbid);
     if (emIt == fExtentMapRBTree->end())
@@ -10584,13 +10589,13 @@ template <typename T> int ExtentMap::getMaxMin(const LBID_t lbid, T& max, T& min
                 seqNum = emEntry.partition.cprange.sequenceNum;
                 isValid = emEntry.partition.cprange.isValid;
 
-                releaseEMRBTreeEntryTable(READ);
+                releaseEMEntryTable(READ);
                 return isValid;
             }
         }
     }
 
-    releaseEMRBTreeEntryTable(READ);
+    releaseEMEntryTable(READ);
     throw logic_error("ExtentMap::getMaxMin(): that lbid isn't allocated");
 }
 
@@ -10602,7 +10607,7 @@ void ExtentMap::getCPMaxMin(const BRM::LBID_t lbid, BRM::CPMaxMin& cpMaxMin)
         throw invalid_argument("ExtentMap::getMaxMin(): lbid must be >= 0");
 #endif
 
-    grabEMRBTreeEntryTable(READ);
+    grabEMEntryTable(READ);
 
     auto emIt = findByLBID(lbid);
     if (emIt == fExtentMapRBTree->end())
@@ -10623,13 +10628,13 @@ void ExtentMap::getCPMaxMin(const BRM::LBID_t lbid, BRM::CPMaxMin& cpMaxMin)
                 cpMaxMin.min    = emEntry.partition.cprange.loVal;
                 cpMaxMin.seqNum = emEntry.partition.cprange.sequenceNum;
 
-                releaseEMRBTreeEntryTable(READ);
+                releaseEMEntryTable(READ);
                 return;
             }
         }
     }
 
-    releaseEMRBTreeEntryTable(READ);
+    releaseEMEntryTable(READ);
     throw logic_error("ExtentMap::getMaxMin(): that lbid isn't allocated");
 }
 
@@ -10765,8 +10770,8 @@ template <class T> void ExtentMap::loadVersion4or5(T* in, bool upgradeV4ToV5)
     // Calculate how much memory we need.
     const uint32_t memorySizeNeeded = (emNumElements * EM_RB_TREE_NODE_SIZE) + EM_RB_TREE_META_SIZE;
 
-    if (fEMShminfo->allocdSize < memorySizeNeeded)
-        growEMRBTreeShmseg(memorySizeNeeded);
+    if (fEMRBTreeShminfo->allocdSize < memorySizeNeeded)
+        growEMShmseg(memorySizeNeeded);
 
     int err;
     size_t progress, writeSize;
@@ -10899,7 +10904,7 @@ void ExtentMap::load(const string& filename, bool fixFL)
 
 #endif
 
-    grabEMRBTreeEntryTable(WRITE);
+    grabEMEntryTable(WRITE);
 
     try
     {
@@ -10907,7 +10912,7 @@ void ExtentMap::load(const string& filename, bool fixFL)
     }
     catch (...)
     {
-        releaseEMRBTreeEntryTable(WRITE);
+        releaseEMEntryTable(WRITE);
         throw;
     }
 
@@ -10920,7 +10925,7 @@ void ExtentMap::load(const string& filename, bool fixFL)
     {
         log_errno("ExtentMap::load(): open");
         releaseFreeList(WRITE);
-        releaseEMRBTreeEntryTable(WRITE);
+        releaseEMEntryTable(WRITE);
         throw ios_base::failure("ExtentMap::load(): open failed. Check the error log.");
     }
 
@@ -10932,12 +10937,12 @@ void ExtentMap::load(const string& filename, bool fixFL)
     catch (...)
     {
         releaseFreeList(WRITE);
-        releaseEMRBTreeEntryTable(WRITE);
+        releaseEMEntryTable(WRITE);
         throw;
     }
 
     releaseFreeList(WRITE);
-    releaseEMRBTreeEntryTable(WRITE);
+    releaseEMEntryTable(WRITE);
     //	checkConsistency();
 }
 
@@ -10960,7 +10965,7 @@ struct EMBinaryReader
 
 void ExtentMap::loadFromBinaryBlob(const char* blob)
 {
-    grabEMRBTreeEntryTable(WRITE);
+    grabEMEntryTable(WRITE);
 
     try
     {
@@ -10968,7 +10973,7 @@ void ExtentMap::loadFromBinaryBlob(const char* blob)
     }
     catch (...)
     {
-        releaseEMRBTreeEntryTable(WRITE);
+        releaseEMEntryTable(WRITE);
         throw;
     }
 
@@ -10980,12 +10985,12 @@ void ExtentMap::loadFromBinaryBlob(const char* blob)
     catch (...)
     {
         releaseFreeList(WRITE);
-        releaseEMRBTreeEntryTable(WRITE);
+        releaseEMEntryTable(WRITE);
         throw;
     }
 
     releaseFreeList(WRITE);
-    releaseEMRBTreeEntryTable(WRITE);
+    releaseEMEntryTable(WRITE);
 }
 
 template <typename T> void ExtentMap::load(T* in)
@@ -11028,7 +11033,7 @@ void ExtentMap::save(const string& filename)
 
 #endif
 
-    grabEMRBTreeEntryTable(READ);
+    grabEMEntryTable(READ);
 
     try
     {
@@ -11036,15 +11041,15 @@ void ExtentMap::save(const string& filename)
     }
     catch (...)
     {
-        releaseEMRBTreeEntryTable(READ);
+        releaseEMEntryTable(READ);
         throw;
     }
 
-    if (fEMShminfo->currentSize == 0)
+    if (fEMRBTreeShminfo->currentSize == 0)
     {
         log("ExtentMap::save(): got request to save an empty BRM");
         releaseFreeList(READ);
-        releaseEMRBTreeEntryTable(READ);
+        releaseEMEntryTable(READ);
         throw runtime_error("ExtentMap::save(): got request to save an empty BRM");
     }
 
@@ -11057,7 +11062,7 @@ void ExtentMap::save(const string& filename)
     {
         log_errno("ExtentMap::save(): open");
         releaseFreeList(READ);
-        releaseEMRBTreeEntryTable(READ);
+        releaseEMEntryTable(READ);
         throw ios_base::failure("ExtentMap::save(): open failed. Check the error log.");
     }
 
@@ -11078,7 +11083,7 @@ void ExtentMap::save(const string& filename)
     catch (...)
     {
         releaseFreeList(READ);
-        releaseEMRBTreeEntryTable(READ);
+        releaseEMEntryTable(READ);
         throw;
     }
 
@@ -11095,7 +11100,7 @@ void ExtentMap::save(const string& filename)
             if (err < 0)
             {
                 releaseFreeList(READ);
-                releaseEMRBTreeEntryTable(READ);
+                releaseEMEntryTable(READ);
                 throw ios_base::failure("ExtentMap::save(): write failed. Check the error log.");
             }
             progress += err;
@@ -11111,75 +11116,17 @@ void ExtentMap::save(const string& filename)
         if (err < 0)
         {
             releaseFreeList(READ);
-            releaseEMRBTreeEntryTable(READ);
+            releaseEMEntryTable(READ);
             throw ios_base::failure("ExtentMap::save(): write failed. Check the error log.");
         }
         progress += err;
     }
 
     releaseFreeList(READ);
-    releaseEMRBTreeEntryTable(READ);
+    releaseEMEntryTable(READ);
 }
 
-/* always returns holding the EM lock, and with the EM seg mapped */
 void ExtentMap::grabEMEntryTable(OPS op)
-{
-    boost::mutex::scoped_lock lk(mutex);
-
-    if (op == READ)
-        fEMShminfo = fMST.getTable_read(MasterSegmentTable::EMTable);
-    else
-    {
-        fEMShminfo = fMST.getTable_write(MasterSegmentTable::EMTable);
-        emLocked = true;
-    }
-
-    if (!fPExtMapImpl || fPExtMapImpl->key() != (unsigned)fEMShminfo->tableShmkey)
-    {
-        if (fExtentMap != NULL)
-        {
-            fExtentMap = NULL;
-        }
-
-        if (fEMShminfo->allocdSize == 0)
-        {
-            if (op == READ)
-            {
-                fMST.getTable_upgrade(MasterSegmentTable::EMTable);
-                emLocked = true;
-
-                if (fEMShminfo->allocdSize == 0)
-                    growEMShmseg();
-
-                emLocked = false;	// has to be done holding the write lock
-                fMST.getTable_downgrade(MasterSegmentTable::EMTable);
-            }
-            else
-                growEMShmseg();
-        }
-        else
-        {
-            fPExtMapImpl = ExtentMapImpl::makeExtentMapImpl(fEMShminfo->tableShmkey, 0);
-
-            ASSERT(fPExtMapImpl);
-
-            if (r_only)
-                fPExtMapImpl->makeReadOnly();
-
-            fExtentMap = fPExtMapImpl->get();
-
-            if (fExtentMap == NULL)
-            {
-                log_errno("ExtentMap::grabEMEntryTable(): shmat");
-                throw runtime_error("ExtentMap::grabEMEntryTable(): shmat failed.  Check the error log.");
-            }
-        }
-    }
-    else
-        fExtentMap = fPExtMapImpl->get();
-}
-
-void ExtentMap::grabEMRBTreeEntryTable(OPS op)
 {
     boost::mutex::scoped_lock lk(mutex);
 
@@ -11188,7 +11135,7 @@ void ExtentMap::grabEMRBTreeEntryTable(OPS op)
     else
     {
         fEMRBTreeShminfo = fMST.getTable_write(MasterSegmentTable::EMRBTreeTable);
-        emRBTreeLocked = true;
+        emLocked = true;
     }
 
     if (!fPExtMapRBTreeImpl || fPExtMapRBTreeImpl->key() != (uint32_t) fEMRBTreeShminfo->tableShmkey)
@@ -11203,18 +11150,18 @@ void ExtentMap::grabEMRBTreeEntryTable(OPS op)
             if (op == READ)
             {
                 fMST.getTable_upgrade(MasterSegmentTable::EMRBTreeTable);
-                emRBTreeLocked = true;
+                emLocked = true;
 
                 if (fEMRBTreeShminfo->allocdSize == 0)
-                    growEMRBTreeShmseg();
+                    growEMShmseg();
 
                 // Has to be done holding the write lock.
-                emRBTreeLocked = false;
+                emLocked = false;
                 fMST.getTable_downgrade(MasterSegmentTable::EMRBTreeTable);
             }
             else
             {
-                growEMRBTreeShmseg();
+                growEMShmseg();
             }
         }
         else
@@ -11313,28 +11260,10 @@ void ExtentMap::grabFreeList(OPS op)
 void ExtentMap::releaseEMEntryTable(OPS op)
 {
     if (op == READ)
-        fMST.releaseTable_read(MasterSegmentTable::EMTable);
-    else
-    {
-        /*
-           Note: Technically we should mark it unlocked after it's unlocked,
-           however, that's a race condition.  The only reason the up operation
-           here will fail is if the underlying semaphore doesn't exist anymore
-           or there is a locking logic error somewhere else.  Either way,
-           declaring the EM unlocked here is OK.  Same with all similar assignments.
-         */
-        emLocked = false;
-        fMST.releaseTable_write(MasterSegmentTable::EMTable);
-    }
-}
-
-void ExtentMap::releaseEMRBTreeEntryTable(OPS op)
-{
-    if (op == READ)
         fMST.releaseTable_read(MasterSegmentTable::EMRBTreeTable);
     else
     {
-        emRBTreeLocked = false;
+        emLocked = false;
         fMST.releaseTable_write(MasterSegmentTable::EMRBTreeTable);
     }
 }
@@ -11350,25 +11279,7 @@ void ExtentMap::releaseFreeList(OPS op)
     }
 }
 
-key_t ExtentMap::chooseEMShmkey()
-{
-    int fixedKeys = 1;
-    key_t ret;
-
-    if (fEMShminfo->tableShmkey + 1 ==
-            (key_t)(fShmKeys.KEYRANGE_EXTENTMAP_BASE + fShmKeys.KEYRANGE_SIZE - 1) ||
-        (unsigned) fEMShminfo->tableShmkey < fShmKeys.KEYRANGE_EXTENTMAP_BASE)
-        ret = fShmKeys.KEYRANGE_EXTENTMAP_BASE + fixedKeys;
-    else
-        ret = fEMShminfo->tableShmkey + 1;
-
-    return ret;
-}
-
-key_t ExtentMap::chooseEMRBTreeShmkey()
-{
-    return (key_t)(fShmKeys.KEYRANGE_EXTENTMAP_RB_TREE_BASE + 1);
-}
+key_t ExtentMap::chooseEMShmkey() { return (key_t)(fShmKeys.KEYRANGE_EXTENTMAP_RB_TREE_BASE + 1); }
 
 key_t ExtentMap::chooseFLShmkey()
 {
@@ -11385,48 +11296,12 @@ key_t ExtentMap::chooseFLShmkey()
 
 /* Must be called holding the EM write lock
    Returns with the new shmseg mapped */
-void ExtentMap::growEMShmseg(size_t nrows)
-{
-    size_t allocSize;
-    key_t newshmkey;
-
-    if (fEMShminfo->allocdSize == 0)
-        allocSize = EM_INITIAL_SIZE;
-    else
-        allocSize = fEMShminfo->allocdSize + EM_INCREMENT;
-
-    newshmkey = chooseEMShmkey();
-    ASSERT((allocSize == EM_INITIAL_SIZE && !fPExtMapImpl) || fPExtMapImpl);
-
-    //Use the larger of the calculated value or the specified value
-    allocSize = max(allocSize, nrows * sizeof(EMEntry));
-
-    if (!fPExtMapImpl)
-    {
-        fPExtMapImpl = ExtentMapImpl::makeExtentMapImpl(newshmkey, allocSize, r_only);
-    }
-    else
-    {
-        fPExtMapImpl->grow(newshmkey, allocSize);
-    }
-
-    fEMShminfo->tableShmkey = newshmkey;
-    fEMShminfo->allocdSize = allocSize;
-
-    if (r_only)
-        fPExtMapImpl->makeReadOnly();
-
-    fExtentMap = fPExtMapImpl->get();
-}
-
-/* Must be called holding the EM write lock
-   Returns with the new shmseg mapped */
-void ExtentMap::growEMRBTreeShmseg(size_t size)
+void ExtentMap::growEMShmseg(size_t size)
 {
     size_t allocSize;
 
     if (fEMRBTreeShminfo->tableShmkey == 0)
-        fEMRBTreeShminfo->tableShmkey = chooseEMRBTreeShmkey();
+        fEMRBTreeShminfo->tableShmkey = chooseEMShmkey();
 
     if (fEMRBTreeShminfo->allocdSize == 0)
         allocSize = EM_RB_TREE_INITIAL_SIZE;
@@ -11518,7 +11393,7 @@ int ExtentMap::lookup(LBID_t lbid, LBID_t& firstLbid, LBID_t& lastLbid)
 
 #endif
 
-    grabEMRBTreeEntryTable(READ);
+    grabEMEntryTable(READ);
 
     auto emIt = findByLBID(lbid);
     if (emIt == fExtentMapRBTree->end())
@@ -11532,13 +11407,13 @@ int ExtentMap::lookup(LBID_t lbid, LBID_t& firstLbid, LBID_t& lastLbid)
             {
                 firstLbid = emEntry.range.start;
                 lastLbid = lastBlock;
-                releaseEMRBTreeEntryTable(READ);
+                releaseEMEntryTable(READ);
                 return 0;
             }
         }
     }
 
-    releaseEMRBTreeEntryTable(READ);
+    releaseEMEntryTable(READ);
     return -1;
 }
 
@@ -11585,7 +11460,7 @@ int ExtentMap::lookupLocal(LBID_t lbid, int& OID, uint16_t& dbRoot, uint32_t& pa
         throw invalid_argument(oss.str());
     }
 
-    grabEMRBTreeEntryTable(READ);
+    grabEMEntryTable(READ);
 
     auto emIt = findByLBID(lbid);
     if (emIt == fExtentMapRBTree->end())
@@ -11607,13 +11482,13 @@ int ExtentMap::lookupLocal(LBID_t lbid, int& OID, uint16_t& dbRoot, uint32_t& pa
                 offset = lbid - emEntry.range.start;
                 fileBlockOffset = emEntry.blockOffset + offset;
 
-                releaseEMRBTreeEntryTable(READ);
+                releaseEMEntryTable(READ);
                 return 0;
             }
         }
     }
 
-    releaseEMRBTreeEntryTable(READ);
+    releaseEMEntryTable(READ);
     return -1;
 }
 
@@ -11642,7 +11517,7 @@ int ExtentMap::lookupLocal(int OID, uint32_t partitionNum, uint16_t segmentNum,
         throw invalid_argument("ExtentMap::lookup(): OID and FBO must be >= 0");
     }
 
-    grabEMRBTreeEntryTable(READ);
+    grabEMEntryTable(READ);
 
     for (auto emIt = fExtentMapRBTree->begin(), end = fExtentMapRBTree->end(); emIt != end; ++emIt)
     {
@@ -11656,12 +11531,12 @@ int ExtentMap::lookupLocal(int OID, uint32_t partitionNum, uint16_t segmentNum,
             offset = fileBlockOffset - emEntry.blockOffset;
             LBID = emEntry.range.start + offset;
 
-            releaseEMRBTreeEntryTable(READ);
+            releaseEMEntryTable(READ);
             return 0;
         }
     }
 
-    releaseEMRBTreeEntryTable(READ);
+    releaseEMEntryTable(READ);
     return -1;
 }
 
@@ -11690,7 +11565,7 @@ int ExtentMap::lookupLocal_DBroot(int OID, uint16_t dbroot, uint32_t partitionNu
         throw invalid_argument("ExtentMap::lookup(): OID and FBO must be >= 0");
     }
 
-    grabEMRBTreeEntryTable(READ);
+    grabEMEntryTable(READ);
 
     for (auto emIt = fExtentMapRBTree->begin(), end = fExtentMapRBTree->end(); emIt != end; ++emIt)
     {
@@ -11705,12 +11580,12 @@ int ExtentMap::lookupLocal_DBroot(int OID, uint16_t dbroot, uint32_t partitionNu
 
             offset = fileBlockOffset - emEntry.blockOffset;
             LBID = emEntry.range.start + offset;
-            releaseEMRBTreeEntryTable(READ);
+            releaseEMEntryTable(READ);
             return 0;
         }
     }
 
-    releaseEMRBTreeEntryTable(READ);
+    releaseEMEntryTable(READ);
     return -1;
 }
 
@@ -11744,7 +11619,7 @@ int ExtentMap::lookupLocalStartLbid(int OID, uint32_t partitionNum, uint16_t seg
                                "OID and FBO must be >= 0");
     }
 
-    grabEMRBTreeEntryTable(READ);
+    grabEMEntryTable(READ);
 
     for (auto emIt = fExtentMapRBTree->begin(), end = fExtentMapRBTree->end(); emIt != end; ++emIt)
     {
@@ -11755,12 +11630,12 @@ int ExtentMap::lookupLocalStartLbid(int OID, uint32_t partitionNum, uint16_t seg
                 (emEntry.blockOffset + (static_cast<LBID_t>(emEntry.range.size) * 1024) - 1))
         {
             LBID = emEntry.range.start;
-            releaseEMRBTreeEntryTable(READ);
+            releaseEMEntryTable(READ);
             return 0;
         }
     }
 
-    releaseEMRBTreeEntryTable(READ);
+    releaseEMEntryTable(READ);
 
     return -1;
 }
@@ -11885,12 +11760,12 @@ void ExtentMap::createColumnExtentExactFile(int OID, uint32_t colWidth, uint16_t
     // Convert extent size in rows to extent size in 8192-byte blocks.
     // extentRows should be multiple of blocksize (8192).
     const unsigned EXTENT_SIZE = (getExtentRows() * colWidth) / BLOCK_SIZE;
-    grabEMRBTreeEntryTable(WRITE);
+    grabEMEntryTable(WRITE);
     grabFreeList(WRITE);
 
     // FIXME: Make a function call.
-    if (fEMRBTreeShminfo->currentSize + EM_RB_TREE_NODE_SIZE < fEMShminfo->allocdSize)
-        growEMRBTreeShmseg();
+    if (fEMRBTreeShminfo->currentSize + EM_RB_TREE_NODE_SIZE < fEMRBTreeShminfo->allocdSize)
+        growEMShmseg();
 
     //  size is the number of multiples of 1024 blocks.
     //  ex: size=1 --> 1024 blocks
@@ -12037,11 +11912,11 @@ void ExtentMap::createDictStoreExtent(int OID, uint16_t dbRoot, uint32_t partiti
     // extentRows should be multiple of blocksize (8192).
     const unsigned EXTENT_SIZE = (getExtentRows() * DICT_COL_WIDTH) / BLOCK_SIZE;
 
-    grabEMRBTreeEntryTable(WRITE);
+    grabEMEntryTable(WRITE);
     grabFreeList(WRITE);
 
     if (fEMRBTreeShminfo->currentSize + EM_RB_TREE_NODE_SIZE == fEMRBTreeShminfo->allocdSize)
-        growEMRBTreeShmseg();
+        growEMShmseg();
 
 //  size is the number of multiples of 1024 blocks.
 //  ex: size=1 --> 1024 blocks
@@ -12304,7 +12179,7 @@ void ExtentMap::rollbackColumnExtents_DBroot(int oid, bool bDeleteAll, uint16_t 
     uint32_t fboHi = 0;
     uint32_t fboLoPreviousStripe = 0;
 
-    grabEMRBTreeEntryTable(WRITE);
+    grabEMEntryTable(WRITE);
     grabFreeList(WRITE);
 
     for (auto emIt = fExtentMapRBTree->begin(), end = fExtentMapRBTree->end(); emIt != end; ++emIt)
@@ -12489,7 +12364,7 @@ void ExtentMap::rollbackDictStoreExtents_DBroot(int oid, uint16_t dbRoot, uint32
     tr1::unordered_map<uint16_t, pair<uint32_t, uint32_t> >::const_iterator
     segToHwmMapIter;
 
-    grabEMRBTreeEntryTable(WRITE);
+    grabEMEntryTable(WRITE);
     grabFreeList(WRITE);
 
     for (auto emIt = fExtentMapRBTree->begin(), end = fExtentMapRBTree->end(); emIt != end; ++emIt)
@@ -12608,7 +12483,7 @@ void ExtentMap::deleteEmptyColExtents(const ExtentsInfoMap_t& extentsInfo)
 
 #endif
 
-    grabEMRBTreeEntryTable(WRITE);
+    grabEMEntryTable(WRITE);
     grabFreeList(WRITE);
 
     uint32_t fboLo = 0;
@@ -12726,7 +12601,7 @@ void ExtentMap::deleteEmptyDictStoreExtents(const ExtentsInfoMap_t& extentsInfo)
 
 #endif
 
-    grabEMRBTreeEntryTable(WRITE);
+    grabEMEntryTable(WRITE);
     grabFreeList(WRITE);
 
     uint32_t fboLo = 0;
@@ -12846,7 +12721,7 @@ void ExtentMap::deleteOID(int OID)
 
 #endif
 
-    grabEMRBTreeEntryTable(WRITE);
+    grabEMEntryTable(WRITE);
     grabFreeList(WRITE);
 
     for (auto it = fExtentMapRBTree->begin(), end = fExtentMapRBTree->end(); it != end; ++it)
@@ -12881,7 +12756,7 @@ void ExtentMap::deleteOIDs(const OidsMap_t& OIDs)
     }
 
 #endif
-    grabEMRBTreeEntryTable(WRITE);
+    grabEMEntryTable(WRITE);
     grabFreeList(WRITE);
 
     for (auto it = fExtentMapRBTree->begin(), end = fExtentMapRBTree->end(); it != end; ++it)
@@ -13067,7 +12942,7 @@ HWM_t ExtentMap::getLastHWM_DBroot(int OID, uint16_t dbRoot, uint32_t& partition
         throw invalid_argument(oss.str());
     }
 
-    grabEMRBTreeEntryTable(READ);
+    grabEMEntryTable(READ);
 
     for (auto emIt = fExtentMapRBTree->begin(), end = fExtentMapRBTree->end(); emIt != end; ++emIt)
     {
@@ -13096,7 +12971,7 @@ HWM_t ExtentMap::getLastHWM_DBroot(int OID, uint16_t dbRoot, uint32_t& partition
         bFound = true;
     }
 
-    releaseEMRBTreeEntryTable(READ);
+    releaseEMEntryTable(READ);
 
     return hwm;
 }
@@ -13153,7 +13028,7 @@ void ExtentMap::getDbRootHWMInfo(int OID, uint16_t pmNumber, EmDbRootHWMInfo_v& 
         throw invalid_argument(oss.str());
     }
 
-    grabEMRBTreeEntryTable(READ);
+    grabEMEntryTable(READ);
     tr1::unordered_map<uint16_t, EmDbRootHWMInfo>::iterator emIter;
 
     // Searching the array in reverse order should be faster since the last
@@ -13176,7 +13051,7 @@ void ExtentMap::getDbRootHWMInfo(int OID, uint16_t pmNumber, EmDbRootHWMInfo_v& 
 
             EmDbRootHWMInfo& emDbRoot = emIter->second;
             if ((emEntry.status != EXTENTOUTOFSERVICE) && (emEntry.HWM != 0))
-                emDbRoot.totalBlocks += (fExtentMap[i].HWM + 1);
+                emDbRoot.totalBlocks += (emEntry.HWM + 1);
 
             if ((emEntry.partitionNum > emDbRoot.partitionNum) ||
                 ((emEntry.partitionNum == emDbRoot.partitionNum) &&
@@ -13198,7 +13073,7 @@ void ExtentMap::getDbRootHWMInfo(int OID, uint16_t pmNumber, EmDbRootHWMInfo_v& 
         ++i;
     }
 
-    releaseEMRBTreeEntryTable(READ);
+    releaseEMEntryTable(READ);
 
     for (tr1::unordered_map<uint16_t, EmDbRootHWMInfo>::iterator iter =
                 emDbRootMap.begin(); iter != emDbRootMap.end(); ++iter)
@@ -13282,7 +13157,7 @@ void ExtentMap::getExtentState(int OID, uint32_t partitionNum, uint16_t segmentN
         throw invalid_argument(oss.str());
     }
 
-    grabEMRBTreeEntryTable(READ);
+    grabEMEntryTable(READ);
 
     for (auto emIt = fExtentMapRBTree->begin(), end = fExtentMapRBTree->end(); emIt != end; ++emIt)
     {
@@ -13296,7 +13171,7 @@ void ExtentMap::getExtentState(int OID, uint32_t partitionNum, uint16_t segmentN
         }
     }
 
-    releaseEMRBTreeEntryTable(READ);
+    releaseEMEntryTable(READ);
 }
 
 HWM_t ExtentMap::getLocalHWM(int OID, uint32_t partitionNum, uint16_t segmentNum, int& status)
@@ -13336,7 +13211,7 @@ HWM_t ExtentMap::getLocalHWM(int OID, uint32_t partitionNum, uint16_t segmentNum
         throw invalid_argument(oss.str());
     }
 
-    grabEMRBTreeEntryTable(READ);
+    grabEMEntryTable(READ);
 
     for (auto emIt = fExtentMapRBTree->begin(), end = fExtentMapRBTree->end(); emIt != end; ++emIt)
     {
@@ -13350,13 +13225,13 @@ HWM_t ExtentMap::getLocalHWM(int OID, uint32_t partitionNum, uint16_t segmentNum
             if (emEntry.HWM != 0)
             {
                 ret = emEntry.HWM;
-                releaseEMRBTreeEntryTable(READ);
+                releaseEMEntryTable(READ);
                 return ret;
             }
         }
     }
 
-    releaseEMRBTreeEntryTable(READ);
+    releaseEMEntryTable(READ);
 
     if (OIDPartSegExists)
         return 0;
@@ -13410,7 +13285,7 @@ void ExtentMap::setLocalHWM(int OID, uint32_t partitionNum, uint16_t segmentNum,
     uint32_t highestOffset = 0;
 
     if (uselock)
-        grabEMRBTreeEntryTable(WRITE);
+        grabEMEntryTable(WRITE);
 
     for (auto emIt = fExtentMapRBTree->begin(), end = fExtentMapRBTree->end(); emIt != end; ++emIt)
     {
@@ -13466,7 +13341,7 @@ void ExtentMap::setLocalHWM(int OID, uint32_t partitionNum, uint16_t segmentNum,
 
 void ExtentMap::bulkSetHWM(const vector<BulkSetHWMArg>& v, bool firstNode)
 {
-    grabEMRBTreeEntryTable(WRITE);
+    grabEMEntryTable(WRITE);
 
     for (uint32_t i = 0; i < v.size(); i++)
         setLocalHWM(v[i].oid, v[i].partNum, v[i].segNum, v[i].hwm, firstNode, false);
@@ -13500,7 +13375,7 @@ void ExtentMap::bulkUpdateDBRoot(const vector<BulkUpdateDBRootArg>& args)
     for (uint32_t i = 0; i < args.size(); i++)
         sArgs.insert(args[i]);
 
-    grabEMRBTreeEntryTable(WRITE);
+    grabEMEntryTable(WRITE);
 
     for (auto emIt = fExtentMapRBTree->begin(), end = fExtentMapRBTree->end(); emIt != end; ++emIt)
     {
@@ -13536,7 +13411,7 @@ void ExtentMap::getExtents(int OID, vector<struct EMEntry>& entries, bool sorted
         throw invalid_argument(oss.str());
     }
 
-    grabEMRBTreeEntryTable(READ);
+    grabEMEntryTable(READ);
     entries.reserve(fExtentMapRBTree->size());
 
     if (incOutOfService)
@@ -13560,7 +13435,7 @@ void ExtentMap::getExtents(int OID, vector<struct EMEntry>& entries, bool sorted
         }
     }
 
-    releaseEMRBTreeEntryTable(READ);
+    releaseEMEntryTable(READ);
 
     if (sorted)
         sort<vector<struct EMEntry>::iterator>(entries.begin(), entries.end());
@@ -13614,7 +13489,7 @@ void ExtentMap::getExtents_dbroot(int OID, vector<struct EMEntry>& entries, cons
         throw invalid_argument(oss.str());
     }
 
-    grabEMRBTreeEntryTable(READ);
+    grabEMEntryTable(READ);
 
     for (auto emIt = fExtentMapRBTree->begin(), end = fExtentMapRBTree->end(); emIt != end; ++emIt)
     {
@@ -13623,7 +13498,7 @@ void ExtentMap::getExtents_dbroot(int OID, vector<struct EMEntry>& entries, cons
             entries.push_back(emEntry);
     }
 
-    releaseEMRBTreeEntryTable(READ);
+    releaseEMEntryTable(READ);
 }
 
 
@@ -13644,7 +13519,7 @@ void ExtentMap::getExtentCount_dbroot(int OID, uint16_t dbroot, bool incOutOfSer
         throw invalid_argument(oss.str());
     }
 
-    grabEMRBTreeEntryTable(READ);
+    grabEMEntryTable(READ);
 
     if (incOutOfService)
     {
@@ -13668,7 +13543,7 @@ void ExtentMap::getExtentCount_dbroot(int OID, uint16_t dbroot, bool incOutOfSer
         }
     }
 
-    releaseEMRBTreeEntryTable(READ);
+    releaseEMEntryTable(READ);
 }
 
 //------------------------------------------------------------------------------
@@ -13692,7 +13567,7 @@ void ExtentMap::getSysCatDBRoot(OID_t oid, uint16_t& dbRoot)
 #endif
 
     bool bFound = false;
-    grabEMRBTreeEntryTable(READ);
+    grabEMEntryTable(READ);
 
     for (auto emIt = fExtentMapRBTree->begin(), end = fExtentMapRBTree->end(); emIt != end; ++emIt)
     {
@@ -13705,7 +13580,7 @@ void ExtentMap::getSysCatDBRoot(OID_t oid, uint16_t& dbRoot)
         }
     }
 
-    releaseEMRBTreeEntryTable(READ);
+    releaseEMEntryTable(READ);
 
     if (!bFound)
     {
@@ -13753,7 +13628,7 @@ void ExtentMap::deletePartition(const set<OID_t>& oids, const set<LogicalPartiti
 
     int32_t rc = 0;
 
-    grabEMRBTreeEntryTable(WRITE);
+    grabEMEntryTable(WRITE);
     grabFreeList(WRITE);
 
     std::set<LogicalPartition> foundPartitions;
@@ -13823,7 +13698,7 @@ void ExtentMap::markPartitionForDeletion(const set<OID_t>& oids,
 
     int rc = 0;
 
-    grabEMRBTreeEntryTable(WRITE);
+    grabEMEntryTable(WRITE);
 
     set<LogicalPartition> foundPartitions;
     vector<ExtentMapRBTree::iterator> extents;
@@ -13929,7 +13804,7 @@ void ExtentMap::markAllPartitionForDeletion(const set<OID_t>& oids)
 
     set<OID_t>::const_iterator it;
 
-    grabEMRBTreeEntryTable(WRITE);
+    grabEMEntryTable(WRITE);
     for (auto emIt = fExtentMapRBTree->begin(), end = fExtentMapRBTree->end(); emIt != end; ++emIt)
     {
         auto& emEntry = emIt->second;
@@ -13953,7 +13828,7 @@ void ExtentMap::restorePartition(const set<OID_t>& oids, const set<LogicalPartit
         return;
 
     set<OID_t>::const_iterator it;
-    grabEMRBTreeEntryTable(WRITE);
+    grabEMEntryTable(WRITE);
 
     vector<ExtentMapRBTree::iterator> extents;
     set<LogicalPartition> foundPartitions;
@@ -14040,7 +13915,7 @@ void ExtentMap::getOutOfServicePartitions(OID_t oid, set<LogicalPartition>& part
         throw invalid_argument(oss.str());
     }
 
-    grabEMRBTreeEntryTable(READ);
+    grabEMEntryTable(READ);
 
     for (auto emIt = fExtentMapRBTree->begin(), end = fExtentMapRBTree->end(); emIt != end; ++emIt)
     {
@@ -14053,7 +13928,7 @@ void ExtentMap::getOutOfServicePartitions(OID_t oid, set<LogicalPartition>& part
         }
     }
 
-    releaseEMRBTreeEntryTable(READ);
+    releaseEMEntryTable(READ);
 }
 
 //------------------------------------------------------------------------------
@@ -14073,7 +13948,7 @@ void ExtentMap::deleteDBRoot(uint16_t dbroot)
 
 #endif
 
-    grabEMRBTreeEntryTable(WRITE);
+    grabEMEntryTable(WRITE);
     grabFreeList(WRITE);
 
     for (auto it = fExtentMapRBTree->begin(), end = fExtentMapRBTree->end(); it != end; ++it)
@@ -14100,9 +13975,9 @@ bool ExtentMap::isDBRootEmpty(uint16_t dbroot)
 #endif
 
     bool bEmpty = true;
-    grabEMRBTreeEntryTable(READ);
+    grabEMEntryTable(READ);
 
-    if (fEMShminfo->currentSize == 0)
+    if (fEMRBTreeShminfo->currentSize == 0)
     {
         throw runtime_error(
             "ExtentMap::isDBRootEmpty() shared memory not loaded");
@@ -14117,7 +13992,7 @@ bool ExtentMap::isDBRootEmpty(uint16_t dbroot)
         }
     }
 
-    releaseEMRBTreeEntryTable(READ);
+    releaseEMEntryTable(READ);
 
     return bEmpty;
 }
@@ -14175,7 +14050,7 @@ void ExtentMap::lookup(OID_t OID, LBIDRange_v& ranges)
         throw invalid_argument(oss.str());
     }
 
-    grabEMRBTreeEntryTable(READ);
+    grabEMEntryTable(READ);
 
     for (auto it = fExtentMapRBTree->begin(), end = fExtentMapRBTree->end(); it != end; ++it)
     {
@@ -14188,7 +14063,7 @@ void ExtentMap::lookup(OID_t OID, LBIDRange_v& ranges)
         }
     }
 
-    releaseEMRBTreeEntryTable(READ);
+    releaseEMEntryTable(READ);
 }
 
 int ExtentMap::checkConsistency()
@@ -14479,9 +14354,6 @@ void ExtentMap::finishChanges()
 
     if (emLocked)
         releaseEMEntryTable(WRITE);
-
-    if (emRBTreeLocked)
-        releaseEMRBTreeEntryTable(WRITE);
 }
 
 const bool* ExtentMap::getEMFLLockStatus()
@@ -14653,7 +14525,7 @@ void ExtentMap::getPmDbRoots( int pm, vector<int>& dbRootList )
 vector<InlineLBIDRange> ExtentMap::getFreeListEntries()
 {
     vector<InlineLBIDRange> v;
-    grabEMRBTreeEntryTable(READ);
+    grabEMEntryTable(READ);
     grabFreeList(READ);
 
     int allocdSize = fFLShminfo->allocdSize / sizeof(InlineLBIDRange);
@@ -14662,13 +14534,13 @@ vector<InlineLBIDRange> ExtentMap::getFreeListEntries()
         v.push_back(fFreeList[i]);
 
     releaseFreeList(READ);
-    releaseEMRBTreeEntryTable(READ);
+    releaseEMEntryTable(READ);
     return v;
 }
 
 void ExtentMap::dumpTo(ostream& os)
 {
-    grabEMRBTreeEntryTable(READ);
+    grabEMEntryTable(READ);
 
     for (auto emIt = fExtentMapRBTree->begin(), end = fExtentMapRBTree->end(); emIt != end; ++emIt)
     {
@@ -14692,7 +14564,7 @@ void ExtentMap::dumpTo(ostream& os)
         }
     }
 
-    releaseEMRBTreeEntryTable(READ);
+    releaseEMEntryTable(READ);
 }
 
 /*int ExtentMap::physicalPartitionNum(const set<OID_t>& oids,

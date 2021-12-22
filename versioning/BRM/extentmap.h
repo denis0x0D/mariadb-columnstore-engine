@@ -378,7 +378,9 @@ private:
  * The Extent Map shared data should be implemented in a more scalable
  * structure such as a tree or hash table.
  */
-#define RBTREE
+#define RBTREE_EM
+//#define DEFAULT_EM
+
 #ifdef DEFAULT_EM
 class ExtentMap : public Undoable
 {
@@ -1205,7 +1207,7 @@ private:
 };
 #endif
 
-#ifdef RBTREE
+#ifdef RBTREE_EM
 class ExtentMap : public Undoable
 {
 public:
@@ -1778,8 +1780,8 @@ public:
     {
         if (fEMRBTreeShminfo == 0)
         {
-            grabEMRBTreeEntryTable(READ);
-            releaseEMRBTreeEntryTable(READ);
+            grabEMEntryTable(READ);
+            releaseEMEntryTable(READ);
         }
 
         return (fEMRBTreeShminfo->currentSize == 0);
@@ -1800,7 +1802,7 @@ public:
 #endif
 
 private:
-    static const size_t EM_INCREMENT_ROWS = 100;
+    static const size_t EM_INCREMENT_ROWS = 10000;
     static const size_t EM_INITIAL_SIZE = EM_INCREMENT_ROWS * 10 * sizeof(EMEntry);
     // FIXME: Make sure this a right size of the node.
     static const size_t EM_RB_TREE_NODE_SIZE = sizeof(EMEntry) + 3 * sizeof(uint64_t);
@@ -1816,14 +1818,15 @@ private:
     ExtentMap(const ExtentMap& em);
     ExtentMap& operator=(const ExtentMap& em);
 
-    EMEntry* fExtentMap;
     ExtentMapRBTree* fExtentMapRBTree;
     InlineLBIDRange* fFreeList;
+
     key_t fCurrentEMShmkey;
     key_t fCurrentFLShmkey;
-    MSTEntry* fEMShminfo;
+
     MSTEntry* fEMRBTreeShminfo;
     MSTEntry* fFLShminfo;
+
     const MasterSegmentTable fMST;
     bool r_only;
     typedef std::tr1::unordered_map<int, oam::DBRootConfigList*> PmDbRootMap_t;
@@ -1831,8 +1834,10 @@ private:
     time_t fCacheTime; // timestamp associated with config cache
 
     int numUndoRecords;
-    bool flLocked, emLocked;
-    bool emRBTreeLocked;
+
+    bool flLocked;
+    bool emLocked;
+
     static boost::mutex mutex; // @bug5355 - made mutex static
     boost::mutex fConfigCacheMutex; // protect access to Config Cache
 
@@ -1872,23 +1877,19 @@ private:
     void reserveLBIDRange(LBID_t start, uint8_t size);
 
     // Choose key.
-    key_t chooseEMShmkey();  //see the code for how keys are segmented
     key_t chooseFLShmkey();  //see the code for how keys are segmented
-    key_t chooseEMRBTreeShmkey();
+    key_t chooseEMShmkey();
 
     // Grab table.
     void grabEMEntryTable(OPS op);
-    void grabEMRBTreeEntryTable(OPS op);
     void grabFreeList(OPS op);
 
     // Release table.
     void releaseEMEntryTable(OPS op);
-    void releaseEMRBTreeEntryTable(OPS op);
     void releaseFreeList(OPS op);
 
     // Grow memory.
     void growEMShmseg(size_t nrows = 0);
-    void growEMRBTreeShmseg(size_t nrows = 0);
     void growFLShmseg();
 
     // Finish changes.
@@ -1905,8 +1906,6 @@ private:
 
     int _markInvalid(const LBID_t lbid,
                      const execplan::CalpontSystemCatalog::ColDataType colDataType);
-    int _markInvalidRBTree(const LBID_t lbid,
-                           const execplan::CalpontSystemCatalog::ColDataType colDataType);
 
     ExtentMapRBTree::iterator findByLBID(const LBID_t lbid);
 
@@ -1921,7 +1920,6 @@ private:
     template <class T> void loadVersion4or5(T* in, bool upgradeV4ToV5);
 
     ExtentMapRBTreeImpl* fPExtMapRBTreeImpl;
-    ExtentMapImpl* fPExtMapImpl;
     FreeListImpl* fPFreeListImpl;
 };
 #endif
