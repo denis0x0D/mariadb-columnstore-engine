@@ -11295,7 +11295,7 @@ void ExtentMap::releaseFreeList(OPS op)
     }
 }
 
-key_t ExtentMap::chooseEMShmkey() { return (key_t)(fShmKeys.KEYRANGE_EXTENTMAP_RB_TREE_BASE + 1); }
+key_t ExtentMap::chooseEMShmkey() { return (key_t)(13); }
 
 key_t ExtentMap::chooseFLShmkey()
 {
@@ -13281,6 +13281,8 @@ HWM_t ExtentMap::getLocalHWM(int OID, uint32_t partitionNum, uint16_t segmentNum
 void ExtentMap::setLocalHWM(int OID, uint32_t partitionNum, uint16_t segmentNum, HWM_t newHWM,
                             bool firstNode, bool uselock)
 {
+    std::cout << "setLocalHWM "
+              << "for OID " << OID << std::endl;
 #ifdef BRM_INFO
 
     if (fDebug)
@@ -13305,8 +13307,8 @@ void ExtentMap::setLocalHWM(int OID, uint32_t partitionNum, uint16_t segmentNum,
 
 #endif
 
-    ExtentMapRBTree::iterator lastIt = fExtentMapRBTree->end();
-    ExtentMapRBTree::iterator oldIt = fExtentMapRBTree->end();
+    EMEntry* lastEm = nullptr;
+    EMEntry* prevEm = nullptr;
     uint32_t highestOffset = 0;
 
     if (uselock)
@@ -13314,7 +13316,7 @@ void ExtentMap::setLocalHWM(int OID, uint32_t partitionNum, uint16_t segmentNum,
 
     for (auto emIt = fExtentMapRBTree->begin(), end = fExtentMapRBTree->end(); emIt != end; ++emIt)
     {
-        const auto &emEntry = emIt->second;
+        auto& emEntry = emIt->second;
         if ((emEntry.fileID == OID) && (emEntry.partitionNum == partitionNum) &&
             (emEntry.segmentNum == segmentNum))
         {
@@ -13322,26 +13324,26 @@ void ExtentMap::setLocalHWM(int OID, uint32_t partitionNum, uint16_t segmentNum,
             if (emEntry.blockOffset >= highestOffset)
             {
                 highestOffset = emEntry.blockOffset;
-                lastIt = emIt;
+                lastEm = &emEntry;
             }
 
             // Find previous HWM extent.
             if (emEntry.HWM != 0)
-                oldIt = emIt;
+                prevEm = &emEntry;
         }
     }
 
-    if (lastIt == fExtentMapRBTree->end())
+    if (lastEm == nullptr)
     {
         ostringstream oss;
         oss << "ExtentMap::setLocalHWM(): Bad OID/partition/segment argument; "
-            "no extent entries for OID " << OID << "; partition " <<
-            partitionNum << "; segment " << segmentNum << endl;
+               "no extent entries for OID "
+            << OID << "; partition " << partitionNum << "; segment " << segmentNum << endl;
         log(oss.str(), logging::LOG_TYPE_CRITICAL);
         throw invalid_argument(oss.str());
     }
 
-    if (newHWM >= (lastIt->second.blockOffset + lastIt->second.range.size * 1024))
+    if (newHWM >= (lastEm->blockOffset + lastEm->range.size * 1024))
     {
         ostringstream oss;
         oss << "ExtentMap::setLocalHWM(): "
@@ -13353,15 +13355,18 @@ void ExtentMap::setLocalHWM(int OID, uint32_t partitionNum, uint16_t segmentNum,
 
     // Save HWM in last extent for this segment file; and mark as AVAILABLE
 //    makeUndoRecord(&fExtentMap[lastExtentIndex], sizeof(EMEntry));
-    lastIt->second.HWM = newHWM;
-    lastIt->second.status = EXTENTAVAILABLE;
+    lastEm->HWM = newHWM;
+    lastEm->status = EXTENTAVAILABLE;
 
     // Reset HWM in old HWM extent to 0
-    if ((oldIt != fExtentMapRBTree->end()) && (oldIt != lastIt))
+    // FIXME: Why this code does not work?
+    if ((prevEm != nullptr) && (prevEm != lastEm))
     {
-//        makeUndoRecord(&fExtentMap[oldHWMExtentIndex], sizeof(EMEntry));
-          oldIt->second.HWM = 0;
+        //        makeUndoRecord(&fExtentMap[oldHWMExtentIndex], sizeof(EMEntry));
+        prevEm->HWM = 0;
     }
+
+    std::cout << "setLocalHWM end " << std::endl;
 }
 
 void ExtentMap::bulkSetHWM(const vector<BulkSetHWMArg>& v, bool firstNode)
@@ -14566,6 +14571,7 @@ vector<InlineLBIDRange> ExtentMap::getFreeListEntries()
 
 void ExtentMap::dumpTo(ostream& os)
 {
+    std::cout << "dumpTo start " << std::endl;
     grabEMEntryTable(READ);
 
     for (auto emIt = fExtentMapRBTree->begin(), end = fExtentMapRBTree->end(); emIt != end; ++emIt)
@@ -14591,6 +14597,7 @@ void ExtentMap::dumpTo(ostream& os)
     }
 
     releaseEMEntryTable(READ);
+    std::cout << "dumpTO end " << std::endl;
 }
 
 /*int ExtentMap::physicalPartitionNum(const set<OID_t>& oids,
