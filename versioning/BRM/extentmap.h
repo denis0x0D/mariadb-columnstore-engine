@@ -1870,7 +1870,7 @@ private:
     bool isValidCPRange(const T& max, const T& min, execplan::CalpontSystemCatalog::ColDataType type) const;
 
     // Delete extent.
-    void deleteExtent(ExtentMapRBTree::iterator it);
+    ExtentMapRBTree::iterator deleteExtent(ExtentMapRBTree::iterator it);
 
     LBID_t getLBIDsFromFreeList(uint32_t size);
     // Used by load() to allocate pre-existing LBIDs.

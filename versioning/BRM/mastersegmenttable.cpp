@@ -196,6 +196,7 @@ void MasterSegmentTable::initMSTData()
 
 MSTEntry* MasterSegmentTable::getTable_read(int num, bool block) const
 {
+    std::cout << "getTable_read start " << std::endl;
     if (num < 0 || num > nTables - 1)
         throw std::invalid_argument("ControllerSegmentTable::getTable_read()");
 
@@ -211,11 +212,15 @@ MSTEntry* MasterSegmentTable::getTable_read(int num, bool block) const
     else
         rwlock[num]->read_lock();
 
+    std::cout << "getTable_read end " << std::endl;
+
     return &fShmDescriptors[num];
 }
 
 MSTEntry* MasterSegmentTable::getTable_write(int num, bool block) const
 {
+    std::cout << "getTable_write start " << std::endl;
+
     if (num < 0 || num > nTables - 1)
         throw std::invalid_argument("ControllerSegmentTable::getTable_write()");
 
@@ -230,6 +235,8 @@ MSTEntry* MasterSegmentTable::getTable_write(int num, bool block) const
         }
     else
         rwlock[num]->write_lock();
+
+    std::cout << "getTable_write end " << std::endl;
 
     return &fShmDescriptors[num];
 }

@@ -246,8 +246,11 @@ BRMManagedShmImpl::BRMManagedShmImpl(unsigned key, off_t size, bool readOnly)
 
     try
     {
+        bi::permissions perms;
+        perms.set_unrestricted();
+
         fShmSegment = new boost::interprocess::managed_shared_memory(
-            boost::interprocess::open_or_create, keyName.c_str(), fSize);
+            boost::interprocess::open_or_create, keyName.c_str(), fSize, 0, perms);
     }
     catch (exception& e)
     {

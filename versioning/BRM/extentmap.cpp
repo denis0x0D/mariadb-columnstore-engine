@@ -3087,7 +3087,6 @@ key_t ExtentMap::chooseFLShmkey()
    Returns with the new shmseg mapped */
 void ExtentMap::growEMShmseg(size_t nrows)
 {
-    std::cout << "void ExtentMap::growEMShmseg(size_t nrows) " << std::endl;
 
     size_t allocSize;
     key_t newshmkey;
@@ -11027,6 +11026,7 @@ template <typename T> void ExtentMap::load(T* in)
     }
     catch (...)
     {
+        std::cout << "Cannot load em " << std::endl;
         throw;
     }
 }
@@ -11141,13 +11141,13 @@ void ExtentMap::save(const string& filename)
 void ExtentMap::grabEMEntryTable(OPS op)
 {
     std::cout << "grabEMEntryTable " << std::endl;
-//    boost::mutex::scoped_lock lk(mutex);
+    boost::mutex::scoped_lock lk(mutex);
 
     if (op == READ)
-        fEMRBTreeShminfo = fMST.getTable_read(MasterSegmentTable::EMRBTreeTable);
+        fEMRBTreeShminfo = fMST.getTable_read(MasterSegmentTable::EMTable);
     else
     {
-        fEMRBTreeShminfo = fMST.getTable_write(MasterSegmentTable::EMRBTreeTable);
+        fEMRBTreeShminfo = fMST.getTable_write(MasterSegmentTable::EMTable);
         emLocked = true;
     }
 
@@ -11162,7 +11162,7 @@ void ExtentMap::grabEMEntryTable(OPS op)
         {
             if (op == READ)
             {
-                fMST.getTable_upgrade(MasterSegmentTable::EMRBTreeTable);
+                fMST.getTable_upgrade(MasterSegmentTable::EMTable);
                 emLocked = true;
 
                 if (fEMRBTreeShminfo->allocdSize == 0)
@@ -11170,7 +11170,7 @@ void ExtentMap::grabEMEntryTable(OPS op)
 
                 // Has to be done holding the write lock.
                 emLocked = false;
-                fMST.getTable_downgrade(MasterSegmentTable::EMRBTreeTable);
+                fMST.getTable_downgrade(MasterSegmentTable::EMTable);
             }
             else
             {
@@ -11276,11 +11276,11 @@ void ExtentMap::releaseEMEntryTable(OPS op)
 {
     std::cout << "releaseEMEntryTable " << std::endl;
     if (op == READ)
-        fMST.releaseTable_read(MasterSegmentTable::EMRBTreeTable);
+        fMST.releaseTable_read(MasterSegmentTable::EMTable);
     else
     {
         emLocked = false;
-        fMST.releaseTable_write(MasterSegmentTable::EMRBTreeTable);
+        fMST.releaseTable_write(MasterSegmentTable::EMTable);
     }
 }
 
@@ -11937,7 +11937,7 @@ void ExtentMap::createDictStoreExtent(int OID, uint16_t dbRoot, uint32_t partiti
     grabEMEntryTable(WRITE);
     grabFreeList(WRITE);
 
-    if (fEMRBTreeShminfo->currentSize + EM_RB_TREE_NODE_SIZE == fEMRBTreeShminfo->allocdSize)
+    if (fEMRBTreeShminfo->currentSize + EM_RB_TREE_NODE_SIZE >= fEMRBTreeShminfo->allocdSize)
         growEMShmseg();
 
 //  size is the number of multiples of 1024 blocks.
@@ -12217,7 +12217,7 @@ void ExtentMap::rollbackColumnExtents_DBroot(int oid, bool bDeleteAll, uint16_t 
             // partition number, segment number, or HWM
             if (bDeleteAll)
             {
-                deleteExtent(emIt); // case 0
+                emIt = deleteExtent(emIt); // case 0
                 continue;
             }
 
@@ -12254,13 +12254,13 @@ void ExtentMap::rollbackColumnExtents_DBroot(int oid, bool bDeleteAll, uint16_t 
 
             if (emEntry.partitionNum > partitionNum)
             {
-                deleteExtent(emIt); // case 1
+                emIt = deleteExtent(emIt); // case 1
             }
             else if (emEntry.partitionNum == partitionNum)
             {
                 if (emEntry.blockOffset > fboHi)
                 {
-                    deleteExtent(emIt); // case 2
+                    emIt = deleteExtent(emIt); // case 2
                 }
                 else if (emEntry.blockOffset < fboLo)
                 {
@@ -12281,7 +12281,7 @@ void ExtentMap::rollbackColumnExtents_DBroot(int oid, bool bDeleteAll, uint16_t 
                 {
                     if (emEntry.segmentNum > segmentNum)
                     {
-                        deleteExtent(emIt); // case 4A
+                        emIt = deleteExtent(emIt); // case 4A
                     }
                     else if (emEntry.segmentNum < segmentNum)
                     {
@@ -12402,7 +12402,7 @@ void ExtentMap::rollbackDictStoreExtents_DBroot(int oid, uint16_t dbRoot, uint32
             // partition number, segment number, or HWM
             if (bDeleteAll)
             {
-                deleteExtent(emIt); // case 0
+                emIt = deleteExtent(emIt); // case 0
                 continue;
             }
 
@@ -12436,7 +12436,7 @@ void ExtentMap::rollbackDictStoreExtents_DBroot(int oid, uint16_t dbRoot, uint32
 
             if (emEntry.partitionNum > partitionNum)
             {
-                deleteExtent(emIt); // case 1
+                emIt = deleteExtent(emIt); // case 1
             }
             else if (emEntry.partitionNum == partitionNum)
             {
@@ -12445,7 +12445,7 @@ void ExtentMap::rollbackDictStoreExtents_DBroot(int oid, uint16_t dbRoot, uint32
 
                 if (segToHwmMapIter == segToHwmMap.end())
                 {
-                    deleteExtent(emIt); // case 2
+                    emIt = deleteExtent(emIt); // case 2
                 }
                 else   // segment number in the map of files to keep
                 {
@@ -12468,7 +12468,7 @@ void ExtentMap::rollbackDictStoreExtents_DBroot(int oid, uint16_t dbRoot, uint32
                     }
                     else
                     {
-                        deleteExtent(emIt); // case 3C
+                        emIt = deleteExtent(emIt); // case 3C
                     }
                 }
             }
@@ -12557,13 +12557,13 @@ void ExtentMap::deleteEmptyColExtents(const ExtentsInfoMap_t& extentsInfo)
 
             if (emEntry.partitionNum > id->second.partitionNum)
             {
-                deleteExtent(emIt); // case 1
+                emIt = deleteExtent(emIt); // case 1
             }
             else if (emEntry.partitionNum == id->second.partitionNum)
             {
                 if (emEntry.blockOffset > fboHi)
                 {
-                    deleteExtent(emIt); // case 2
+                    emIt = deleteExtent(emIt); // case 2
                 }
                 else if (emEntry.blockOffset < fboLo)
                 {
@@ -12585,7 +12585,7 @@ void ExtentMap::deleteEmptyColExtents(const ExtentsInfoMap_t& extentsInfo)
                     // extent is in same stripe
                     if (emEntry.segmentNum > id->second.segmentNum)
                     {
-                        deleteExtent(emIt); // case 4A
+                        emIt = deleteExtent(emIt); // case 4A
                     }
                     else if (emEntry.segmentNum < id->second.segmentNum)
                     {
@@ -12644,7 +12644,7 @@ void ExtentMap::deleteEmptyDictStoreExtents(const ExtentsInfoMap_t& extentsInfo)
                     (emEntry.segmentNum == it->second.segmentNum) &&
                     (emEntry.dbRoot == it->second.dbRoot))
                 {
-                    deleteExtent(emIt);
+                    emIt = deleteExtent(emIt);
                 }
             }
         }
@@ -12684,7 +12684,7 @@ void ExtentMap::deleteEmptyDictStoreExtents(const ExtentsInfoMap_t& extentsInfo)
 
                     if (emEntry.partitionNum > it->second.partitionNum)
                     {
-                        deleteExtent(emIt); // case 1
+                        emIt = deleteExtent(emIt); // case 1
                     }
                     else if (emEntry.partitionNum == it->second.partitionNum)
                     {
@@ -12705,7 +12705,7 @@ void ExtentMap::deleteEmptyDictStoreExtents(const ExtentsInfoMap_t& extentsInfo)
                             }
                             else
                             {
-                                deleteExtent(emIt); // case 3C
+                                emIt = deleteExtent(emIt); // case 3C
                             }
                         }
                     }
@@ -12751,7 +12751,7 @@ void ExtentMap::deleteOID(int OID)
         if (it->second.fileID == OID)
         {
             OIDExists = true;
-            deleteExtent(it);
+            it = deleteExtent(it);
         }
     }
 
@@ -12769,6 +12769,7 @@ void ExtentMap::deleteOID(int OID)
 //------------------------------------------------------------------------------
 void ExtentMap::deleteOIDs(const OidsMap_t& OIDs)
 {
+    std::cout << "deleteOids start" << std::endl;
 #ifdef BRM_INFO
 
     if (fDebug)
@@ -12785,15 +12786,17 @@ void ExtentMap::deleteOIDs(const OidsMap_t& OIDs)
     {
         const auto id = OIDs.find(it->second.fileID);
         if (id != OIDs.end())
-            deleteExtent(it);
+            it = deleteExtent(it);
     }
+
+    std::cout << "deleteOids end" << std::endl;
 }
 
 //------------------------------------------------------------------------------
 // Delete the specified extent from the extentmap and return to the free list.
 // emIndex - the index (from the extent map) of the extent to be deleted
 //------------------------------------------------------------------------------
-void ExtentMap::deleteExtent(ExtentMapRBTree::iterator it)
+ExtentMapRBTree::iterator ExtentMap::deleteExtent(ExtentMapRBTree::iterator it)
 {
     int flIndex, freeFLIndex, flEntries, preceedingExtent, succeedingExtent;
     LBID_t flBlockEnd, emBlockEnd;
@@ -12915,9 +12918,9 @@ void ExtentMap::deleteExtent(ExtentMapRBTree::iterator it)
 
     //    makeUndoRecord(&fExtentMap[emIndex], sizeof(EMEntry));
     // Erase a node for the given iterator.
-    fExtentMapRBTree->erase(it);
     makeUndoRecord(&fEMRBTreeShminfo, sizeof(MSTEntry));
     fEMRBTreeShminfo->currentSize -= EM_RB_TREE_NODE_SIZE;
+    return fExtentMapRBTree->erase(it);
 }
 
 //------------------------------------------------------------------------------
@@ -13698,6 +13701,7 @@ void ExtentMap::deletePartition(const set<OID_t>& oids, const set<LogicalPartiti
         rc = WARN_NO_PARTITION_PERFORMED;
 
     // Really delete extents.
+    // FIXME: Implement a proper delete function.
     for (uint32_t i = 0, e = extents.size(); i < e; ++i)
         deleteExtent(extents[i]);
 
@@ -13976,7 +13980,7 @@ void ExtentMap::deleteDBRoot(uint16_t dbroot)
     for (auto it = fExtentMapRBTree->begin(), end = fExtentMapRBTree->end(); it != end; ++it)
     {
         if (it->second.dbRoot == dbroot)
-            deleteExtent(it);
+            it = deleteExtent(it);
     }
 }
 //------------------------------------------------------------------------------
