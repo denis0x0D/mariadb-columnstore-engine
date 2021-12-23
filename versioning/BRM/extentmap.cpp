@@ -253,6 +253,10 @@ ExtentMapRBTreeImpl* ExtentMapRBTreeImpl::fInstance = 0;
 
 ExtentMapRBTreeImpl* ExtentMapRBTreeImpl::makeExtentMapRBTreeImpl(unsigned key, off_t size, bool readOnly)
 {
+    std::cout << "ExtentMapRBTreeImpl* ExtentMapRBTreeImpl::makeExtentMapRBTreeImpl(unsigned key, "
+                 "off_t size, bool readOnly) "
+              << std::endl;
+
     boost::mutex::scoped_lock lk(fInstanceMutex);
 
     if (fInstance)
@@ -3083,6 +3087,8 @@ key_t ExtentMap::chooseFLShmkey()
    Returns with the new shmseg mapped */
 void ExtentMap::growEMShmseg(size_t nrows)
 {
+    std::cout << "void ExtentMap::growEMShmseg(size_t nrows) " << std::endl;
+
     size_t allocSize;
     key_t newshmkey;
 
@@ -3874,6 +3880,8 @@ void ExtentMap::createColumnExtent_DBroot(int OID,
         uint32_t& startBlockOffset,
         bool       useLock) // defaults to true
 {
+
+    std::cout << "createColumnExtent_DBRoot " << std::endl;
 #ifdef BRM_INFO
 
     if (fDebug)
@@ -3957,6 +3965,9 @@ LBID_t ExtentMap::_createColumnExtent_DBroot(uint32_t size, int OID,
         uint16_t& segmentNum,
         uint32_t& startBlockOffset)
 {
+    std::cout << "LBID_t ExtentMap::_createColumnExtent_DBroot(uint32_t size, int OID, "
+              << std::endl;
+
     int emptyEMEntry        = -1;
     int lastExtentIndex     = -1;
     uint32_t highestOffset = 0;
@@ -11126,9 +11137,11 @@ void ExtentMap::save(const string& filename)
     releaseEMEntryTable(READ);
 }
 
+// GRABEM
 void ExtentMap::grabEMEntryTable(OPS op)
 {
-    boost::mutex::scoped_lock lk(mutex);
+    std::cout << "grabEMEntryTable " << std::endl;
+//    boost::mutex::scoped_lock lk(mutex);
 
     if (op == READ)
         fEMRBTreeShminfo = fMST.getTable_read(MasterSegmentTable::EMRBTreeTable);
@@ -11186,6 +11199,8 @@ void ExtentMap::grabEMEntryTable(OPS op)
     {
         fExtentMapRBTree = fPExtMapRBTreeImpl->get();
     }
+
+    std::cout << "end of grabEmEntryTable " << std::endl;
 }
 
 /* always returns holding the FL lock */
@@ -11259,6 +11274,7 @@ void ExtentMap::grabFreeList(OPS op)
 
 void ExtentMap::releaseEMEntryTable(OPS op)
 {
+    std::cout << "releaseEMEntryTable " << std::endl;
     if (op == READ)
         fMST.releaseTable_read(MasterSegmentTable::EMRBTreeTable);
     else
@@ -11298,6 +11314,8 @@ key_t ExtentMap::chooseFLShmkey()
    Returns with the new shmseg mapped */
 void ExtentMap::growEMShmseg(size_t size)
 {
+    std::cout << "void ExtentMap::growEMShmseg(size_t size) " << std::endl;
+
     size_t allocSize;
 
     if (fEMRBTreeShminfo->tableShmkey == 0)
@@ -11764,7 +11782,7 @@ void ExtentMap::createColumnExtentExactFile(int OID, uint32_t colWidth, uint16_t
     grabFreeList(WRITE);
 
     // FIXME: Make a function call.
-    if (fEMRBTreeShminfo->currentSize + EM_RB_TREE_NODE_SIZE < fEMRBTreeShminfo->allocdSize)
+    if (fEMRBTreeShminfo->currentSize + EM_RB_TREE_NODE_SIZE > fEMRBTreeShminfo->allocdSize)
         growEMShmseg();
 
     //  size is the number of multiples of 1024 blocks.
@@ -11785,6 +11803,10 @@ ExtentMap::_createColumnExtentExactFile(uint32_t size, int OID, uint32_t colWidt
                                         execplan::CalpontSystemCatalog::ColDataType colDataType,
                                         uint32_t& startBlockOffset)
 {
+    std::cout << "ExtentMap::_createColumnExtentExactFile(uint32_t size, int OID, uint32_t "
+                 "colWidth, uint16_t dbRoot, "
+              << std::endl;
+
     uint32_t highestOffset = 0;
     LBID_t startLBID = getLBIDsFromFreeList(size);
     EMEntry* lastEmEntry = nullptr;

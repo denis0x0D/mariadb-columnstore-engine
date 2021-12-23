@@ -45,6 +45,8 @@
 
 #include "installdir.h"
 
+#define BRM_VERBOSE
+
 using namespace std;
 using namespace messageqcpp;
 using namespace idbdatafile;

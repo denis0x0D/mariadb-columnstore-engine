@@ -78,7 +78,9 @@ BlockResolutionManager& BlockResolutionManager::operator=(const BlockResolutionM
 
 int BlockResolutionManager::loadExtentMap(const string& filename, bool fixFL)
 {
+    std::cout << "Load extent map start" << std::endl;
     em.load(filename, fixFL);
+    std::cout << "Load extent map finish " << std::endl;
     return 0;
 }
 

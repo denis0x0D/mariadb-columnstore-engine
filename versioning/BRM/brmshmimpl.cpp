@@ -238,6 +238,7 @@ BRMManagedShmImpl::BRMManagedShmImpl(unsigned key, off_t size, bool readOnly)
 {
     auto keyName = ShmKeys::keyToName(fKey);
 
+    std::cout << "Try to open segment " << std::endl;
     // FIXME: Take a right size.
     // Actually this means to open a segment at the default code.
     if (fSize == 0)
@@ -253,6 +254,7 @@ BRMManagedShmImpl::BRMManagedShmImpl(unsigned key, off_t size, bool readOnly)
         std::cout << "Cannot create boost::interprocess::managed_shared_memory object: " << e.what()
                   << std::endl;
     }
+    std::cout << "end of Try to open segment " << std::endl;
 }
 
 BRMManagedShmImpl::~BRMManagedShmImpl() {}
