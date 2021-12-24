@@ -86,8 +86,9 @@ public:
   inline bool isReadOnly() const { return fReadOnly; }
 
   void setReadOnly();
-  int grow(off_t newSize);
+  int32_t grow(unsigned key, off_t incSize);
   void destroy(unsigned key);
+  void reMapSegment();
 
   boost::interprocess::managed_shared_memory* fShmSegment;
 
@@ -95,6 +96,7 @@ private:
   unsigned fKey;
   off_t fSize;
   bool fReadOnly;
+  const char* segmentName = "InfiniDB-shm-shared_managed_segment_00";
 };
 
 } //namespace

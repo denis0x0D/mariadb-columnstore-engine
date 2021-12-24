@@ -213,66 +213,6 @@ struct ExtentSorter
     }
 };
 
-class ExtentMapImpl
-{
-public:
-    ~ExtentMapImpl(){};
-
-    static ExtentMapImpl* makeExtentMapImpl(unsigned key, off_t size, bool readOnly = false);
-    static void refreshShm()
-    {
-        if (fInstance)
-        {
-            delete fInstance;
-            fInstance = NULL;
-        }
-    }
-
-    inline void grow(unsigned key, off_t size)
-#ifdef NDEBUG
-    {
-        fExtMap.grow(key, size);
-    }
-#else
-    {
-        int rc = fExtMap.grow(key, size);
-        idbassert(rc == 0);
-    }
-#endif
-    inline void makeReadOnly()
-    {
-        fExtMap.setReadOnly();
-    }
-    inline void clear(unsigned key, off_t size)
-    {
-        fExtMap.clear(key, size);
-    }
-    inline void swapout(BRMShmImpl& rhs)
-    {
-        fExtMap.swap(rhs);
-        rhs.destroy();
-    }
-    inline unsigned key() const
-    {
-        return fExtMap.key();
-    }
-
-    inline EMEntry* get() const
-    {
-        return reinterpret_cast<EMEntry*>(fExtMap.fMapreg.get_address());
-    }
-
-private:
-    ExtentMapImpl(unsigned key, off_t size, bool readOnly = false);
-    ExtentMapImpl(const ExtentMapImpl& rhs);
-    ExtentMapImpl& operator=(const ExtentMapImpl& rhs);
-
-    BRMShmImpl fExtMap;
-
-    static boost::mutex fInstanceMutex;
-    static ExtentMapImpl* fInstance;
-};
-
 class ExtentMapRBTreeImpl
 {
   public:
@@ -280,7 +220,6 @@ class ExtentMapRBTreeImpl
 
     static ExtentMapRBTreeImpl* makeExtentMapRBTreeImpl(unsigned key, off_t size, bool readOnly = false);
 
-    /*
     static void refreshShm()
     {
         if (fInstance)
@@ -289,13 +228,18 @@ class ExtentMapRBTreeImpl
             fInstance = NULL;
         }
     }
-    */
 
-    inline void grow(off_t size) { fManagedShm.grow(size); }
+    inline void grow(unsigned key, off_t size) { fManagedShm.grow(key, size); }
 
     inline unsigned key() const { return fManagedShm.key(); }
 
-    inline ExtentMapRBTree* get() const { return fExtentMapRBTree; }
+    inline ExtentMapRBTree* get() const
+    {
+        VoidAllocator allocator(fManagedShm.fShmSegment->get_segment_manager());
+        return fManagedShm.fShmSegment->find_or_construct<ExtentMapRBTree>("EmMapRBTree")(
+            std::less<int64_t>(), allocator);
+    }
+
     inline uint64_t getFreeMemory() const { return fManagedShm.fShmSegment->get_free_memory(); }
 
   private:
@@ -304,7 +248,6 @@ class ExtentMapRBTreeImpl
     ExtentMapRBTreeImpl& operator=(const ExtentMapRBTreeImpl& rhs);
 
     BRMManagedShmImpl fManagedShm;
-    ExtentMapRBTree* fExtentMapRBTree;
 
     static boost::mutex fInstanceMutex;
     static ExtentMapRBTreeImpl* fInstance;
@@ -972,7 +915,7 @@ public:
 #endif
 
 private:
-    static const size_t EM_INCREMENT_ROWS = 10000;
+    static const size_t EM_INCREMENT_ROWS = 100;
     static const size_t EM_INITIAL_SIZE = EM_INCREMENT_ROWS * 10 * sizeof(EMEntry);
     static const size_t EM_RB_TREE_NODE_SIZE = sizeof(EMEntry) + 8 * sizeof(uint64_t);
     static const size_t EM_RB_TREE_META_SIZE = 512;
@@ -1006,7 +949,7 @@ private:
     bool flLocked;
     bool emLocked;
 
-    static boost::mutex mutex; // @bug5355 - made mutex static
+    static boost::mutex mutex;      // @bug5355 - made mutex static
     boost::mutex fConfigCacheMutex; // protect access to Config Cache
 
     enum OPS

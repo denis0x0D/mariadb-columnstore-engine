@@ -51,7 +51,6 @@ ShmKeys::ShmKeys()
     KEYRANGE_EMFREELIST_BASE =        0x30000 | (BRM_UID << 20);
     KEYRANGE_VBBM_BASE =              0x40000 | (BRM_UID << 20);
     KEYRANGE_CL_BASE =                0x50000 | (BRM_UID << 20);
-    KEYRANGE_EXTENTMAP_RB_TREE_BASE = 0x60000 | (BRM_UID << 20);
 
     MST_SYSVKEY =             0xff000000 | BRM_UID;
     PROCESSSTATUS_SYSVKEY =   0xfd000000 | BRM_UID;

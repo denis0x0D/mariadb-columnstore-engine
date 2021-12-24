@@ -213,40 +213,7 @@ bool EMEntry::operator< (const EMEntry& e) const
     return false;
 }
 
-/*static*/
-boost::mutex ExtentMapImpl::fInstanceMutex;
 boost::mutex ExtentMap::mutex;
-
-/*static*/
-ExtentMapImpl* ExtentMapImpl::fInstance = 0;
-
-/*static*/
-ExtentMapImpl* ExtentMapImpl::makeExtentMapImpl(unsigned key, off_t size, bool readOnly)
-{
-    boost::mutex::scoped_lock lk(fInstanceMutex);
-
-    if (fInstance)
-    {
-        if (key != fInstance->fExtMap.key())
-        {
-            BRMShmImpl newShm(key, 0);
-            fInstance->swapout(newShm);
-        }
-
-        ASSERT(key == fInstance->fExtMap.key());
-        return fInstance;
-    }
-
-    fInstance = new ExtentMapImpl(key, size, readOnly);
-
-    return fInstance;
-}
-
-ExtentMapImpl::ExtentMapImpl(unsigned key, off_t size, bool readOnly) :
-    fExtMap(key, size, readOnly)
-{
-}
-
 boost::mutex ExtentMapRBTreeImpl::fInstanceMutex;
 
 ExtentMapRBTreeImpl* ExtentMapRBTreeImpl::fInstance = 0;
@@ -256,7 +223,13 @@ ExtentMapRBTreeImpl* ExtentMapRBTreeImpl::makeExtentMapRBTreeImpl(unsigned key, 
     boost::mutex::scoped_lock lk(fInstanceMutex);
 
     if (fInstance)
+    {
+        if (key != fInstance->fManagedShm.key())
+        {
+            fInstance->fManagedShm.reMapSegment();
+        }
         return fInstance;
+    }
 
     fInstance = new ExtentMapRBTreeImpl(key, size, readOnly);
     return fInstance;
@@ -265,10 +238,6 @@ ExtentMapRBTreeImpl* ExtentMapRBTreeImpl::makeExtentMapRBTreeImpl(unsigned key, 
 ExtentMapRBTreeImpl::ExtentMapRBTreeImpl(unsigned key, off_t size, bool readOnly)
     : fManagedShm(key, size, readOnly)
 {
-    VoidAllocator allocator(fManagedShm.fShmSegment->get_segment_manager());
-    // TODO: Take a right name for container.
-    fExtentMapRBTree = fManagedShm.fShmSegment->find_or_construct<ExtentMapRBTree>("EmMapRBTree")(
-        std::less<int64_t>(), allocator);
 }
 
 /*static*/
@@ -1705,7 +1674,20 @@ void ExtentMap::releaseFreeList(OPS op)
     }
 }
 
-key_t ExtentMap::chooseEMShmkey() { return (key_t)(13); }
+key_t ExtentMap::chooseEMShmkey()
+{
+    int fixedKeys = 1;
+    key_t ret;
+
+    if (fEMRBTreeShminfo->tableShmkey + 1 ==
+            (key_t)(fShmKeys.KEYRANGE_EXTENTMAP_BASE + fShmKeys.KEYRANGE_SIZE - 1) ||
+        (unsigned) fEMRBTreeShminfo->tableShmkey < fShmKeys.KEYRANGE_EXTENTMAP_BASE)
+        ret = fShmKeys.KEYRANGE_EXTENTMAP_BASE + fixedKeys;
+    else
+        ret = fEMRBTreeShminfo->tableShmkey + 1;
+
+    return ret;
+}
 
 key_t ExtentMap::chooseFLShmkey()
 {
@@ -1725,9 +1707,7 @@ key_t ExtentMap::chooseFLShmkey()
 void ExtentMap::growEMShmseg(size_t size)
 {
     size_t allocSize;
-
-    if (fEMRBTreeShminfo->tableShmkey == 0)
-        fEMRBTreeShminfo->tableShmkey = chooseEMShmkey();
+    auto newShmKey = chooseEMShmkey();
 
     if (fEMRBTreeShminfo->allocdSize == 0)
         allocSize = EM_RB_TREE_INITIAL_SIZE;
@@ -1739,10 +1719,18 @@ void ExtentMap::growEMShmseg(size_t size)
     ASSERT((allocSize == EM_RB_TREE_INITIAL_SIZE && !fPExtMapRBTreeImpl) || fPExtRBTreeMapImpl);
 
     if (!fPExtMapRBTreeImpl)
+    {
+        if (fEMRBTreeShminfo->tableShmkey == 0)
+            fEMRBTreeShminfo->tableShmkey = newShmKey;
+
         fPExtMapRBTreeImpl = ExtentMapRBTreeImpl::makeExtentMapRBTreeImpl(
             fEMRBTreeShminfo->tableShmkey, allocSize, r_only);
+    }
     else
-        fPExtMapRBTreeImpl->grow(allocSize);
+    {
+        fEMRBTreeShminfo->tableShmkey = newShmKey;
+        fPExtMapRBTreeImpl->grow(fEMRBTreeShminfo->tableShmkey, allocSize);
+    }
 
     fEMRBTreeShminfo->allocdSize += allocSize;
     // if (r_only)
@@ -2188,7 +2176,7 @@ void ExtentMap::createColumnExtentExactFile(int OID, uint32_t colWidth, uint16_t
     grabFreeList(WRITE);
 
     // FIXME: Make a function call.
-    if (fEMRBTreeShminfo->currentSize + EM_RB_TREE_NODE_SIZE > fEMRBTreeShminfo->allocdSize)
+    if (fEMRBTreeShminfo->currentSize + EM_RB_TREE_NODE_SIZE < fEMRBTreeShminfo->allocdSize)
         growEMShmseg();
 
     //  size is the number of multiples of 1024 blocks.
