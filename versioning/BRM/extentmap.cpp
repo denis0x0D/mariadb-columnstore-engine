@@ -269,10 +269,16 @@ ExtentMapRBTreeImpl* ExtentMapRBTreeImpl::makeExtentMapRBTreeImpl(unsigned key, 
 ExtentMapRBTreeImpl::ExtentMapRBTreeImpl(unsigned key, off_t size, bool readOnly)
     : fManagedShm(key, size, readOnly)
 {
+    std::cout
+        << "ExtentMapRBTreeImpl::ExtentMapRBTreeImpl(unsigned key, off_t size, bool readOnly) "
+        << std::endl;
+
     VoidAllocator allocator(fManagedShm.fShmSegment->get_segment_manager());
     // TODO: Take a right name for container.
     fExtentMapRBTree = fManagedShm.fShmSegment->find_or_construct<ExtentMapRBTree>("EmMapRBTree")(
         std::less<int64_t>(), allocator);
+
+    std::cout << "Free memory" << fManagedShm.fShmSegment->get_free_memory() << std::endl;
 }
 
 /*static*/
@@ -6707,6 +6713,7 @@ void ExtentMap::deleteExtentRBTree(ExtentMapRBTree::iterator it)
 //------------------------------------------------------------------------------
 void ExtentMap::deleteExtent(int emIndex)
 {
+
     int flIndex, freeFLIndex, flEntries, preceedingExtent, succeedingExtent;
     LBID_t flBlockEnd, emBlockEnd;
 
@@ -11324,7 +11331,7 @@ void ExtentMap::growEMShmseg(size_t size)
     if (fEMRBTreeShminfo->allocdSize == 0)
         allocSize = EM_RB_TREE_INITIAL_SIZE;
     else
-        allocSize = fEMRBTreeShminfo->allocdSize + EM_RB_TREE_INCREMENT;
+        allocSize = EM_RB_TREE_INCREMENT;
 
     allocSize = std::max(size, allocSize);
 
@@ -11336,9 +11343,7 @@ void ExtentMap::growEMShmseg(size_t size)
     else
         fPExtMapRBTreeImpl->grow(allocSize);
 
-    uint64_t freeMemory = fPExtMapRBTreeImpl->getFreeMemory();
-    ASSERT(freeMemory >= allocSize);
-    fEMRBTreeShminfo->allocdSize = allocSize;
+    fEMRBTreeShminfo->allocdSize += allocSize;
     // if (r_only)
     //   fPExtMapImpl->makeReadOnly();
 
@@ -11889,9 +11894,19 @@ ExtentMap::_createColumnExtentExactFile(uint32_t size, int OID, uint32_t colWidt
     else
         newEmEntry.partition.cprange.isValid = CP_INVALID;
 
+    std::cout << "NODE SIZE CONSTANT " << EM_RB_TREE_NODE_SIZE << std::endl;
+    std::cout << "EMentry size " << sizeof(EMEntry) << std::endl;
+    std::cout << "EM_RB_TREE_INITIAL_SIZE" << EM_RB_TREE_INITIAL_SIZE << std::endl;
     // Create and insert a pair of `lbid` and `EMEntry`.
     std::pair<int64_t, EMEntry> lbidEmEntryPair = make_pair(startLBID, newEmEntry);
+    std::cout << "Free memory before insert into RBTREE" << fPExtMapRBTreeImpl->getFreeMemory()
+              << std::endl;
+
     fExtentMapRBTree->insert(lbidEmEntryPair);
+
+    std::cout << "Free memory after insert into RBTREE" << fPExtMapRBTreeImpl->getFreeMemory()
+              << std::endl;
+
     startBlockOffset = newEmEntry.blockOffset;
     //    makeUndoRecord(fEMShminfo, sizeof(MSTEntry));
     fEMRBTreeShminfo->currentSize += EM_RB_TREE_NODE_SIZE;
@@ -12920,7 +12935,15 @@ ExtentMapRBTree::iterator ExtentMap::deleteExtent(ExtentMapRBTree::iterator it)
     // Erase a node for the given iterator.
     makeUndoRecord(&fEMRBTreeShminfo, sizeof(MSTEntry));
     fEMRBTreeShminfo->currentSize -= EM_RB_TREE_NODE_SIZE;
-    return fExtentMapRBTree->erase(it);
+    std::cout << "Free memory before delete into RBTREE" << fPExtMapRBTreeImpl->getFreeMemory()
+              << std::endl;
+
+    auto iT = fExtentMapRBTree->erase(it);
+
+    std::cout << "Free memory after delete into RBTREE" << fPExtMapRBTreeImpl->getFreeMemory()
+              << std::endl;
+
+    return iT;
 }
 
 //------------------------------------------------------------------------------

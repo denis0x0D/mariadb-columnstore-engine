@@ -251,6 +251,8 @@ BRMManagedShmImpl::BRMManagedShmImpl(unsigned key, off_t size, bool readOnly)
 
         fShmSegment = new boost::interprocess::managed_shared_memory(
             boost::interprocess::open_or_create, keyName.c_str(), fSize, 0, perms);
+
+        fSize = fShmSegment->get_size();
     }
     catch (exception& e)
     {

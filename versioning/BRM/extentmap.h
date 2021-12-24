@@ -1068,9 +1068,8 @@ public:
 private:
     static const size_t EM_INCREMENT_ROWS = 100;
     static const size_t EM_INITIAL_SIZE = EM_INCREMENT_ROWS * 10 * sizeof(EMEntry);
-    // FIXME: Make sure this a right size of the node.
-    static const size_t EM_RB_TREE_NODE_SIZE = sizeof(EMEntry) + 3 * sizeof(uint64_t);
-    // FIXME: Check this also.
+    // The node size inside RBTree is 160 bytes: 96 bytes sizeof(EmEntry) + 64 bytes other data.
+    static const size_t EM_RB_TREE_NODE_SIZE = sizeof(EMEntry) + 8 * sizeof(uint64_t);
     static const size_t EM_RB_TREE_META_SIZE = 512;
     static const size_t EM_RB_TREE_INITIAL_SIZE =
         EM_INCREMENT_ROWS * 10 * EM_RB_TREE_NODE_SIZE + EM_RB_TREE_META_SIZE;
@@ -1804,9 +1803,7 @@ public:
 private:
     static const size_t EM_INCREMENT_ROWS = 10000;
     static const size_t EM_INITIAL_SIZE = EM_INCREMENT_ROWS * 10 * sizeof(EMEntry);
-    // FIXME: Make sure this a right size of the node.
-    static const size_t EM_RB_TREE_NODE_SIZE = sizeof(EMEntry) + 3 * sizeof(uint64_t);
-    // FIXME: Check this also.
+    static const size_t EM_RB_TREE_NODE_SIZE = sizeof(EMEntry) + 8 * sizeof(uint64_t);
     static const size_t EM_RB_TREE_META_SIZE = 512;
     static const size_t EM_RB_TREE_INITIAL_SIZE =
         EM_INCREMENT_ROWS * 10 * EM_RB_TREE_NODE_SIZE + EM_RB_TREE_META_SIZE;
