@@ -896,8 +896,8 @@ public:
             grabEMEntryTable(READ);
             releaseEMEntryTable(READ);
         }
-
-        return (fEMRBTreeShminfo->currentSize == 0);
+        // Initial size.
+        return (fEMRBTreeShminfo->currentSize == EM_RB_TREE_EMPTY_SIZE);
     }
 
     EXPORT std::vector<InlineLBIDRange> getFreeListEntries();
@@ -918,9 +918,9 @@ private:
     static const size_t EM_INCREMENT_ROWS = 100;
     static const size_t EM_INITIAL_SIZE = EM_INCREMENT_ROWS * 10 * sizeof(EMEntry);
     static const size_t EM_RB_TREE_NODE_SIZE = sizeof(EMEntry) + 8 * sizeof(uint64_t);
-    static const size_t EM_RB_TREE_META_SIZE = 512;
+    static const size_t EM_RB_TREE_EMPTY_SIZE = 512;
     static const size_t EM_RB_TREE_INITIAL_SIZE =
-        EM_INCREMENT_ROWS * 10 * EM_RB_TREE_NODE_SIZE + EM_RB_TREE_META_SIZE;
+        EM_INCREMENT_ROWS * 10 * EM_RB_TREE_NODE_SIZE + EM_RB_TREE_EMPTY_SIZE;
     static const size_t EM_INCREMENT = EM_INCREMENT_ROWS * sizeof(EMEntry);
     static const size_t EM_RB_TREE_INCREMENT = EM_INCREMENT_ROWS * EM_RB_TREE_NODE_SIZE;
     static const size_t EM_FREELIST_INITIAL_SIZE = 50 * sizeof(InlineLBIDRange);

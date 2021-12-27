@@ -308,7 +308,6 @@ ExtentMap::~ExtentMap()
 
 ExtentMapRBTree::iterator ExtentMap::findByLBID(const LBID_t lbid)
 {
-#define DEBUG
 #ifdef DEBUG
     std::cout << "ExtentMapRBTree::iterator ExtentMap::findByLBID(const LBID_t lbid) " << std::endl;
     std::cout << "search for lbid " << lbid << std::endl;
@@ -1196,7 +1195,7 @@ template <class T> void ExtentMap::loadVersion4or5(T* in, bool upgradeV4ToV5)
     fFLShminfo->currentSize = sizeof(InlineLBIDRange);
 
     // Calculate how much memory we need.
-    const uint32_t memorySizeNeeded = (emNumElements * EM_RB_TREE_NODE_SIZE) + EM_RB_TREE_META_SIZE;
+    const uint32_t memorySizeNeeded = (emNumElements * EM_RB_TREE_NODE_SIZE) + EM_RB_TREE_EMPTY_SIZE;
 
     if (fEMRBTreeShminfo->allocdSize < memorySizeNeeded)
         growEMShmseg(memorySizeNeeded);
@@ -1285,7 +1284,7 @@ template <class T> void ExtentMap::loadVersion4or5(T* in, bool upgradeV4ToV5)
             emEntry.status = EXTENTAVAILABLE;
     }
 
-    fEMRBTreeShminfo->currentSize = (emNumElements * EM_RB_TREE_NODE_SIZE) + EM_RB_TREE_META_SIZE;
+    fEMRBTreeShminfo->currentSize = (emNumElements * EM_RB_TREE_NODE_SIZE) + EM_RB_TREE_EMPTY_SIZE;
 
 #ifdef DUMP_EXTENT_MAP
     cout << "lbid\tsz\toid\tfbo\thwm\tpart#\tseg#\tDBRoot\twid\tst\thi\tlo\tsq\tv" << endl;
@@ -1773,10 +1772,8 @@ void ExtentMap::growEMShmseg(size_t size)
 
     // That's mean we have a initial size.
     // Why does it crash?
-    /*
     if (fEMRBTreeShminfo->currentSize == 0)
-        fEMRBTreeShminfo->currentSize = EM_RB_TREE_META_SIZE;
-        */
+        fEMRBTreeShminfo->currentSize = EM_RB_TREE_EMPTY_SIZE;
 }
 
 /* Must be called holding the FL lock
@@ -2224,8 +2221,7 @@ void ExtentMap::createColumnExtent_DBroot(int OID, uint32_t colWidth, uint16_t d
         grabFreeList(WRITE);
     }
 
-    // FIXME: How much we need?
-    if (fEMRBTreeShminfo->currentSize == fEMRBTreeShminfo->allocdSize)
+    if (fEMRBTreeShminfo->currentSize + EM_RB_TREE_NODE_SIZE < fEMRBTreeShminfo->allocdSize)
         growEMShmseg();
 
 //  size is the number of multiples of 1024 blocks.
