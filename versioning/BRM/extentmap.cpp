@@ -1737,6 +1737,13 @@ void ExtentMap::growEMShmseg(size_t size)
     //   fPExtMapImpl->makeReadOnly();
 
     fExtentMapRBTree = fPExtMapRBTreeImpl->get();
+
+    // That's mean we have a initial size.
+    // Why does it crash?
+    /*
+    if (fEMRBTreeShminfo->currentSize == 0)
+        fEMRBTreeShminfo->currentSize = EM_RB_TREE_META_SIZE;
+        */
 }
 
 /* Must be called holding the FL lock
@@ -2327,7 +2334,7 @@ void ExtentMap::createDictStoreExtent(int OID, uint16_t dbRoot, uint32_t partiti
     grabEMEntryTable(WRITE);
     grabFreeList(WRITE);
 
-    if (fEMRBTreeShminfo->currentSize + EM_RB_TREE_NODE_SIZE >= fEMRBTreeShminfo->allocdSize)
+    if (fEMRBTreeShminfo->currentSize + EM_RB_TREE_NODE_SIZE < fEMRBTreeShminfo->allocdSize)
         growEMShmseg();
 
 //  size is the number of multiples of 1024 blocks.
@@ -3833,7 +3840,7 @@ void ExtentMap::getExtents(int OID, vector<struct EMEntry>& entries, bool sorted
              ++emIt)
         {
             const auto& emEntry = emIt->second;
-            if ((emEntry.fileID == OID) && (emEntry.range.size != 0))
+            if ((emEntry.fileID == OID))
                 entries.push_back(emEntry);
         }
     }
