@@ -308,17 +308,50 @@ ExtentMap::~ExtentMap()
 
 ExtentMapRBTree::iterator ExtentMap::findByLBID(const LBID_t lbid)
 {
+#define DEBUG
+#ifdef DEBUG
+    std::cout << "ExtentMapRBTree::iterator ExtentMap::findByLBID(const LBID_t lbid) " << std::endl;
+    std::cout << "search for lbid " << lbid << std::endl;
+    std::cout << "Tree keys: " << std::endl;
+    for (auto it = fExtentMapRBTree->begin(); it != fExtentMapRBTree->end(); ++it)
+    {
+        cout << "key: " << it->first << endl;
+    }
+#endif
+
     auto emIt = fExtentMapRBTree->lower_bound(lbid);
     auto end = fExtentMapRBTree->end();
     if (emIt == end)
+    {
+        if (fExtentMapRBTree->size() == 0)
+            return end;
+
+        // Check the last one.
+        auto last = std::prev(end);
+        const auto lastBlock = (last->second.range.size * 1024);
+        if ((last->first <= lbid) && (lbid < (last->first + lastBlock)))
+        {
+#ifdef DEBUG
+            std::cout << "found lbid " << last->first << std::endl;
+#endif
+            return last;
+        }
+
+#ifdef DEBUG
+        std::cout << "not found lbid " << lbid << std::endl;
+#endif
+
         return end;
+    }
 
     // Lower bound returns the first element not less than the given key.
     if (emIt->first != lbid)
     {
         if (emIt == fExtentMapRBTree->begin())
+        {
             return end;
-        --emIt;
+        }
+        emIt = std::prev(emIt);
     }
 
     return emIt;
@@ -1887,7 +1920,6 @@ int ExtentMap::lookupLocal(LBID_t lbid, int& OID, uint16_t& dbRoot, uint32_t& pa
 
     {
         auto& emEntry = emIt->second;
-        if (emEntry.range.size != 0)
         {
             lastBlock = emEntry.range.start + (static_cast<LBID_t>(emEntry.range.size) * 1024) - 1;
             if (lbid >= emEntry.range.start && lbid <= lastBlock)
@@ -2079,7 +2111,51 @@ void ExtentMap::createStripeColumnExtents(const vector<CreateStripeColumnExtents
                                           uint16_t& segmentNum,
                                           vector<CreateStripeColumnExtentsArgOut>& extents)
 {
-    throw runtime_error("createStripeColumnExtent is not implemented");
+    LBID_t startLbid;
+    int allocSize;
+    uint32_t startBlkOffset;
+
+    grabEMEntryTable(WRITE);
+    grabFreeList(WRITE);
+
+    OID_t baselineOID = -1;
+    uint16_t baselineSegmentNum = -1;
+    uint32_t baselinePartNum = -1;
+
+    for (uint32_t i = 0; i < cols.size(); i++)
+    {
+        createColumnExtent_DBroot(cols[i].oid, cols[i].width, dbRoot, cols[i].colDataType,
+                                  partitionNum, segmentNum, startLbid, allocSize, startBlkOffset,
+                                  false);
+
+        if (i == 0)
+        {
+            baselineOID = cols[i].oid;
+            baselineSegmentNum = segmentNum;
+            baselinePartNum = partitionNum;
+        }
+        else
+        {
+            if ((segmentNum != baselineSegmentNum) || (partitionNum != baselinePartNum))
+            {
+                ostringstream oss;
+                oss << "ExtentMap::createStripeColumnExtents(): "
+                       "Inconsistent segment extent creation: "
+                    << "DBRoot: " << dbRoot << "OID1: " << baselineOID
+                    << "; Part#: " << baselinePartNum << "; Seg#: " << baselineSegmentNum
+                    << " <versus> OID2: " << cols[i].oid << "; Part#: " << partitionNum
+                    << "; Seg#: " << segmentNum;
+                log(oss.str(), logging::LOG_TYPE_CRITICAL);
+                throw invalid_argument(oss.str());
+            }
+        }
+
+        CreateStripeColumnExtentsArgOut extentInfo;
+        extentInfo.startLbid = startLbid;
+        extentInfo.allocSize = allocSize;
+        extentInfo.startBlkOffset = startBlkOffset;
+        extents.push_back(extentInfo);
+    }
 }
 
 //------------------------------------------------------------------------------
@@ -2106,9 +2182,62 @@ void ExtentMap::createColumnExtent_DBroot(int OID, uint32_t colWidth, uint16_t d
                                           execplan::CalpontSystemCatalog::ColDataType colDataType,
                                           uint32_t& partitionNum, uint16_t& segmentNum,
                                           LBID_t& lbid, int& allocdsize, uint32_t& startBlockOffset,
-                                          bool useLock) // defaults to true 
+                                          bool useLock) // defaults to true
 {
-    throw runtime_error("createColumnExtent_DBRoot is not implemented");
+#ifdef BRM_INFO
+
+    if (fDebug)
+    {
+        TRACER_WRITELATER("createColumnExtent_DBroot");
+        TRACER_ADDINPUT(OID);
+        TRACER_ADDINPUT(colWidth);
+        TRACER_ADDSHORTINPUT(dbRoot);
+        TRACER_ADDOUTPUT(partitionNum);
+        TRACER_ADDSHORTOUTPUT(segmentNum);
+        TRACER_ADDINT64OUTPUT(lbid);
+        TRACER_ADDOUTPUT(allocdsize);
+        TRACER_ADDOUTPUT(startBlockOffset);
+        TRACER_WRITE;
+    }
+
+#endif
+
+#ifdef BRM_DEBUG
+
+    if (OID <= 0)
+    {
+        log("ExtentMap::createColumnExtent_DBroot(): OID must be > 0",
+            logging::LOG_TYPE_DEBUG);
+        throw invalid_argument(
+            "ExtentMap::createColumnExtent_DBroot(): OID must be > 0");
+    }
+
+#endif
+
+    // Convert extent size in rows to extent size in 8192-byte blocks.
+    // extentRows should be multiple of blocksize (8192).
+    const unsigned EXTENT_SIZE = (getExtentRows() * colWidth) / BLOCK_SIZE;
+
+    if (useLock)
+    {
+        grabEMEntryTable(WRITE);
+        grabFreeList(WRITE);
+    }
+
+    // FIXME: How much we need?
+    if (fEMRBTreeShminfo->currentSize == fEMRBTreeShminfo->allocdSize)
+        growEMShmseg();
+
+//  size is the number of multiples of 1024 blocks.
+//  ex: size=1 --> 1024 blocks
+//      size=2 --> 2048 blocks
+//      size=3 --> 3072 blocks, etc.
+    uint32_t size = EXTENT_SIZE / 1024;
+
+    lbid = _createColumnExtent_DBroot(size, OID, colWidth,
+                                      dbRoot, colDataType, partitionNum, segmentNum, startBlockOffset);
+
+    allocdsize = EXTENT_SIZE;
 }
 
 //------------------------------------------------------------------------------
@@ -2137,7 +2266,421 @@ ExtentMap::_createColumnExtent_DBroot(uint32_t size, int OID, uint32_t colWidth,
                                       uint32_t& partitionNum, uint16_t& segmentNum,
                                       uint32_t& startBlockOffset)
 {
-    throw runtime_error("createColumnExtent_DBRoot is not implemented");
+    uint32_t highestOffset = 0;
+    uint32_t highestPartNum = 0;
+    uint16_t highestSegNum = 0;
+    const unsigned FILES_PER_COL_PART = getFilesPerColumnPartition();
+    const unsigned EXTENT_ROWS = getExtentRows();
+    const unsigned EXTENTS_PER_SEGFILE = getExtentsPerSegmentFile();
+    const unsigned DBROOT_COUNT = getDbRootCount();
+
+    // Variables that track list of segfiles in target (HWM) DBRoot & partition.
+    // Map segment number to the highest fbo extent in each file
+    typedef tr1::unordered_map<uint16_t, uint32_t> TargetDbRootSegsMap;
+    typedef TargetDbRootSegsMap::iterator TargetDbRootSegsMapIter;
+    typedef TargetDbRootSegsMap::const_iterator TargetDbRootSegsMapConstIter;
+    TargetDbRootSegsMap targetDbRootSegs;
+
+    uint32_t highEmptySegNum = 0; // high seg num for user specified partition;
+    // only comes into play for empty DBRoot.
+    bool bHighEmptySegNumSet = false;
+
+    //--------------------------------------------------------------------------
+    // First Step: Scan ExtentMap
+    // 1. find HWM extent in relevant DBRoot
+    // 2. if DBRoot is empty, track highest seg num in user specified partition
+    // 3. Find first unused extent map entry
+    //--------------------------------------------------------------------------
+
+    LBID_t startLBID = getLBIDsFromFreeList(size);
+    EMEntry* lastExtent = nullptr;
+
+    // Find the first empty Entry; and find last extent for this OID and dbRoot
+    for (auto emIt = fExtentMapRBTree->begin(), end = fExtentMapRBTree->end(); emIt != end; ++emIt)
+    {
+        auto& emEntry = emIt->second;
+        {
+            if (emEntry.fileID == OID)
+            {
+                // 1. Find HWM extent in relevant DBRoot
+                if (emEntry.dbRoot == dbRoot)
+                {
+                    if ((emEntry.partitionNum > highestPartNum) ||
+                        ((emEntry.partitionNum == highestPartNum) &&
+                         (emEntry.blockOffset > highestOffset)) ||
+                        ((emEntry.partitionNum == highestPartNum) &&
+                         (emEntry.blockOffset == highestOffset) &&
+                         (emEntry.segmentNum >= highestSegNum)))
+                    {
+                        lastExtent = &emEntry;
+                        highestPartNum = emEntry.partitionNum;
+                        highestSegNum = emEntry.segmentNum;
+                        highestOffset = emEntry.blockOffset;
+                    }
+                }
+
+                // 2. for empty DBRoot track hi seg# in user specified part#
+                if ((lastExtent == nullptr) && (emEntry.partitionNum == partitionNum))
+                {
+                    if ((emEntry.segmentNum > highEmptySegNum) || (!bHighEmptySegNumSet))
+                    {
+                        highEmptySegNum = emEntry.segmentNum;
+                        bHighEmptySegNumSet = true;
+                    }
+                }
+            } // found extentmap entry for specified OID
+        }     // found valid extentmap entry
+
+    } // Loop through extent map entries
+
+    //--------------------------------------------------------------------------
+    // If DBRoot is not empty, then...
+    // Second Step: Scan ExtentMap again after I know the last partition
+    // 4. track highest seg num for HWM+1 partition
+    // 5. track highest seg num for HWM    partition
+    // 6. save list of segment numbers and fbos in target DBRoot and partition
+    //
+    // Scanning the extentmap a second time is not a good thing to be doing.
+    // But the alternative isn't good either.  There is certain information
+    // I need to capture about the last partition and DBRoot, and for the next
+    // partition as well (which may contain segment files on other DBRoots),
+    // but until I scan the extentmap, I don't know what my last partition is.
+    // If I try to do this in a single scan, then I am forced to spend time
+    // capturing information about partitions that turn out to be inconse-
+    // quential because the "known" last partition will keep changing as I
+    // scan the extentmap.
+    //--------------------------------------------------------------------------
+    bool bSegsOutOfService = false;
+    int partHighSeg = -1;     // hi seg num for last partition
+    int partHighSegNext = -1; // hi seg num for next partition
+
+    if (lastExtent)
+    {
+        uint32_t targetDbRootPart = lastExtent->partitionNum;
+        uint32_t targetDbRootPartNext = targetDbRootPart + 1;
+        partHighSeg = lastExtent->segmentNum;
+        targetDbRootSegs.insert(
+            TargetDbRootSegsMap::value_type(lastExtent->segmentNum, lastExtent->blockOffset));
+
+        for (auto emIt = fExtentMapRBTree->begin(), end = fExtentMapRBTree->end(); emIt != end;
+             ++emIt)
+        {
+            auto& emEntry = emIt->second;
+            {
+                if (emEntry.fileID == OID)
+                {
+                    // 4. Track hi seg for hwm+1 partition
+                    if (emEntry.partitionNum == targetDbRootPartNext)
+                    {
+                        if (emEntry.segmentNum > partHighSegNext)
+                        {
+                            partHighSegNext = emEntry.segmentNum;
+                        }
+                    }
+
+                    // 5. Track hi seg for hwm partition
+                    else if (emEntry.partitionNum == targetDbRootPart)
+                    {
+                        if (emEntry.segmentNum > partHighSeg)
+                        {
+                            partHighSeg = emEntry.segmentNum;
+                        }
+
+                        // 6. Save list of seg files in target DBRoot/Partition,
+                        //    along with the highest fbo for each seg file
+                        if (emEntry.dbRoot == dbRoot)
+                        {
+                            if (emEntry.status == EXTENTOUTOFSERVICE)
+                                bSegsOutOfService = true;
+
+                            TargetDbRootSegsMapIter iter =
+                                targetDbRootSegs.find(emEntry.segmentNum);
+
+                            if (iter == targetDbRootSegs.end())
+                            {
+                                targetDbRootSegs.insert(TargetDbRootSegsMap::value_type(
+                                    emEntry.segmentNum, emEntry.blockOffset));
+                            }
+                            else
+                            {
+                                if (emEntry.blockOffset > iter->second)
+                                {
+                                    iter->second = emEntry.blockOffset;
+                                }
+                            }
+                        }
+                    }
+                } // found extentmap entry for specified OID
+            }     // found valid extentmap entry
+        }         // loop through extent map entries
+    }             // (lastExtent != nullptr)
+
+    //--------------------------------------------------------------------------
+    // Third Step: Select partition and segment number for new extent
+    // 1. Loop through targetDbRootSegs to find segment file for next extent
+    // 2. Check for exceptions that warrant going to next physical partition
+    //    a. See if any extents are marked outOfService
+    //    b. See if extents are not evenly layered as expected
+    // 3. Perform additional new partition/segment logic as applicable
+    //    a. No action taken if 2a or 2b already detected need for new partition
+    //    b. If HWM extent is in last file of DBRoot/Partition, see if next
+    //       extent goes in new partition, or if wrap-around within current
+    //       partition.
+    //    c. If extent needs to go in next partition, figure out the next
+    //       partition and the next available segment in that partition.
+    // 4. Set blockOffset of new extent based on where extent is being added
+    //--------------------------------------------------------------------------
+    uint16_t newDbRoot = dbRoot;
+    uint32_t newPartitionNum = partitionNum;
+    uint16_t newSegmentNum = 0;
+    uint32_t newBlockOffset = 0;
+
+    // If this is not the first extent for this OID and DBRoot then
+    //   extrapolate part# and seg# from last extent; wrap around segment and
+    //   partition number as needed.
+    // else
+    //   use part# that the user specifies
+    if (lastExtent)
+    {
+        bool startNewPartition = false;
+        bool startNewStripeInSegFile = false;
+        const unsigned int filesPerDBRootPerPartition = FILES_PER_COL_PART / DBROOT_COUNT;
+
+        // Find first, last, next seg files in target partition and DBRoot
+        uint16_t firstTargetSeg = lastExtent->segmentNum;
+        uint16_t lastTargetSeg = lastExtent->segmentNum;
+        uint16_t nextTargetSeg = lastExtent->segmentNum;
+
+        // 1. Loop thru targetDbRootSegs[] to find next segment after
+        //    lastExtIdx in target list.
+        //    We save low and high segment to use in wrap-around case.
+        if (targetDbRootSegs.size() > 1)
+        {
+            bool bNextSegSet = false;
+
+            for (TargetDbRootSegsMapConstIter iter = targetDbRootSegs.begin();
+                 iter != targetDbRootSegs.end(); ++iter)
+            {
+                uint16_t targetSeg = iter->first;
+
+                if (targetSeg < firstTargetSeg)
+                    firstTargetSeg = targetSeg;
+                else if (targetSeg > lastTargetSeg)
+                    lastTargetSeg = targetSeg;
+
+                if (targetSeg > lastExtent->segmentNum)
+                {
+                    if ((targetSeg < nextTargetSeg) || (!bNextSegSet))
+                    {
+                        nextTargetSeg = targetSeg;
+                        bNextSegSet = true;
+                    }
+                }
+            }
+        }
+
+        newPartitionNum = lastExtent->partitionNum;
+
+        // 2a. Skip to next physical partition if any extents in HWM partition/
+        //     DBRoot are marked as outOfService
+        if (bSegsOutOfService)
+        {
+
+            //			cout << "Skipping to next partition (outOfService segs)" <<
+            //				": oid-"  << fExtentMap[lastExtentIndex].fileID <<
+            //				"; root-" << fExtentMap[lastExtentIndex].dbRoot <<
+            //				"; part-" << fExtentMap[lastExtentIndex].partitionNum <<
+            //endl;
+
+            startNewPartition = true;
+        }
+
+        // @bug 4765
+        // 2b. Skip to next physical partition if we have a set of
+        // segment files that are not "layered" as expected, meaning we
+        // have > 1 layer of extents with an incomplete lower layer (could
+        // be caused by the dropping of logical partitions).
+        else if (targetDbRootSegs.size() < filesPerDBRootPerPartition)
+        {
+            for (TargetDbRootSegsMapConstIter iter = targetDbRootSegs.begin();
+                 iter != targetDbRootSegs.end(); ++iter)
+            {
+                if (iter->second > 0)
+                {
+
+                    //					cout << "Skipping to next partition (unbalanced)"
+                    //<<
+                    //						": oid-"  << fExtentMap[lastExtentIndex].fileID
+                    //<<
+                    //						"; root-" << fExtentMap[lastExtentIndex].dbRoot
+                    //<<
+                    //						"; part-" << fExtentMap[lastExtentIndex].partitionNum
+                    //<<
+                    //						"; seg-"  << iter->first  <<
+                    //						"; hifbo-"<< iter->second << endl;
+
+                    startNewPartition = true;
+                    break;
+                }
+            }
+        }
+
+        // 3a.If we already detected need for new partition, then take no action
+        if (startNewPartition)
+        {
+            // no action taken here; we take additional action later.
+        }
+
+        // 3b.If HWM extent is in last seg file for this partition and DBRoot,
+        //    find out if we need to add a new partition for next extent.
+        else if (targetDbRootSegs.size() >= filesPerDBRootPerPartition)
+        {
+            if (lastExtent->segmentNum == lastTargetSeg)
+            {
+                // Use blockOffset of lastExtIdx to see if we need to add
+                // the next extent to a new partition.
+                if (lastExtent->blockOffset ==
+                    ((EXTENTS_PER_SEGFILE - 1) * (EXTENT_ROWS * colWidth / BLOCK_SIZE)))
+                {
+                    startNewPartition = true;
+                }
+                else // Wrap-around; add extent to low seg in this partition
+                {
+                    startNewStripeInSegFile = true;
+                    newSegmentNum = firstTargetSeg;
+                }
+            }
+            else
+            {
+                newSegmentNum = nextTargetSeg;
+            }
+        }
+        else // Select next segment file in current HWM partition
+        {
+            newSegmentNum = partHighSeg + 1;
+        }
+
+        // 3c. Find new partition and segment if we can't create
+        //     an extent for this DBRoot in the current HWM partition.
+        if (startNewPartition)
+        {
+            newPartitionNum++;
+
+            if (partHighSegNext == -1)
+                newSegmentNum = 0;
+            else
+                newSegmentNum = partHighSegNext + 1;
+        }
+
+        // 4. Set blockOffset (fbo) for new extent relative to it's seg file
+        // case1: Init fbo to 0 if first extent in partition/DbRoot
+        // case2: Init fbo to 0 if first extent in segment file (other than
+        //        first segment in this partition/DbRoot, which case1 handled)
+        // case3: Init fbo based on previous extent
+
+        // case1: leave newBlockOffset set to 0
+        if (startNewPartition)
+        {
+            //...no action necessary
+        }
+
+        // case2: leave newBlockOffset set to 0
+        else if ((lastExtent->blockOffset == 0) && (newSegmentNum > firstTargetSeg))
+        {
+            //...no action necessary
+        }
+
+        // case3: Init blockOffset based on previous extent.  If we are adding
+        //        extent to 1st seg file, then need to bump up the offset; else
+        //        adding extent to same stripe and can repeat the same offset.
+        else
+        {
+            if (startNewStripeInSegFile) // start next stripe
+            {
+                newBlockOffset =
+                    static_cast<uint64_t>(lastExtent->range.size) * 1024 + lastExtent->blockOffset;
+            }
+            else // next extent, same stripe
+            {
+                newBlockOffset = lastExtent->blockOffset;
+            }
+        }
+    }    // lastExtentIndex >= 0
+    else // Empty DBRoot; use part# that the user specifies
+    {
+        if (bHighEmptySegNumSet)
+            newSegmentNum = highEmptySegNum + 1;
+        else
+            newSegmentNum = 0;
+    }
+
+    //--------------------------------------------------------------------------
+    // Fourth Step: Construct the new extentmap entry
+    //--------------------------------------------------------------------------
+
+//    makeUndoRecord(&fExtentMap[emptyEMEntry], sizeof(EMEntry));
+    EMEntry e;
+    e.range.start = startLBID;
+    e.range.size = size;
+    e.fileID = OID;
+
+    if (isUnsigned(colDataType))
+    {
+        if (colWidth != datatypes::MAXDECIMALWIDTH)
+        {
+            e.partition.cprange.loVal = numeric_limits<uint64_t>::max();
+            e.partition.cprange.hiVal = 0;
+        }
+        else
+        {
+            e.partition.cprange.bigLoVal = -1;
+            e.partition.cprange.bigHiVal = 0;
+        }
+    }
+    else
+    {
+        if (colWidth != datatypes::MAXDECIMALWIDTH)
+        {
+            e.partition.cprange.loVal = numeric_limits<int64_t>::max();
+            e.partition.cprange.hiVal = numeric_limits<int64_t>::min();
+        }
+        else
+        {
+            utils::int128Max(e.partition.cprange.bigLoVal);
+            utils::int128Min(e.partition.cprange.bigHiVal);
+        }
+    }
+
+    e.partition.cprange.sequenceNum = 0;
+    e.colWid = colWidth;
+    e.dbRoot = newDbRoot;
+    e.partitionNum = newPartitionNum;
+    e.segmentNum = newSegmentNum;
+    e.blockOffset = newBlockOffset;
+    e.HWM = 0;
+    e.status = EXTENTUNAVAILABLE; // mark extent as in process
+
+    // Partition, segment, and blockOffset 0 represents new table or column.
+    // When DDL creates a table, we can mark the first extent as VALID, since
+    // the table has no data.  Marking as VALID enables cpimport to update
+    // the CP min/max for the first import.
+    // If DDL is adding a column to an existing table, setting to VALID won't
+    // hurt, because DDL resets to INVALID after the extent is created.
+    if ((e.partitionNum == 0) && (e.segmentNum == 0) && (e.blockOffset == 0))
+        e.partition.cprange.isValid = CP_VALID;
+    else
+        e.partition.cprange.isValid = CP_INVALID;
+
+    partitionNum = e.partitionNum;
+    segmentNum = e.segmentNum;
+    startBlockOffset = e.blockOffset;
+
+    //    makeUndoRecord(fEMShminfo, sizeof(MSTEntry));
+    std::pair<int64_t, EMEntry> lbidEmEntryPair = make_pair(startLBID, e);
+    fExtentMapRBTree->insert(lbidEmEntryPair);
+    fEMRBTreeShminfo->currentSize += EM_RB_TREE_NODE_SIZE;
+
+    return startLBID;
 }
 
 void ExtentMap::createColumnExtentExactFile(int OID, uint32_t colWidth, uint16_t dbRoot,
