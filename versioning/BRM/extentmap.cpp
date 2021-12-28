@@ -353,7 +353,9 @@ int ExtentMap::_markInvalid(const LBID_t lbid,
 
     auto emIt = findByLBID(lbid);
     if (emIt == fExtentMapRBTree->end())
+    {
         throw logic_error("ExtentMap::markInvalid(): lbid isn't allocated");
+    }
 
     auto& emEntry = emIt->second;
     {
@@ -970,7 +972,10 @@ template <typename T> int ExtentMap::getMaxMin(const LBID_t lbid, T& max, T& min
 
     auto emIt = findByLBID(lbid);
     if (emIt == fExtentMapRBTree->end())
+    {
+        releaseEMEntryTable(READ);
         throw logic_error("ExtentMap::getMaxMin(): that lbid isn't allocated");
+    }
 
     auto& emEntry = emIt->second;
     {
@@ -1015,7 +1020,10 @@ void ExtentMap::getCPMaxMin(const BRM::LBID_t lbid, BRM::CPMaxMin& cpMaxMin)
 
     auto emIt = findByLBID(lbid);
     if (emIt == fExtentMapRBTree->end())
+    {
+        releaseEMEntryTable(READ);
         throw logic_error("ExtentMap::getMaxMin(): that lbid isn't allocated");
+    }
 
     {
         auto& emEntry = emIt->second;
@@ -1823,7 +1831,10 @@ int ExtentMap::lookup(LBID_t lbid, LBID_t& firstLbid, LBID_t& lastLbid)
 
     auto emIt = findByLBID(lbid);
     if (emIt == fExtentMapRBTree->end())
+    {
+        releaseEMEntryTable(READ);
         return -1;
+    }
 
     {
         auto& emEntry = emIt->second;
@@ -1890,7 +1901,10 @@ int ExtentMap::lookupLocal(LBID_t lbid, int& OID, uint16_t& dbRoot, uint32_t& pa
 
     auto emIt = findByLBID(lbid);
     if (emIt == fExtentMapRBTree->end())
+    {
+        releaseEMEntryTable(READ);
         return -1;
+    }
 
     {
         auto& emEntry = emIt->second;
