@@ -224,10 +224,12 @@ ExtentMapRBTreeImpl* ExtentMapRBTreeImpl::makeExtentMapRBTreeImpl(unsigned key, 
 
     if (fInstance)
     {
+      /*
         if (key != fInstance->fManagedShm.key())
         {
             fInstance->fManagedShm.reMapSegment();
         }
+        */
         return fInstance;
     }
 
@@ -1181,9 +1183,10 @@ template <class T> void ExtentMap::loadVersion4or5(T* in, bool upgradeV4ToV5)
 
     // Calculate how much memory we need.
     const uint32_t memorySizeNeeded = (emNumElements * EM_RB_TREE_NODE_SIZE) + EM_RB_TREE_EMPTY_SIZE;
+    const uint32_t currentFreeSize = (fEMRBTreeShminfo->allocdSize - fEMRBTreeShminfo->currentSize);
 
-    if (fEMRBTreeShminfo->allocdSize < memorySizeNeeded)
-        growEMShmseg(memorySizeNeeded);
+    if (currentFreeSize < memorySizeNeeded)
+        growEMShmseg(memorySizeNeeded - currentFreeSize);
 
     int err;
     size_t progress, writeSize;
@@ -1540,6 +1543,7 @@ void ExtentMap::save(const string& filename)
 
 void ExtentMap::grabEMEntryTable(OPS op)
 {
+
     boost::mutex::scoped_lock lk(mutex);
 
     if (op == READ)
@@ -1552,11 +1556,6 @@ void ExtentMap::grabEMEntryTable(OPS op)
 
     if (!fPExtMapRBTreeImpl || fPExtMapRBTreeImpl->key() != (uint32_t) fEMRBTreeShminfo->tableShmkey)
     {
-        if (fExtentMapRBTree)
-        {
-            fExtentMapRBTree = nullptr;
-        }
-
         if (fEMRBTreeShminfo->allocdSize == 0)
         {
             if (op == READ)
@@ -1733,7 +1732,7 @@ void ExtentMap::growEMShmseg(size_t size)
 
     allocSize = std::max(size, allocSize);
 
-    ASSERT((allocSize == EM_RB_TREE_INITIAL_SIZE && !fPExtMapRBTreeImpl) || fPExtRBTreeMapImpl);
+    ASSERT((allocSize == EM_RB_TREE_INITIAL_SIZE && !fPExtMapRBTreeImpl) || fPExtMapRBTreeImpl);
 
     if (!fPExtMapRBTreeImpl)
     {
@@ -1756,7 +1755,6 @@ void ExtentMap::growEMShmseg(size_t size)
     fExtentMapRBTree = fPExtMapRBTreeImpl->get();
 
     // That's mean we have a initial size.
-    // Why does it crash?
     if (fEMRBTreeShminfo->currentSize == 0)
         fEMRBTreeShminfo->currentSize = EM_RB_TREE_EMPTY_SIZE;
 }
@@ -2212,13 +2210,13 @@ void ExtentMap::createColumnExtent_DBroot(int OID, uint32_t colWidth, uint16_t d
         grabFreeList(WRITE);
     }
 
-    if (fEMRBTreeShminfo->currentSize + EM_RB_TREE_NODE_SIZE < fEMRBTreeShminfo->allocdSize)
+    if (fEMRBTreeShminfo->currentSize + EM_RB_TREE_NODE_SIZE > fEMRBTreeShminfo->allocdSize)
         growEMShmseg();
 
-//  size is the number of multiples of 1024 blocks.
-//  ex: size=1 --> 1024 blocks
-//      size=2 --> 2048 blocks
-//      size=3 --> 3072 blocks, etc.
+    //  size is the number of multiples of 1024 blocks.
+    //  ex: size=1 --> 1024 blocks
+    //      size=2 --> 2048 blocks
+    //      size=3 --> 3072 blocks, etc.
     uint32_t size = EXTENT_SIZE / 1024;
 
     lbid = _createColumnExtent_DBroot(size, OID, colWidth,
@@ -2712,8 +2710,7 @@ void ExtentMap::createColumnExtentExactFile(int OID, uint32_t colWidth, uint16_t
     grabEMEntryTable(WRITE);
     grabFreeList(WRITE);
 
-    // FIXME: Make a function call.
-    if (fEMRBTreeShminfo->currentSize + EM_RB_TREE_NODE_SIZE < fEMRBTreeShminfo->allocdSize)
+    if (fEMRBTreeShminfo->currentSize + EM_RB_TREE_NODE_SIZE > fEMRBTreeShminfo->allocdSize)
         growEMShmseg();
 
     //  size is the number of multiples of 1024 blocks.
@@ -2864,7 +2861,7 @@ void ExtentMap::createDictStoreExtent(int OID, uint16_t dbRoot, uint32_t partiti
     grabEMEntryTable(WRITE);
     grabFreeList(WRITE);
 
-    if (fEMRBTreeShminfo->currentSize + EM_RB_TREE_NODE_SIZE < fEMRBTreeShminfo->allocdSize)
+    if (fEMRBTreeShminfo->currentSize + EM_RB_TREE_NODE_SIZE > fEMRBTreeShminfo->allocdSize)
         growEMShmseg();
 
 //  size is the number of multiples of 1024 blocks.
