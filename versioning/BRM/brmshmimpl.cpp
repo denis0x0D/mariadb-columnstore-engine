@@ -259,8 +259,23 @@ BRMManagedShmImpl::BRMManagedShmImpl(unsigned key, off_t size, bool readOnly)
 
 BRMManagedShmImpl::~BRMManagedShmImpl() {}
 
-// Not implemented.
-void BRMManagedShmImpl::setReadOnly() {}
+void BRMManagedShmImpl::setReadOnly()
+{
+    try
+    {
+        if (fShmSegment)
+        {
+            delete fShmSegment;
+            fShmSegment = new bi::managed_shared_memory(bi::open_read_only, segmentName);
+            fReadOnly = true;
+        }
+    }
+    catch (exception& e)
+    {
+        std::cout << "BRMManagedShmImpl::setReadOnly() error " << e.what() << std::endl;
+        throw;
+    }
+}
 
 int32_t BRMManagedShmImpl::grow(unsigned key, off_t incSize)
 {
@@ -305,7 +320,7 @@ void BRMManagedShmImpl::reMapSegment()
     }
     catch (exception& e)
     {
-        std::cout << "BRMManagedShmImpl::grow() error " << e.what() << std::endl;
+        std::cout << "BRMManagedShmImpl::remap() error " << e.what() << std::endl;
         throw;
     }
 }
