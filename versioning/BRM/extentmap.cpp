@@ -308,16 +308,6 @@ ExtentMap::~ExtentMap()
 
 ExtentMapRBTree::iterator ExtentMap::findByLBID(const LBID_t lbid)
 {
-#ifdef DEBUG
-    std::cout << "ExtentMapRBTree::iterator ExtentMap::findByLBID(const LBID_t lbid) " << std::endl;
-    std::cout << "search for lbid " << lbid << std::endl;
-    std::cout << "Tree keys: " << std::endl;
-    for (auto it = fExtentMapRBTree->begin(); it != fExtentMapRBTree->end(); ++it)
-    {
-        cout << "key: " << it->first << endl;
-    }
-#endif
-
     auto emIt = fExtentMapRBTree->lower_bound(lbid);
     auto end = fExtentMapRBTree->end();
     if (emIt == end)
@@ -330,16 +320,8 @@ ExtentMapRBTree::iterator ExtentMap::findByLBID(const LBID_t lbid)
         const auto lastBlock = (last->second.range.size * 1024);
         if ((last->first <= lbid) && (lbid < (last->first + lastBlock)))
         {
-#ifdef DEBUG
-            std::cout << "found lbid " << last->first << std::endl;
-#endif
             return last;
         }
-
-#ifdef DEBUG
-        std::cout << "not found lbid " << lbid << std::endl;
-#endif
-
         return end;
     }
 
