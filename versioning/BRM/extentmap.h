@@ -915,123 +915,133 @@ public:
 #endif
 
 private:
-    static const size_t EM_INCREMENT_ROWS = 100;
-    static const size_t EM_INITIAL_SIZE = EM_INCREMENT_ROWS * 10 * sizeof(EMEntry);
-    static const size_t EM_RB_TREE_NODE_SIZE = sizeof(EMEntry) + 8 * sizeof(uint64_t);
-    static const size_t EM_RB_TREE_EMPTY_SIZE = 512;
-    static const size_t EM_RB_TREE_INITIAL_SIZE =
-        EM_INCREMENT_ROWS * 10 * EM_RB_TREE_NODE_SIZE + EM_RB_TREE_EMPTY_SIZE;
-    static const size_t EM_INCREMENT = EM_INCREMENT_ROWS * sizeof(EMEntry);
-    static const size_t EM_RB_TREE_INCREMENT = EM_INCREMENT_ROWS * EM_RB_TREE_NODE_SIZE;
-    static const size_t EM_FREELIST_INITIAL_SIZE = 50 * sizeof(InlineLBIDRange);
-    static const size_t EM_FREELIST_INCREMENT = 50 * sizeof(InlineLBIDRange);
+  enum class UndoRecordType
+  {
+      DEFAULT,
+      INSERT,
+      DELETE
+  };
 
-    ExtentMap(const ExtentMap& em);
-    ExtentMap& operator=(const ExtentMap& em);
+  static const size_t EM_INCREMENT_ROWS = 100;
+  static const size_t EM_INITIAL_SIZE = EM_INCREMENT_ROWS * 10 * sizeof(EMEntry);
+  static const size_t EM_RB_TREE_NODE_SIZE = sizeof(EMEntry) + 8 * sizeof(uint64_t);
+  static const size_t EM_RB_TREE_EMPTY_SIZE = 512;
+  static const size_t EM_RB_TREE_INITIAL_SIZE =
+      EM_INCREMENT_ROWS * 10 * EM_RB_TREE_NODE_SIZE + EM_RB_TREE_EMPTY_SIZE;
+  static const size_t EM_INCREMENT = EM_INCREMENT_ROWS * sizeof(EMEntry);
+  static const size_t EM_RB_TREE_INCREMENT = EM_INCREMENT_ROWS * EM_RB_TREE_NODE_SIZE;
+  static const size_t EM_FREELIST_INITIAL_SIZE = 50 * sizeof(InlineLBIDRange);
+  static const size_t EM_FREELIST_INCREMENT = 50 * sizeof(InlineLBIDRange);
 
-    ExtentMapRBTree* fExtentMapRBTree;
-    InlineLBIDRange* fFreeList;
+  ExtentMap(const ExtentMap& em);
+  ExtentMap& operator=(const ExtentMap& em);
 
-    key_t fCurrentEMShmkey;
-    key_t fCurrentFLShmkey;
+  ExtentMapRBTree* fExtentMapRBTree;
+  InlineLBIDRange* fFreeList;
 
-    MSTEntry* fEMRBTreeShminfo;
-    MSTEntry* fFLShminfo;
+  key_t fCurrentEMShmkey;
+  key_t fCurrentFLShmkey;
 
-    const MasterSegmentTable fMST;
-    bool r_only;
-    typedef std::tr1::unordered_map<int, oam::DBRootConfigList*> PmDbRootMap_t;
-    PmDbRootMap_t fPmDbRootMap;
-    time_t fCacheTime; // timestamp associated with config cache
+  MSTEntry* fEMRBTreeShminfo;
+  MSTEntry* fFLShminfo;
 
-    int numUndoRecords;
+  const MasterSegmentTable fMST;
+  bool r_only;
+  typedef std::tr1::unordered_map<int, oam::DBRootConfigList*> PmDbRootMap_t;
+  PmDbRootMap_t fPmDbRootMap;
+  time_t fCacheTime; // timestamp associated with config cache
 
-    bool flLocked;
-    bool emLocked;
+  int numUndoRecords;
 
-    static boost::mutex mutex;      // @bug5355 - made mutex static
-    boost::mutex fConfigCacheMutex; // protect access to Config Cache
+  bool flLocked;
+  bool emLocked;
 
-    enum OPS
-    {
-        NONE,
-        READ,
-        WRITE
-    };
+  static boost::mutex mutex;      // @bug5355 - made mutex static
+  boost::mutex fConfigCacheMutex; // protect access to Config Cache
 
-    OPS EMLock, FLLock;
+  enum OPS
+  {
+      NONE,
+      READ,
+      WRITE
+  };
 
-    LBID_t _createColumnExtent_DBroot(uint32_t size, int OID,
-                                      uint32_t colWidth,
-                                      uint16_t  dbRoot,
+  OPS EMLock, FLLock;
+
+  LBID_t _createColumnExtent_DBroot(uint32_t size, int OID, uint32_t colWidth, uint16_t dbRoot,
+                                    execplan::CalpontSystemCatalog::ColDataType colDataType,
+                                    uint32_t& partitionNum, uint16_t& segmentNum,
+                                    uint32_t& startBlockOffset);
+
+  LBID_t _createColumnExtentExactFile(uint32_t size, int OID, uint32_t colWidth, uint16_t dbRoot,
+                                      uint32_t partitionNum, uint16_t segmentNum,
                                       execplan::CalpontSystemCatalog::ColDataType colDataType,
-                                      uint32_t& partitionNum,
-                                      uint16_t& segmentNum,
                                       uint32_t& startBlockOffset);
 
-    LBID_t _createColumnExtentExactFile(uint32_t size, int OID, uint32_t colWidth, uint16_t dbRoot,
-                                        uint32_t partitionNum, uint16_t segmentNum,
-                                        execplan::CalpontSystemCatalog::ColDataType colDataType,
-                                        uint32_t& startBlockOffset);
+  LBID_t _createDictStoreExtent(uint32_t size, int OID, uint16_t dbRoot, uint32_t partitionNum,
+                                uint16_t segmentNum);
 
-    LBID_t _createDictStoreExtent(uint32_t size, int OID, uint16_t dbRoot, uint32_t partitionNum,
-                                  uint16_t segmentNum);
+  template <typename T>
+  bool isValidCPRange(const T& max, const T& min,
+                      execplan::CalpontSystemCatalog::ColDataType type) const;
 
-    template <typename T>
-    bool isValidCPRange(const T& max, const T& min, execplan::CalpontSystemCatalog::ColDataType type) const;
+  // Delete extent.
+  ExtentMapRBTree::iterator deleteExtent(ExtentMapRBTree::iterator it);
 
-    // Delete extent.
-    ExtentMapRBTree::iterator deleteExtent(ExtentMapRBTree::iterator it);
+  LBID_t getLBIDsFromFreeList(uint32_t size);
+  // Used by load() to allocate pre-existing LBIDs.
+  void reserveLBIDRange(LBID_t start, uint8_t size);
 
-    LBID_t getLBIDsFromFreeList(uint32_t size);
-    // Used by load() to allocate pre-existing LBIDs.
-    void reserveLBIDRange(LBID_t start, uint8_t size);
+  // Choose key.
+  key_t chooseFLShmkey(); // see the code for how keys are segmented
+  key_t chooseEMShmkey();
 
-    // Choose key.
-    key_t chooseFLShmkey();  //see the code for how keys are segmented
-    key_t chooseEMShmkey();
+  // Grab table.
+  void grabEMEntryTable(OPS op);
+  void grabFreeList(OPS op);
 
-    // Grab table.
-    void grabEMEntryTable(OPS op);
-    void grabFreeList(OPS op);
+  // Release table.
+  void releaseEMEntryTable(OPS op);
+  void releaseFreeList(OPS op);
 
-    // Release table.
-    void releaseEMEntryTable(OPS op);
-    void releaseFreeList(OPS op);
+  // Grow memory.
+  void growEMShmseg(size_t nrows = 0);
+  void growFLShmseg();
 
-    // Grow memory.
-    void growEMShmseg(size_t nrows = 0);
-    void growFLShmseg();
+  // Finish changes.
+  void finishChanges();
 
-    // Finish changes.
-    void finishChanges();
+  EXPORT unsigned getFilesPerColumnPartition();
+  unsigned getExtentsPerSegmentFile();
+  unsigned getDbRootCount();
+  void getPmDbRoots(int pm, std::vector<int>& dbRootList);
+  void checkReloadConfig();
+  ShmKeys fShmKeys;
 
-    EXPORT unsigned getFilesPerColumnPartition();
-    unsigned getExtentsPerSegmentFile();
-    unsigned getDbRootCount();
-    void getPmDbRoots(int pm, std::vector<int>& dbRootList);
-    void checkReloadConfig();
-    ShmKeys fShmKeys;
+  void makeUndoRecordRBTree(UndoRecordType type, const EMEntry& emEntry);
+  void undoChangesRBTree();
+  void confirmChangesRBTree();
 
-    bool fDebug;
+  bool fDebug;
 
-    int _markInvalid(const LBID_t lbid,
-                     const execplan::CalpontSystemCatalog::ColDataType colDataType);
+  int _markInvalid(const LBID_t lbid,
+                   const execplan::CalpontSystemCatalog::ColDataType colDataType);
 
-    ExtentMapRBTree::iterator findByLBID(const LBID_t lbid);
+  ExtentMapRBTree::iterator findByLBID(const LBID_t lbid);
 
-    template <class T> void load(T* in);
+  template <class T> void load(T* in);
 
-    /** @brief Loads the extent map from a file into memory.
-     *
-     * @param in (in) the file to load the extent map from.
-     * @param upgradeV4ToV5 (in) flag indicating whether we are upgrading
-     * extent map from v4 to v5.
-     */
-    template <class T> void loadVersion4or5(T* in, bool upgradeV4ToV5);
+  /** @brief Loads the extent map from a file into memory.
+   *
+   * @param in (in) the file to load the extent map from.
+   * @param upgradeV4ToV5 (in) flag indicating whether we are upgrading
+   * extent map from v4 to v5.
+   */
+  template <class T> void loadVersion4or5(T* in, bool upgradeV4ToV5);
 
-    ExtentMapRBTreeImpl* fPExtMapRBTreeImpl;
-    FreeListImpl* fPFreeListImpl;
+  ExtentMapRBTreeImpl* fPExtMapRBTreeImpl;
+  FreeListImpl* fPFreeListImpl;
+  std::vector<std::pair<UndoRecordType, EMEntry>> undoRecordsRBTree;
 };
 
 inline std::ostream& operator<<(std::ostream& os, ExtentMap& rhs)

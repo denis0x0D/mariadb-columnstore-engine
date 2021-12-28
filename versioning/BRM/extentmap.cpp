@@ -381,7 +381,7 @@ int ExtentMap::_markInvalid(const LBID_t lbid,
             // FIXME: Remove this check, since we use tree.
             if (lbid >= emEntry.range.start && lbid <= lastBlock)
             {
-                //   makeUndoRecord(&fExtentMap[i], sizeof(struct EMEntry));
+                makeUndoRecordRBTree(UndoRecordType::DEFAULT, emEntry);
                 emEntry.partition.cprange.isValid = CP_UPDATING;
 
                 if (isUnsigned(colDataType))
@@ -571,7 +571,7 @@ void ExtentMap::setExtentsMaxMin(const CPMaxMinMap_t& cpMap, bool firstNode, boo
                 if (curSequence == it->second.seqNum &&
                     emEntry.partition.cprange.isValid == CP_INVALID)
                 {
-//                    makeUndoRecord(&fExtentMap[i], sizeof(struct EMEntry));
+                    makeUndoRecordRBTree(UndoRecordType::DEFAULT, emEntry);
                     if (it->second.isBinaryColumn)
                     {
                         emEntry.partition.cprange.bigHiVal = it->second.bigMax;
@@ -589,7 +589,7 @@ void ExtentMap::setExtentsMaxMin(const CPMaxMinMap_t& cpMap, bool firstNode, boo
                 //special val to indicate a reset -- ignore the min/max
                 else if (it->second.seqNum == SEQNUM_MARK_INVALID)
                 {
-                    //makeUndoRecord(&fExtentMap[i], sizeof(struct EMEntry));
+                    makeUndoRecordRBTree(UndoRecordType::DEFAULT, emEntry);
                     // We set hiVal and loVal to correct values for signed or unsigned
                     // during the markinvalid step, which sets the invalid variable to CP_UPDATING.
                     // During this step (seqNum == SEQNUM_MARK_INVALID), the min and max passed in are not reliable
@@ -601,7 +601,7 @@ void ExtentMap::setExtentsMaxMin(const CPMaxMinMap_t& cpMap, bool firstNode, boo
                 //special val to indicate a reset -- assign the min/max
                 else if (it->second.seqNum == SEQNUM_MARK_INVALID_SET_RANGE)
                 {
-//                    makeUndoRecord(&fExtentMap[i], sizeof(struct EMEntry));
+                    makeUndoRecordRBTree(UndoRecordType::DEFAULT, emEntry);
                     if (it->second.isBinaryColumn)
                     {
                         emEntry.partition.cprange.bigHiVal = it->second.bigMax;
@@ -618,7 +618,7 @@ void ExtentMap::setExtentsMaxMin(const CPMaxMinMap_t& cpMap, bool firstNode, boo
                 }
                 else if (it->second.seqNum == SEQNUM_MARK_UPDATING_INVALID_SET_RANGE)
                 {
-                    //makeUndoRecord(&fExtentMap[i], sizeof(struct EMEntry));
+                    makeUndoRecordRBTree(UndoRecordType::DEFAULT, emEntry);
                     if (emEntry.partition.cprange.isValid == CP_UPDATING)
                     {
                         if (it->second.isBinaryColumn)
@@ -720,9 +720,7 @@ void ExtentMap::mergeExtentsMaxMin(CPMaxMinMergeMap_t& cpMap, bool useLock)
                     {
                         break;
                     }
-
-                    //                        makeUndoRecord(&fExtentMap[i], sizeof(struct
-                    //                        EMEntry));
+                    makeUndoRecordRBTree(UndoRecordType::DEFAULT, emEntry);
 
                     // We check the validity of the current min/max,
                     // because isValid could be CP_VALID for an extent
@@ -826,8 +824,7 @@ void ExtentMap::mergeExtentsMaxMin(CPMaxMinMergeMap_t& cpMap, bool useLock)
                 // prevent this state from occurring (see notes at top of
                 // this function)
                 case CP_UPDATING: {
-                    //                        makeUndoRecord(&fExtentMap[i], sizeof(struct
-                    //                        EMEntry));
+                    makeUndoRecordRBTree(UndoRecordType::DEFAULT, emEntry);
                     incSeqNum(emEntry.partition.cprange.sequenceNum);
                     break;
                 }
@@ -836,9 +833,7 @@ void ExtentMap::mergeExtentsMaxMin(CPMaxMinMergeMap_t& cpMap, bool useLock)
                 // as a new extent, else leave the extent marked as INVALID
                 case CP_INVALID:
                 default: {
-                    //                        makeUndoRecord(&fExtentMap[i], sizeof(struct
-                    //                        EMEntry));
-
+                    makeUndoRecordRBTree(UndoRecordType::DEFAULT, emEntry);
                     if (it->second.newExtent)
                     {
                         if ((!isBinaryColumn &&
@@ -2614,7 +2609,6 @@ ExtentMap::_createColumnExtent_DBroot(uint32_t size, int OID, uint32_t colWidth,
     // Fourth Step: Construct the new extentmap entry
     //--------------------------------------------------------------------------
 
-//    makeUndoRecord(&fExtentMap[emptyEMEntry], sizeof(EMEntry));
     EMEntry e;
     e.range.start = startLBID;
     e.range.size = size;
@@ -2671,7 +2665,8 @@ ExtentMap::_createColumnExtent_DBroot(uint32_t size, int OID, uint32_t colWidth,
     segmentNum = e.segmentNum;
     startBlockOffset = e.blockOffset;
 
-    //    makeUndoRecord(fEMShminfo, sizeof(MSTEntry));
+    makeUndoRecordRBTree(UndoRecordType::INSERT, e);
+    makeUndoRecord(fEMRBTreeShminfo, sizeof(MSTEntry));
     std::pair<int64_t, EMEntry> lbidEmEntryPair = make_pair(startLBID, e);
     fExtentMapRBTree->insert(lbidEmEntryPair);
     fEMRBTreeShminfo->currentSize += EM_RB_TREE_NODE_SIZE;
@@ -2765,8 +2760,6 @@ ExtentMap::_createColumnExtentExactFile(uint32_t size, int OID, uint32_t colWidt
     }
 
     EMEntry newEmEntry;
-    //    makeUndoRecord(&fExtentMap[emptyEMEntry], sizeof(EMEntry));
-
     newEmEntry.range.start = startLBID;
     newEmEntry.range.size = size;
     newEmEntry.fileID = OID;
@@ -2826,10 +2819,12 @@ ExtentMap::_createColumnExtentExactFile(uint32_t size, int OID, uint32_t colWidt
         newEmEntry.partition.cprange.isValid = CP_INVALID;
 
     // Create and insert a pair of `lbid` and `EMEntry`.
+    makeUndoRecordRBTree(UndoRecordType::INSERT, newEmEntry);
     std::pair<int64_t, EMEntry> lbidEmEntryPair = make_pair(startLBID, newEmEntry);
     fExtentMapRBTree->insert(lbidEmEntryPair);
     startBlockOffset = newEmEntry.blockOffset;
-    //    makeUndoRecord(fEMShminfo, sizeof(MSTEntry));
+
+    makeUndoRecord(fEMRBTreeShminfo, sizeof(MSTEntry));
     fEMRBTreeShminfo->currentSize += EM_RB_TREE_NODE_SIZE;
 
     return startLBID;
@@ -2928,8 +2923,6 @@ LBID_t ExtentMap::_createDictStoreExtent(uint32_t size, int OID, uint16_t dbRoot
     }
 
     EMEntry newEmEntry;
-    //    makeUndoRecord(&fExtentMap[emptyEMEntry], sizeof(EMEntry));
-
     newEmEntry.range.start = startLBID;
     newEmEntry.range.size = size;
     newEmEntry.fileID = OID;
@@ -2958,10 +2951,11 @@ LBID_t ExtentMap::_createDictStoreExtent(uint32_t size, int OID, uint16_t dbRoot
         newEmEntry.dbRoot = lastEmEntry->dbRoot;
     }
 
+    makeUndoRecordRBTree(UndoRecordType::INSERT, newEmEntry);
     std::pair<int64_t, EMEntry> lbidEmEntryPair = make_pair(startLBID, newEmEntry);
     fExtentMapRBTree->insert(lbidEmEntryPair);
 
-    //    makeUndoRecord(fEMShminfo, sizeof(MSTEntry));
+    makeUndoRecord(fEMRBTreeShminfo, sizeof(MSTEntry));
     fEMRBTreeShminfo->currentSize += EM_RB_TREE_NODE_SIZE;
 
     return startLBID;
@@ -3206,7 +3200,7 @@ void ExtentMap::rollbackColumnExtents_DBroot(int oid, bool bDeleteAll, uint16_t 
                         {
                             if (emEntry.HWM != (fboLo - 1))
                             {
-                                //                  makeUndoRecord(&fExtentMap[i], sizeof(EMEntry));
+                                makeUndoRecordRBTree(UndoRecordType::DEFAULT, emEntry);
                                 emEntry.HWM    = fboLo - 1;      //case 3A
                                 emEntry.status = EXTENTAVAILABLE;
                             }
@@ -3223,7 +3217,7 @@ void ExtentMap::rollbackColumnExtents_DBroot(int oid, bool bDeleteAll, uint16_t 
                     {
                         if (emEntry.HWM != fboHi)
                         {
-//                            makeUndoRecord(&fExtentMap[i], sizeof(EMEntry));
+                            makeUndoRecordRBTree(UndoRecordType::DEFAULT, emEntry);
                             emEntry.HWM    = fboHi;             // case 4B
                             emEntry.status = EXTENTAVAILABLE;
                         }
@@ -3232,7 +3226,7 @@ void ExtentMap::rollbackColumnExtents_DBroot(int oid, bool bDeleteAll, uint16_t 
                     {
                         if (emEntry.HWM != hwm)
                         {
-                            //makeUndoRecord(&fExtentMap[i], sizeof(EMEntry));
+                            makeUndoRecordRBTree(UndoRecordType::DEFAULT, emEntry);
                             emEntry.HWM = hwm; // case 4C
                             emEntry.status = EXTENTAVAILABLE;
                         }
@@ -3397,7 +3391,7 @@ void ExtentMap::rollbackDictStoreExtents_DBroot(int oid, uint16_t dbRoot, uint32
 
                         if (emEntry.HWM != hwm)
                         {
-//                            makeUndoRecord(&fExtentMap[i], sizeof(EMEntry));
+                            makeUndoRecordRBTree(UndoRecordType::DEFAULT, emEntry);
                             emEntry.HWM  = hwm;
                             emEntry.status = EXTENTAVAILABLE;   // case 3B
                         }
@@ -3509,7 +3503,7 @@ void ExtentMap::deleteEmptyColExtents(const ExtentsInfoMap_t& extentsInfo)
                         {
                             if (emEntry.HWM != (fboLo - 1))
                             {
-                                //    makeUndoRecord(&fExtentMap[i], sizeof(EMEntry));
+                                makeUndoRecordRBTree(UndoRecordType::DEFAULT, emEntry);
                                 emEntry.HWM = fboLo - 1; // case 3A
                                 emEntry.status = EXTENTAVAILABLE;
                             }
@@ -3527,7 +3521,7 @@ void ExtentMap::deleteEmptyColExtents(const ExtentsInfoMap_t& extentsInfo)
                     {
                         if (emEntry.HWM != fboHi)
                         {
-                            //   makeUndoRecord(&fExtentMap[i], sizeof(EMEntry));
+                            makeUndoRecordRBTree(UndoRecordType::DEFAULT, emEntry);
                             emEntry.HWM = fboHi; // case 4B
                             emEntry.status = EXTENTAVAILABLE;
                         }
@@ -3536,7 +3530,7 @@ void ExtentMap::deleteEmptyColExtents(const ExtentsInfoMap_t& extentsInfo)
                     {
                         if (emEntry.HWM != id->second.hwm)
                         {
-                            // mkeUndoRecord(&fExtentMap[i], sizeof(EMEntry));
+                            makeUndoRecordRBTree(UndoRecordType::DEFAULT, emEntry);
                             emEntry.HWM = id->second.hwm; // case 4C
                             emEntry.status = EXTENTAVAILABLE;
                         }
@@ -3634,7 +3628,7 @@ void ExtentMap::deleteEmptyDictStoreExtents(const ExtentsInfoMap_t& extentsInfo)
                             {
                                 if (emEntry.HWM != it->second.hwm)
                                 {
-//                                    makeUndoRecord(&fExtentMap[i], sizeof(EMEntry));
+                                    makeUndoRecordRBTree(UndoRecordType::DEFAULT, emEntry);
                                     emEntry.HWM  = it->second.hwm;
                                     emEntry.status = EXTENTAVAILABLE; // case 2B
                                 }
@@ -3849,7 +3843,7 @@ ExtentMapRBTree::iterator ExtentMap::deleteExtent(ExtentMapRBTree::iterator it)
         fFLShminfo->currentSize += sizeof(InlineLBIDRange);
     }
 
-    //    makeUndoRecord(&fExtentMap[emIndex], sizeof(EMEntry));
+    makeUndoRecordRBTree(UndoRecordType::DELETE, it->second);
     // Erase a node for the given iterator.
     makeUndoRecord(&fEMRBTreeShminfo, sizeof(MSTEntry));
     fEMRBTreeShminfo->currentSize -= EM_RB_TREE_NODE_SIZE;
@@ -4285,15 +4279,14 @@ void ExtentMap::setLocalHWM(int OID, uint32_t partitionNum, uint16_t segmentNum,
     }
 
     // Save HWM in last extent for this segment file; and mark as AVAILABLE
-//    makeUndoRecord(&fExtentMap[lastExtentIndex], sizeof(EMEntry));
+    makeUndoRecordRBTree(UndoRecordType::DEFAULT, *lastEm);
     lastEm->HWM = newHWM;
     lastEm->status = EXTENTAVAILABLE;
 
     // Reset HWM in old HWM extent to 0
-    // FIXME: Why this code does not work?
     if ((prevEm != nullptr) && (prevEm != lastEm))
     {
-        //        makeUndoRecord(&fExtentMap[oldHWMExtentIndex], sizeof(EMEntry));
+        makeUndoRecordRBTree(UndoRecordType::DEFAULT, *prevEm);
         prevEm->HWM = 0;
     }
 }
@@ -4689,7 +4682,7 @@ void ExtentMap::markPartitionForDeletion(const set<OID_t>& oids,
     // really disable partitions
     for (uint32_t i = 0; i < extents.size(); i++)
     {
-        ///        makeUndoRecord(&fExtentMap[extents[i]], sizeof(EMEntry));
+        makeUndoRecordRBTree(UndoRecordType::DEFAULT, extents[i]->second);
         extents[i]->second.status = EXTENTOUTOFSERVICE;
     }
 
@@ -4772,7 +4765,7 @@ void ExtentMap::markAllPartitionForDeletion(const set<OID_t>& oids)
 
         if (it != oids.end())
         {
-            //            makeUndoRecord(&fExtentMap[i], sizeof(EMEntry));
+            makeUndoRecordRBTree(UndoRecordType::DEFAULT, emEntry);
             emEntry.status = EXTENTOUTOFSERVICE;
         }
     }
@@ -4840,8 +4833,8 @@ void ExtentMap::restorePartition(const set<OID_t>& oids, const set<LogicalPartit
     // really enable partitions
     for (uint32_t i = 0; i < extents.size(); i++)
     {
-//        makeUndoRecord(&fExtentMap[extents[i]], sizeof(EMEntry));
-extents[i]->second.status = EXTENTAVAILABLE;
+        makeUndoRecordRBTree(UndoRecordType::DEFAULT, extents[i]->second);
+        extents[i]->second.status = EXTENTAVAILABLE;
     }
 
     if (partitionAlreadyEnabled)
@@ -5293,6 +5286,7 @@ void ExtentMap::undoChanges()
 
 #endif
     Undoable::undoChanges();
+    undoChangesRBTree();
     finishChanges();
 }
 
@@ -5304,6 +5298,7 @@ void ExtentMap::confirmChanges()
 
 #endif
     Undoable::confirmChanges();
+    confirmChangesRBTree();
     finishChanges();
 }
 
@@ -5315,6 +5310,43 @@ void ExtentMap::finishChanges()
     if (emLocked)
         releaseEMEntryTable(WRITE);
 }
+
+void ExtentMap::makeUndoRecordRBTree(UndoRecordType type, const EMEntry& emEntry)
+{
+    undoRecordsRBTree.push_back(make_pair(type, emEntry));
+}
+
+void ExtentMap::undoChangesRBTree()
+{
+    for (const auto& undoPair : undoRecordsRBTree)
+    {
+        if (undoPair.first == UndoRecordType::INSERT)
+        {
+            const auto key = undoPair.second.range.start;
+            auto emIt = findByLBID(key);
+            if (emIt != fExtentMapRBTree->end())
+            {
+                fExtentMapRBTree->erase(emIt);
+            }
+        }
+        else if (undoPair.first == UndoRecordType::DELETE)
+        {
+            const auto& emEntry = undoPair.second;
+            fExtentMapRBTree->insert(make_pair(emEntry.range.start, emEntry));
+        }
+        else
+        {
+            const auto key = undoPair.second.range.start;
+            auto emIt = findByLBID(key);
+            if (emIt != fExtentMapRBTree->end())
+            {
+                emIt->second = undoPair.second;
+            }
+        }
+    }
+}
+
+void ExtentMap::confirmChangesRBTree() { undoRecordsRBTree.clear(); }
 
 const bool* ExtentMap::getEMFLLockStatus()
 {
