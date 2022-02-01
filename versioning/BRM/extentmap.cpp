@@ -3127,14 +3127,20 @@ void ExtentMap::rollbackColumnExtents_DBroot(int oid, bool bDeleteAll, uint16_t 
     grabEMEntryTable(WRITE);
     grabFreeList(WRITE);
 
-    for (auto emIt = fExtentMapRBTree->begin(), end = fExtentMapRBTree->end(); emIt != end; ++emIt)
+    auto emIt = fExtentMapRBTree->begin();
+    auto end = fExtentMapRBTree->end();
+
+    while (emIt != end)
     {
         auto& emEntry = emIt->second;
         if ((emEntry.fileID == oid) && (emEntry.dbRoot == dbRoot))
         {
             // Don't rollback extents that are out of service
             if (emEntry.status == EXTENTOUTOFSERVICE)
+            {
+                ++emIt;
                 continue;
+            }
 
             // If bDeleteAll is true, then we delete extent w/o regards to
             // partition number, segment number, or HWM
@@ -3178,12 +3184,14 @@ void ExtentMap::rollbackColumnExtents_DBroot(int oid, bool bDeleteAll, uint16_t 
             if (emEntry.partitionNum > partitionNum)
             {
                 emIt = deleteExtent(emIt); // case 1
+                continue;
             }
             else if (emEntry.partitionNum == partitionNum)
             {
                 if (emEntry.blockOffset > fboHi)
                 {
                     emIt = deleteExtent(emIt); // case 2
+                    continue;
                 }
                 else if (emEntry.blockOffset < fboLo)
                 {
@@ -3194,28 +3202,29 @@ void ExtentMap::rollbackColumnExtents_DBroot(int oid, bool bDeleteAll, uint16_t 
                             if (emEntry.HWM != (fboLo - 1))
                             {
                                 makeUndoRecordRBTree(UndoRecordType::DEFAULT, emEntry);
-                                emEntry.HWM    = fboLo - 1;      //case 3A
+                                emEntry.HWM = fboLo - 1; // case 3A
                                 emEntry.status = EXTENTAVAILABLE;
                             }
                         }
                     }
                 }
-                else   // extent is in same stripe
+                else // extent is in same stripe
                 {
                     if (emEntry.segmentNum > segmentNum)
                     {
                         emIt = deleteExtent(emIt); // case 4A
+                        continue;
                     }
                     else if (emEntry.segmentNum < segmentNum)
                     {
                         if (emEntry.HWM != fboHi)
                         {
                             makeUndoRecordRBTree(UndoRecordType::DEFAULT, emEntry);
-                            emEntry.HWM    = fboHi;             // case 4B
+                            emEntry.HWM = fboHi; // case 4B
                             emEntry.status = EXTENTAVAILABLE;
                         }
                     }
-                    else   // fExtentMap[i].segmentNum == segmentNum
+                    else // fExtentMap[i].segmentNum == segmentNum
                     {
                         if (emEntry.HWM != hwm)
                         {
@@ -3226,13 +3235,14 @@ void ExtentMap::rollbackColumnExtents_DBroot(int oid, bool bDeleteAll, uint16_t 
                     }
                 }
             }
-        }  // extent map entry with matching oid
-    }      // loop through the extent map
+        } // extent map entry with matching oid
+        ++emIt;
+    } // loop through the extent map
 
     // If this function is called, we are already in error recovery mode; so
     // don't worry about reporting an error if the OID is not found, because
     // we don't want/need the extents for that OID anyway.
-    //if (!oidExists)
+    // if (!oidExists)
     //{
     //	ostringstream oss;
     //	oss << "ExtentMap::rollbackColumnExtents_DBroot(): "
@@ -3312,14 +3322,20 @@ void ExtentMap::rollbackDictStoreExtents_DBroot(int oid, uint16_t dbRoot, uint32
     grabEMEntryTable(WRITE);
     grabFreeList(WRITE);
 
-    for (auto emIt = fExtentMapRBTree->begin(), end = fExtentMapRBTree->end(); emIt != end; ++emIt)
+    auto emIt = fExtentMapRBTree->begin();
+    auto end = fExtentMapRBTree->end();
+
+    while (emIt != end)
     {
         auto& emEntry = emIt->second;
         if ((emEntry.fileID == oid) && (emEntry.dbRoot == dbRoot))
         {
             // Don't rollback extents that are out of service
             if (emEntry.status == EXTENTOUTOFSERVICE)
+            {
+                ++emIt;
                 continue;
+            }
 
             // If bDeleteAll is true, then we delete extent w/o regards to
             // partition number, segment number, or HWM
@@ -3339,8 +3355,8 @@ void ExtentMap::rollbackDictStoreExtents_DBroot(int oid, uint16_t dbRoot, uint32
                 for (unsigned int k = 0; k < hwms.size(); k++)
                 {
                     uint32_t fboLo = hwms[k] - (hwms[k] % range);
-                    segToHwmMapEntry.first    = hwms[k];
-                    segToHwmMapEntry.second   = fboLo;
+                    segToHwmMapEntry.first = hwms[k];
+                    segToHwmMapEntry.second = fboLo;
                     segToHwmMap[segNums[k]] = segToHwmMapEntry;
                 }
             }
@@ -3360,6 +3376,7 @@ void ExtentMap::rollbackDictStoreExtents_DBroot(int oid, uint16_t dbRoot, uint32
             if (emEntry.partitionNum > partitionNum)
             {
                 emIt = deleteExtent(emIt); // case 1
+                continue;
             }
             else if (emEntry.partitionNum == partitionNum)
             {
@@ -3369,8 +3386,9 @@ void ExtentMap::rollbackDictStoreExtents_DBroot(int oid, uint16_t dbRoot, uint32
                 if (segToHwmMapIter == segToHwmMap.end())
                 {
                     emIt = deleteExtent(emIt); // case 2
+                    continue;
                 }
-                else   // segment number in the map of files to keep
+                else // segment number in the map of files to keep
                 {
                     uint32_t fboLo = segToHwmMapIter->second.second;
 
@@ -3385,18 +3403,20 @@ void ExtentMap::rollbackDictStoreExtents_DBroot(int oid, uint16_t dbRoot, uint32
                         if (emEntry.HWM != hwm)
                         {
                             makeUndoRecordRBTree(UndoRecordType::DEFAULT, emEntry);
-                            emEntry.HWM  = hwm;
-                            emEntry.status = EXTENTAVAILABLE;   // case 3B
+                            emEntry.HWM = hwm;
+                            emEntry.status = EXTENTAVAILABLE; // case 3B
                         }
                     }
                     else
                     {
                         emIt = deleteExtent(emIt); // case 3C
+                        continue;
                     }
                 }
             }
-        }  // extent map entry with matching oid
-    }      // loop through the extent map
+        } // extent map entry with matching oid
+        ++emIt;
+    } // loop through the extent map
 
     // If this function is called, we are already in error recovery mode; so
     // don't worry about reporting an error if the OID is not found, because
@@ -3437,7 +3457,10 @@ void ExtentMap::deleteEmptyColExtents(const ExtentsInfoMap_t& extentsInfo)
 
     ExtentsInfoMap_t::const_iterator it;
 
-    for (auto emIt = fExtentMapRBTree->begin(), end = fExtentMapRBTree->end(); emIt != end; ++emIt)
+    auto emIt = fExtentMapRBTree->begin();
+    auto end = fExtentMapRBTree->end();
+
+    while (emIt != end)
     {
         auto id = extentsInfo.find(emIt->second.fileID);
         if (id != extentsInfo.end())
@@ -3445,7 +3468,10 @@ void ExtentMap::deleteEmptyColExtents(const ExtentsInfoMap_t& extentsInfo)
             auto& emEntry = emIt->second;
             // Don't rollback extents that are out of service.
             if (emEntry.status == EXTENTOUTOFSERVICE)
+            {
+                ++emIt;
                 continue;
+            }
 
             // Calculate fbo range for the stripe containing the given hwm.
             if (fboHi == 0)
@@ -3481,12 +3507,14 @@ void ExtentMap::deleteEmptyColExtents(const ExtentsInfoMap_t& extentsInfo)
             if (emEntry.partitionNum > id->second.partitionNum)
             {
                 emIt = deleteExtent(emIt); // case 1
+                continue;
             }
             else if (emEntry.partitionNum == id->second.partitionNum)
             {
                 if (emEntry.blockOffset > fboHi)
                 {
                     emIt = deleteExtent(emIt); // case 2
+                    continue;
                 }
                 else if (emEntry.blockOffset < fboLo)
                 {
@@ -3509,6 +3537,7 @@ void ExtentMap::deleteEmptyColExtents(const ExtentsInfoMap_t& extentsInfo)
                     if (emEntry.segmentNum > id->second.segmentNum)
                     {
                         emIt = deleteExtent(emIt); // case 4A
+                        continue;
                     }
                     else if (emEntry.segmentNum < id->second.segmentNum)
                     {
@@ -3531,7 +3560,8 @@ void ExtentMap::deleteEmptyColExtents(const ExtentsInfoMap_t& extentsInfo)
                 }
             }
         } // extent map entry with matching oid
-    }     // loop through the extent map
+        ++emIt;
+    } // loop through the extent map
 }
 
 void ExtentMap::deleteEmptyDictStoreExtents(const ExtentsInfoMap_t& extentsInfo)
@@ -3553,10 +3583,12 @@ void ExtentMap::deleteEmptyDictStoreExtents(const ExtentsInfoMap_t& extentsInfo)
     uint32_t fboHi = 0;
 
     auto it = extentsInfo.begin();
+    auto emIt = fExtentMapRBTree->begin();
+    auto end = fExtentMapRBTree->end();
+
     if (it->second.newFile) // The extent is the new extent
     {
-        for (auto emIt = fExtentMapRBTree->begin(), end = fExtentMapRBTree->end(); emIt != end;
-             ++emIt)
+        while (emIt != end)
         {
             auto& emEntry = emIt->second;
             it = extentsInfo.find(emEntry.fileID);
@@ -3569,71 +3601,82 @@ void ExtentMap::deleteEmptyDictStoreExtents(const ExtentsInfoMap_t& extentsInfo)
                 {
                     emIt = deleteExtent(emIt);
                 }
+                else
+                {
+                    ++emIt;
+                }
+            }
+            else
+            {
+                ++emIt;
             }
         }
     }
-    else //The extent is the old one
+    else // The extent is the old one
     {
-        for (auto emIt = fExtentMapRBTree->begin(), end = fExtentMapRBTree->end(); emIt != end;
-             ++emIt)
+        while (emIt != end)
         {
             auto& emEntry = emIt->second;
+            auto it = extentsInfo.find(emEntry.fileID);
+            if (it != extentsInfo.end())
             {
-                auto it = extentsInfo.find(emEntry.fileID);
-                if (it != extentsInfo.end())
+                // Don't rollback extents that are out of service
+                if (emEntry.status == EXTENTOUTOFSERVICE)
                 {
-                    // Don't rollback extents that are out of service
-                    if (emEntry.status == EXTENTOUTOFSERVICE)
-                        continue;
+                    ++emIt;
+                    continue;
+                }
 
-                    // Calculate fbo
-                    if (fboHi == 0)
-                    {
-                        uint32_t range = emEntry.range.size * 1024;
-                        fboLo = it->second.hwm - (it->second.hwm % range);
-                        fboHi = fboLo + range - 1;
-                    }
+                // Calculate fbo
+                if (fboHi == 0)
+                {
+                    uint32_t range = emEntry.range.size * 1024;
+                    fboLo = it->second.hwm - (it->second.hwm % range);
+                    fboHi = fboLo + range - 1;
+                }
 
-                    // Delete, update, or ignore this extent:
-                    // Later partition:
-                    //   case 1: extent is in later partition, so delete the extent
-                    // Same partition:
-                    //   case 2: extent is in partition and segment file of interest
-                    //     case 2A: earlier extent in segment file; no action necessary
-                    //     case 2B: specified HWM falls in this extent, so reset HWM
-                    //     case 2C: later extent in segment file; so delete the extent
-                    // Earlier partition:
-                    //   case 3: extent is in earlier parition, no action necessary
+                // Delete, update, or ignore this extent:
+                // Later partition:
+                //   case 1: extent is in later partition, so delete the extent
+                // Same partition:
+                //   case 2: extent is in partition and segment file of interest
+                //     case 2A: earlier extent in segment file; no action necessary
+                //     case 2B: specified HWM falls in this extent, so reset HWM
+                //     case 2C: later extent in segment file; so delete the extent
+                // Earlier partition:
+                //   case 3: extent is in earlier parition, no action necessary
 
-                    if (emEntry.partitionNum > it->second.partitionNum)
+                if (emEntry.partitionNum > it->second.partitionNum)
+                {
+                    emIt = deleteExtent(emIt); // case 1
+                    continue;
+                }
+                else if (emEntry.partitionNum == it->second.partitionNum)
+                {
+                    if (emEntry.segmentNum == it->second.segmentNum)
                     {
-                        emIt = deleteExtent(emIt); // case 1
-                    }
-                    else if (emEntry.partitionNum == it->second.partitionNum)
-                    {
-                        if (emEntry.segmentNum == it->second.segmentNum)
+                        if (emEntry.blockOffset < fboLo)
                         {
-                            if (emEntry.blockOffset < fboLo)
+                            // no action necessary                           case 2A
+                        }
+                        else if (emEntry.blockOffset == fboLo)
+                        {
+                            if (emEntry.HWM != it->second.hwm)
                             {
-                                // no action necessary                           case 2A
-                            }
-                            else if (emEntry.blockOffset == fboLo)
-                            {
-                                if (emEntry.HWM != it->second.hwm)
-                                {
-                                    makeUndoRecordRBTree(UndoRecordType::DEFAULT, emEntry);
-                                    emEntry.HWM  = it->second.hwm;
-                                    emEntry.status = EXTENTAVAILABLE; // case 2B
-                                }
-                            }
-                            else
-                            {
-                                emIt = deleteExtent(emIt); // case 3C
+                                makeUndoRecordRBTree(UndoRecordType::DEFAULT, emEntry);
+                                emEntry.HWM = it->second.hwm;
+                                emEntry.status = EXTENTAVAILABLE; // case 2B
                             }
                         }
+                        else
+                        {
+                            emIt = deleteExtent(emIt); // case 3C
+                            continue;
+                        }
                     }
-                } // extent map entry with matching oid
-            }
+                }
+            } // extent map entry with matching oid
+            ++emIt;
         } // loop through the extent map
     }
 }
@@ -3669,12 +3712,19 @@ void ExtentMap::deleteOID(int OID)
     grabEMEntryTable(WRITE);
     grabFreeList(WRITE);
 
-    for (auto it = fExtentMapRBTree->begin(), end = fExtentMapRBTree->end(); it != end; ++it)
+    auto it = fExtentMapRBTree->begin();
+    auto end = fExtentMapRBTree->end();
+
+    while (it != end)
     {
         if (it->second.fileID == OID)
         {
             OIDExists = true;
             it = deleteExtent(it);
+        }
+        else
+        {
+            ++it;
         }
     }
 
@@ -3701,14 +3751,20 @@ void ExtentMap::deleteOIDs(const OidsMap_t& OIDs)
     }
 
 #endif
+
     grabEMEntryTable(WRITE);
     grabFreeList(WRITE);
 
-    for (auto it = fExtentMapRBTree->begin(), end = fExtentMapRBTree->end(); it != end; ++it)
+    auto it = fExtentMapRBTree->begin();
+    auto end = fExtentMapRBTree->end();
+
+    while (it != end)
     {
         const auto id = OIDs.find(it->second.fileID);
         if (id != OIDs.end())
             it = deleteExtent(it);
+        else
+            ++it;
     }
 }
 
@@ -4621,7 +4677,8 @@ void ExtentMap::deletePartition(const set<OID_t>& oids, const set<LogicalPartiti
         rc = WARN_NO_PARTITION_PERFORMED;
 
     // Really delete extents.
-    // FIXME: Implement a proper delete function.
+    // FIXME: Implement a proper delete function, I'm not sure about are iterators still valid after
+    // single delete?
     for (uint32_t i = 0, e = extents.size(); i < e; ++i)
         deleteExtent(extents[i]);
 
@@ -4897,10 +4954,15 @@ void ExtentMap::deleteDBRoot(uint16_t dbroot)
     grabEMEntryTable(WRITE);
     grabFreeList(WRITE);
 
-    for (auto it = fExtentMapRBTree->begin(), end = fExtentMapRBTree->end(); it != end; ++it)
+    auto it = fExtentMapRBTree->begin();
+    auto end = fExtentMapRBTree->end();
+
+    while (it != end)
     {
         if (it->second.dbRoot == dbroot)
             it = deleteExtent(it);
+        else
+            ++it;
     }
 }
 //------------------------------------------------------------------------------
