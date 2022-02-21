@@ -109,4 +109,28 @@ class BRMManagedShmImpl : public BRMShmImplParent
     bi::managed_shared_memory* fShmSegment;
 };
 
+class BRMManagedShmImplRBTree
+{
+public:
+  BRMManagedShmImplRBTree(unsigned key, off_t size, bool readOnly = false);
+  ~BRMManagedShmImplRBTree();
+
+  inline unsigned key() const { return fKey; }
+  inline off_t size() const { return fSize; }
+  inline bool isReadOnly() const { return fReadOnly; }
+
+  void setReadOnly();
+  int32_t grow(unsigned key, off_t incSize);
+  void destroy(unsigned key);
+  void reMapSegment();
+
+  boost::interprocess::managed_shared_memory* fShmSegment;
+
+private:
+  unsigned fKey;
+  off_t fSize;
+  bool fReadOnly;
+  const char* segmentName = "InfiniDB-shm-shared_managed_segment_00";
+};
+
 } //namespace
