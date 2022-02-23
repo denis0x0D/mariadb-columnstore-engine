@@ -212,6 +212,8 @@ ExtentMapRBTreeImpl* ExtentMapRBTreeImpl::fInstance = 0;
 
 ExtentMapRBTreeImpl* ExtentMapRBTreeImpl::makeExtentMapRBTreeImpl(unsigned key, off_t size, bool readOnly)
 {
+    std::cout << "ExtentMapRBTreeImpl* ExtentMapRBTreeImpl::makeExtentMapRBTreeImpl(unsigned key, off_t size, bool readOnly)" << std::endl;
+
     boost::mutex::scoped_lock lk(fInstanceMutex);
 
     if (fInstance)
@@ -1706,6 +1708,8 @@ void ExtentMap::save(const string& filename)
 
 void ExtentMap::grabEMEntryTable(OPS op)
 {
+    std::cout << "void ExtentMap::grabEMEntryTable(OPS op) " << std::endl;
+
     boost::mutex::scoped_lock lk(mutex);
 
     if (op == READ)
@@ -1967,6 +1971,8 @@ key_t ExtentMap::chooseShmkey(const MSTEntry* masterTableEntry, const uint32_t k
    Returns with the new shmseg mapped */
 void ExtentMap::growEMShmseg(size_t size)
 {
+    std::cout << "void ExtentMap::growEMShmseg(size_t size) " << std::endl;
+
     size_t allocSize;
     auto newShmKey = chooseEMShmkey();
 

@@ -1005,6 +1005,8 @@ public:
         if (fEMRBTreeShminfo == 0)
         {
             grabEMEntryTable(READ);
+            grabEMIndex(READ);
+            releaseEMIndex(READ);
             releaseEMEntryTable(READ);
         }
         // Initial size.
