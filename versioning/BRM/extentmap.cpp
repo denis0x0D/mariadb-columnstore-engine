@@ -866,11 +866,11 @@ int ExtentMap::setMaxMin(const LBID_t lbid, const int64_t max, const int64_t min
         }
     }
 
-    if (emLocked)
-        releaseEMEntryTable(WRITE);
-
     if (emIndexLocked)
         releaseEMIndex(WRITE);
+
+    if (emLocked)
+        releaseEMEntryTable(WRITE);
 
     throw logic_error("ExtentMap::setMaxMin(): lbid isn't allocated");
 }
@@ -1714,7 +1714,7 @@ void ExtentMap::save(const string& filename)
 
 void ExtentMap::grabEMEntryTable(OPS op)
 {
-    std::cout << "void ExtentMap::grabEMEntryTable(OPS op) " << std::endl;
+//    std::cout << "void ExtentMap::grabEMEntryTable(OPS op) " << std::endl;
 
     boost::mutex::scoped_lock lk(mutex);
 
@@ -4345,6 +4345,9 @@ HWM_t ExtentMap::getLastHWM_DBroot(int OID, uint16_t dbRoot, uint32_t& partition
 
 #endif
 
+    grabEMEntryTable(READ);
+    grabEMIndex(READ);
+
     uint32_t lastExtent = 0;
     ExtentMapRBTree::iterator lastIt = fExtentMapRBTree->end();
     partitionNum = 0;
@@ -4359,8 +4362,6 @@ HWM_t ExtentMap::getLastHWM_DBroot(int OID, uint16_t dbRoot, uint32_t& partition
         log(oss.str(), logging::LOG_TYPE_CRITICAL);
         throw invalid_argument(oss.str());
     }
-
-    grabEMEntryTable(READ);
 
     for (auto emIt = fExtentMapRBTree->begin(), end = fExtentMapRBTree->end(); emIt != end; ++emIt)
     {
@@ -4389,6 +4390,7 @@ HWM_t ExtentMap::getLastHWM_DBroot(int OID, uint16_t dbRoot, uint32_t& partition
         bFound = true;
     }
 
+    releaseEMIndex(READ);
     releaseEMEntryTable(READ);
 
     return hwm;
@@ -4881,7 +4883,6 @@ void ExtentMap::getExtents(int OID, vector<struct EMEntry>& entries,
     }
 
 #endif
-    int i, emEntries;
 
     entries.clear();
 
@@ -4902,7 +4903,7 @@ void ExtentMap::getExtents(int OID, vector<struct EMEntry>& entries,
         for (auto emIt = fExtentMapRBTree->begin(), end = fExtentMapRBTree->end(); emIt != end;
              ++emIt)
         {
-            const auto& emEntry = emIt->second;
+            auto& emEntry = emIt->second;
             if ((emEntry.fileID == OID))
                 entries.push_back(emEntry);
         }
@@ -4912,7 +4913,7 @@ void ExtentMap::getExtents(int OID, vector<struct EMEntry>& entries,
         for (auto emIt = fExtentMapRBTree->begin(), end = fExtentMapRBTree->end(); emIt != end;
              ++emIt)
         {
-            const auto& emEntry = emIt->second;
+            auto& emEntry = emIt->second;
             if ((emEntry.fileID == OID) && (emEntry.status != EXTENTOUTOFSERVICE))
                 entries.push_back(emEntry);
         }
@@ -4963,10 +4964,7 @@ void ExtentMap::getExtents_dbroot(int OID, vector<struct EMEntry>& entries, cons
 
 #endif
 
-    int i, emEntries;
-
     entries.clear();
-
     if (OID < 0)
     {
         ostringstream oss;
@@ -4996,8 +4994,6 @@ void ExtentMap::getExtents_dbroot(int OID, vector<struct EMEntry>& entries, cons
 //------------------------------------------------------------------------------
 void ExtentMap::getExtentCount_dbroot(int OID, uint16_t dbroot, bool incOutOfService, uint64_t& numExtents)
 {
-    int i, emEntries;
-
     if (OID < 0)
     {
         ostringstream oss;
