@@ -45,6 +45,8 @@
 #include "dbrm.h"
 #undef DBRM_DLLEXPORT
 
+#define BRM_INFO
+
 #ifdef BRM_DEBUG
 #define CHECK_EMPTY(x) \
 	if (x.length() != 0) \

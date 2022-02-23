@@ -32,6 +32,8 @@
 #include <vector>
 #include <stdint.h>
 
+#define BRM_INFO
+
 #if defined(_MSC_VER) && defined(xxxTRACER_DLLEXPORT)
 #define EXPORT __declspec(dllexport)
 #else

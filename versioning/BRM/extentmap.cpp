@@ -43,6 +43,7 @@
 #else
 #include <unordered_set>
 #endif
+#define BRM_INFO
 
 #include <boost/interprocess/shared_memory_object.hpp>
 #include <boost/interprocess/mapped_region.hpp>
@@ -559,22 +560,27 @@ void ExtentMapIndexImpl::deleteEMEntry(const EMEntry& emEntry, const ExtentMapId
 
 ExtentMap::ExtentMap()
 {
-    fFreeList = nullptr;
     fCurrentEMShmkey = -1;
     fCurrentFLShmkey = -1;
-    fFLShminfo = nullptr;
+
+    fEMRBTreeShminfo = nullptr;
     fEMIndexShminfo = nullptr;
+    fFLShminfo = nullptr;
+
     r_only = false;
     flLocked = false;
     emLocked = false;
     emIndexLocked = false;
+
     fPFreeListImpl = nullptr;
     fPExtMapIndexImpl_ = nullptr;
     fPExtMapRBTreeImpl = nullptr;
+
+    fFreeList = nullptr;
     fExtentMapRBTree = nullptr;
 
 #ifdef BRM_INFO
-    fDebug = ("Y" == config::Config::makeConfig()->getConfig("DBRM", "Debug"));
+    fDebug = true; //("Y" == config::Config::makeConfig()->getConfig("DBRM", "Debug"));
 #endif
 }
 
@@ -4770,6 +4776,7 @@ void ExtentMap::setLocalHWM(int OID, uint32_t partitionNum,
         prevEm->HWM = 0;
     }
 
+    /*
 #ifdef BRM_INFO
 
     if (firstNode)
@@ -4805,9 +4812,9 @@ void ExtentMap::setLocalHWM(int OID, uint32_t partitionNum,
             os << "  Data extended into a new extent.";
 
         log(os.str(), logging::LOG_TYPE_DEBUG);
-    }
-
+    } 
 #endif
+*/
 }
 
 void ExtentMap::bulkSetHWM(const vector<BulkSetHWMArg>& v, bool firstNode)

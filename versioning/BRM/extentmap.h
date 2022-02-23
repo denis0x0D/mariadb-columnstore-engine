@@ -35,6 +35,8 @@
 #include <tr1/unordered_map>
 #include <mutex>
 
+#define BRM_INFO
+
 //#define NDEBUG
 #include <cassert>
 #include <boost/interprocess/shared_memory_object.hpp>
@@ -1002,7 +1004,7 @@ public:
 
     inline bool empty()
     {
-        if (fEMRBTreeShminfo == 0)
+        if (fEMRBTreeShminfo == nullptr)
         {
             grabEMEntryTable(READ);
             grabEMIndex(READ);
