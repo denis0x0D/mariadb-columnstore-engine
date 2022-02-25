@@ -1291,6 +1291,8 @@ int ExtentMap::getMaxMin(const LBID_t lbid, int64_t& max, int64_t& min, int32_t&
             min = emEntry.partition.cprange.lo_val;
             seqNum = emEntry.partition.cprange.sequenceNum;
             isValid = emEntry.partition.cprange.isValid;
+
+            releaseEMIndex(READ);
             releaseEMEntryTable(READ);
             return isValid;
         }
@@ -1566,9 +1568,11 @@ void ExtentMap::load(const string& filename, bool fixFL)
     if (!in)
     {
         log_errno("ExtentMap::load(): open");
+
         releaseFreeList(WRITE);
         releaseEMIndex(WRITE);
         releaseEMEntryTable(WRITE);
+
         throw ios_base::failure("ExtentMap::load(): open failed. Check the error log.");
     }
 
@@ -2134,6 +2138,8 @@ int ExtentMap::lookup(LBID_t lbid, LBID_t& firstLbid, LBID_t& lastLbid)
             {
                 firstLbid = emEntry.range.start;
                 lastLbid = lastBlock;
+
+                releaseEMIndex(READ);
                 releaseEMEntryTable(READ);
                 return 0;
             }
@@ -2210,6 +2216,7 @@ int ExtentMap::lookupLocal(LBID_t lbid, int& OID, uint16_t& dbRoot, uint32_t& pa
                 offset = lbid - emEntry.range.start;
                 fileBlockOffset = emEntry.blockOffset + offset;
 
+                releaseEMIndex(READ);
                 releaseEMEntryTable(READ);
                 return 0;
             }
@@ -2318,6 +2325,8 @@ int ExtentMap::lookupLocal_DBroot(int OID, uint16_t dbroot, uint32_t partitionNu
 
             offset = fileBlockOffset - emEntry.blockOffset;
             LBID = emEntry.range.start + offset;
+
+            releaseEMIndex(READ);
             releaseEMEntryTable(READ);
             return 0;
         }
