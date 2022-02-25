@@ -2183,7 +2183,6 @@ int ExtentMap::lookupLocal(LBID_t lbid, int& OID, uint16_t& dbRoot, uint32_t& pa
     }
 
 #endif
-    int entries, i, offset;
     LBID_t lastBlock;
 
     if (lbid < 0)
@@ -2197,14 +2196,23 @@ int ExtentMap::lookupLocal(LBID_t lbid, int& OID, uint16_t& dbRoot, uint32_t& pa
     grabEMEntryTable(READ);
     grabEMIndex(READ);
 
+    std::cout << "LBID map " << std::endl;
+    for (auto emIt = fExtentMapRBTree->begin(), end = fExtentMapRBTree->end(); emIt != end; ++emIt)
+    {
+        std::cout << "lbid: " << emIt->first << std::endl;
+    }
+    std::cout << "LBID map end " << std::endl;
+    std::cout << "Search with lbid " << lbid << std::endl;
+
     auto emIt = findByLBID(lbid);
     if (emIt == fExtentMapRBTree->end())
         return -1;
 
+    std::cout << "Lbid found " << emIt->first << std::endl;
     {
         auto& emEntry = emIt->second;
         {
-            lastBlock = emEntry.range.start + (static_cast<LBID_t>(emEntry.range.size) * 1024) - 1;
+            LBID_t lastBlock = emEntry.range.start + (static_cast<LBID_t>(emEntry.range.size) * 1024) - 1;
             if (lbid >= emEntry.range.start && lbid <= lastBlock)
             {
                 OID = emEntry.fileID;
@@ -2213,7 +2221,7 @@ int ExtentMap::lookupLocal(LBID_t lbid, int& OID, uint16_t& dbRoot, uint32_t& pa
                 partitionNum = emEntry.partitionNum;
 
                 // TODO:  Offset logic.
-                offset = lbid - emEntry.range.start;
+                auto offset= lbid - emEntry.range.start;
                 fileBlockOffset = emEntry.blockOffset + offset;
 
                 releaseEMIndex(READ);
