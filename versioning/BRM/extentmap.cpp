@@ -213,7 +213,7 @@ ExtentMapRBTreeImpl* ExtentMapRBTreeImpl::fInstance = 0;
 
 ExtentMapRBTreeImpl* ExtentMapRBTreeImpl::makeExtentMapRBTreeImpl(unsigned key, off_t size, bool readOnly)
 {
-    std::cout << "ExtentMapRBTreeImpl* ExtentMapRBTreeImpl::makeExtentMapRBTreeImpl(unsigned key, off_t size, bool readOnly)" << std::endl;
+//    std::cout << "ExtentMapRBTreeImpl* ExtentMapRBTreeImpl::makeExtentMapRBTreeImpl(unsigned key, off_t size, bool readOnly)" << std::endl;
 
     boost::mutex::scoped_lock lk(fInstanceMutex);
 
@@ -2196,6 +2196,7 @@ int ExtentMap::lookupLocal(LBID_t lbid, int& OID, uint16_t& dbRoot, uint32_t& pa
     grabEMEntryTable(READ);
     grabEMIndex(READ);
 
+    /*
     std::cout << "LBID map " << std::endl;
     for (auto emIt = fExtentMapRBTree->begin(), end = fExtentMapRBTree->end(); emIt != end; ++emIt)
     {
@@ -2203,6 +2204,7 @@ int ExtentMap::lookupLocal(LBID_t lbid, int& OID, uint16_t& dbRoot, uint32_t& pa
     }
     std::cout << "LBID map end " << std::endl;
     std::cout << "Search with lbid " << lbid << std::endl;
+    */
 
     auto emIt = findByLBID(lbid);
     if (emIt == fExtentMapRBTree->end())
@@ -2213,7 +2215,7 @@ int ExtentMap::lookupLocal(LBID_t lbid, int& OID, uint16_t& dbRoot, uint32_t& pa
         auto& emEntry = emIt->second;
         {
             LBID_t lastBlock = emEntry.range.start + (static_cast<LBID_t>(emEntry.range.size) * 1024) - 1;
-            if (lbid >= emEntry.range.start && lbid <= lastBlock)
+//            if (lbid >= emEntry.range.start && lbid <= lastBlock)
             {
                 OID = emEntry.fileID;
                 dbRoot = emEntry.dbRoot;
@@ -2221,7 +2223,7 @@ int ExtentMap::lookupLocal(LBID_t lbid, int& OID, uint16_t& dbRoot, uint32_t& pa
                 partitionNum = emEntry.partitionNum;
 
                 // TODO:  Offset logic.
-                auto offset= lbid - emEntry.range.start;
+                auto offset = lbid - emEntry.range.start;
                 fileBlockOffset = emEntry.blockOffset + offset;
 
                 releaseEMIndex(READ);
@@ -4657,16 +4659,22 @@ HWM_t ExtentMap::getLocalHWM(int OID, uint32_t partitionNum, uint16_t segmentNum
     grabEMIndex(READ);
 
     DBRootVec dbRootVec(std::move(getAllDbRoots()));
+    std::cout << "getLocalHWM " << std::endl;
+    std::cout << "dbRootvec size " << dbRootVec.size() << std::endl;
+
     for (auto dbRoot: dbRootVec)
     {
         const auto lbids = fPExtMapIndexImpl_->find(dbRoot, OID, partitionNum);
         const auto emIdents = getEmIdentsByLbids(lbids);
+        std::cout << "em idents size " << emIdents.size() << std::endl;
         for (auto& emEntry : emIdents)
         {
             if ((emEntry.segmentNum == segmentNum))
             {
                 OIDPartSegExists = true;
                 status = emEntry.status;
+                std::cout << "found hwm " << emEntry.HWM << std::endl;
+                std::cout << "Oid is " << emEntry.fileID << std::endl;
 
                 if (emEntry.HWM != 0)
                 {

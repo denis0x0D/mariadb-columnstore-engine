@@ -2321,7 +2321,7 @@ int ha_mcs_impl_direct_update_delete_rows(bool execute, ha_rows *affected_rows, 
 
 int ha_mcs::impl_rnd_init(TABLE* table, const std::vector<COND*>& condStack)
 {
-    IDEBUG( cout << "rnd_init for table " << table->s->table_name.str << endl );
+    cout << "rnd_init for table " << table->s->table_name.str << endl;
     THD* thd = current_thd;
 
     gp_walk_info gwi;

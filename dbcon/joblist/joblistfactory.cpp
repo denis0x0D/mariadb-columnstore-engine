@@ -1921,7 +1921,7 @@ SJLP makeJobList_(
 
         struct timeval stTime;
 
-        if (jobInfo.trace)
+//        if (jobInfo.trace)
         {
             ostringstream oss;
             oss << endl;
@@ -1994,10 +1994,12 @@ SJLP makeJobList_(
                                        LoggingID(5, jobInfo.sessionId, jobInfo.txnId, 0));
             cout << flush;
         }
+        /*
         else
         {
             gettimeofday(&stTime, 0);
         }
+        */
 
         // Finish initializing the JobList object
         jl->addQuery(querySteps);
@@ -2052,11 +2054,8 @@ namespace joblist
 {
 
 /* static */
-SJLP JobListFactory::makeJobList(
-    CalpontExecutionPlan* cplan,
-    ResourceManager* rm,
-    bool tryTuple,
-    bool isExeMgr)
+SJLP JobListFactory::makeJobList(CalpontExecutionPlan* cplan, ResourceManager* rm, bool tryTuple,
+                                 bool isExeMgr)
 {
     SJLP ret;
     string emsg;

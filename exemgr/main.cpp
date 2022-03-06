@@ -754,7 +754,7 @@ new_plan:
 
                 // Log start and end statement if tracing is enabled.  Keep in
                 // mind the trace flag won't be set for system catalog queries.
-                if (csep.traceOn())
+//                if (csep.traceOn())
                 {
                     args.reset();
                     args.add((int)csep.statementID());

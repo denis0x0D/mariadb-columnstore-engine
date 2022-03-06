@@ -450,9 +450,11 @@ CalpontSystemCatalog::OID CalpontSystemCatalog::lookupTableOID(const TableName& 
     CalpontSelectExecutionPlan::FilterTokenList filterTokenList;
     CalpontSelectExecutionPlan::ColumnMap colMap;
 
-    SimpleColumn* c1 = new SimpleColumn(CALPONT_SCHEMA + "." + SYSTABLE_TABLE + "." + OBJECTID_COL, fSessionID);
+    SimpleColumn* c1 =
+        new SimpleColumn(CALPONT_SCHEMA + "." + SYSTABLE_TABLE + "." + OBJECTID_COL, fSessionID);
     SimpleColumn* c2 = new SimpleColumn(CALPONT_SCHEMA + "." + SYSTABLE_TABLE + "." + SCHEMA_COL, fSessionID);
-    SimpleColumn* c3 = new SimpleColumn(CALPONT_SCHEMA + "." + SYSTABLE_TABLE + "." + TABLENAME_COL, fSessionID);
+    SimpleColumn* c3 =
+        new SimpleColumn(CALPONT_SCHEMA + "." + SYSTABLE_TABLE + "." + TABLENAME_COL, fSessionID);
 
     SRCP srcp;
     srcp.reset(c1);
@@ -794,6 +796,8 @@ void CalpontSystemCatalog::getSysData (CalpontSelectExecutionPlan& csep,
 {
     // start up new transaction
 
+    std::cout << "void CalpontSystemCatalog::getSysData (CalpontSelectExecutionPlan& csep " << std::endl;
+
     BRM::TxnID txnID;
     int oldTxnID;
     txnID = fSessionManager->getTxnID(fSessionID);
@@ -894,7 +898,7 @@ void CalpontSystemCatalog::getSysData_EC(CalpontSelectExecutionPlan& csep,
         NJLSysDataList& sysDataList,
         const string& sysTableName)
 {
-    DEBUG << "Enter getSysData_EC " << fSessionID << endl;
+    std::cout << "Enter getSysData_EC " << fSessionID << endl;
 
     uint32_t tableOID = IDB_VTABLE_ID;
     ByteStream bs;
@@ -965,7 +969,7 @@ void CalpontSystemCatalog::getSysData_FE(const CalpontSelectExecutionPlan& csep,
         NJLSysDataList& sysDataList,
         const string& sysTableName)
 {
-    DEBUG << "Enter getSysData_FE " << fSessionID << endl;
+    std::cout << "Enter getSysData_FE " << fSessionID << endl;
 
     ByteStream msg;
 
@@ -3188,12 +3192,15 @@ const CalpontSystemCatalog::RIDList CalpontSystemCatalog::columnRIDs(const Table
     oss << "select objectid,columnname from syscolumn where schema='" << aTableName.schema << "' and tablename='" <<
         aTableName.table << "' --columnRIDs/";
 
-    if (fIdentity == EC) oss << "EC";
-    else oss << "FE";
+    if (fIdentity == EC)
+        cout << "EC";
+    else
+        cout << "FE";
 
     csep.data(oss.str());
     NJLSysDataList sysDataList;
     getSysData (csep, sysDataList, SYSCOLUMN_TABLE);
+    std::cout << "sys data list size " << sysDataList.size() << std::endl;
 
     vector<ColumnResult*>::const_iterator it;
     ColType ct;
@@ -3205,7 +3212,7 @@ const CalpontSystemCatalog::RIDList CalpontSystemCatalog::columnRIDs(const Table
     {
         if ((*it)->ColumnOID() == oid[1]) // objectid
         {
-            DEBUG << "column count: " << (*it)->dataCount() << endl;
+            cout << "column count: " << (*it)->dataCount() << endl;
             // populate tableinfo cache for numOfCols
             ti.numOfCols = (*it)->dataCount();
 //			ti.tablewithautoincr = NO_AUTOINCRCOL;
@@ -3221,14 +3228,14 @@ const CalpontSystemCatalog::RIDList CalpontSystemCatalog::columnRIDs(const Table
                 if (fIdentity == EC)
                     rp.rid = (*it)->GetRid(i);
 
-                DEBUG << rp.rid << " ";
+                std::cout << rp.rid << " ";
                 rl.push_back(rp);
                 ColType ct;
                 ct.columnOID = rp.objnum;
                 ctList[i] = ct;
             }
 
-            DEBUG << endl;
+            cout << endl;
         }
         else if ((*it)->ColumnOID() == oid[15]) //autoincrement
         {
@@ -3381,6 +3388,8 @@ const CalpontSystemCatalog::RIDList CalpontSystemCatalog::columnRIDs(const Table
             }
         }
     }
+
+    std::cout << "RL out size " << rlOut.size() << std::endl;
 
     delete [] ctList;
 
