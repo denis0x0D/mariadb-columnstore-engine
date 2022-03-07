@@ -1411,6 +1411,23 @@ std::vector<EMEntry> ExtentMap::getEmIdentsByLbids(const std::vector<LBID_t>& lb
     return emEntries;
 }
 
+std::vector<ExtentMapRBTree::iterator> ExtentMap::getEmIteratorsByLbids(const std::vector<LBID_t>& lbids)
+{
+    // ExtentMapRBTree::iterator
+    std::vector<ExtentMapRBTree::iterator> emEntries;
+    for (auto lbid : lbids)
+    {
+        auto emIt = findByLBID(lbid);
+        if (emIt == fExtentMapRBTree->end())
+            throw logic_error("ExtentMap::markInvalid(): lbid isn't allocated");
+        // Materialize.
+        emEntries.push_back(emIt);
+    }
+
+    return emEntries;
+}
+
+
 /*
 	The file layout looks like this:
 
@@ -4752,9 +4769,10 @@ void ExtentMap::setLocalHWM(int OID, uint32_t partitionNum,
     for (auto dbRoot: dbRootVec)
     {
         const auto lbids = fPExtMapIndexImpl_->find(dbRoot, OID, partitionNum);
-        auto emIdents = getEmIdentsByLbids(lbids);
-        for (auto& emEntry : emIdents)
+        auto emIdents = getEmIteratorsByLbids(lbids);
+        for (auto emIt : emIdents)
         {
+            auto& emEntry = emIt->second;
             if (emEntry.segmentNum == segmentNum)
             {
                 // Find current HWM extent in case of multiple extents per segment file.

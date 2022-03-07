@@ -1108,6 +1108,7 @@ private:
   LBID_t getLBIDsFromFreeList(uint32_t size);
   void reserveLBIDRange(LBID_t start, uint8_t size); // used by load() to allocate pre-existing LBIDs
   std::vector<EMEntry> getEmIdentsByLbids(const std::vector<LBID_t>& lbids);
+  std::vector<ExtentMapRBTree::iterator> getEmIteratorsByLbids(const std::vector<LBID_t>& lbids);
 
   // Choose keys.
   key_t chooseEMShmkey();
