@@ -100,10 +100,14 @@ class BRMManagedShmImpl : public BRMShmImplParent
     void setReadOnly() override;
 
     int grow(off_t newSize);
+    int growBy(off_t incSize);
     void remap(const bool readOnly = false);
     void swap(BRMManagedShmImpl& rhs);
     bi::managed_shared_memory* getManagedSegment()
-    { assert(fShmSegment); return fShmSegment; }
+    {
+        assert(fShmSegment);
+        return fShmSegment;
+    }
 
   private:
     bi::managed_shared_memory* fShmSegment;

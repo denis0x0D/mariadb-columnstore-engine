@@ -347,6 +347,32 @@ int BRMManagedShmImpl::grow(off_t newSize)
     return 0;
 }
 
+int32_t BRMManagedShmImpl::growBy(off_t incsize)
+{
+    auto keyName = ShmKeys::keyToName(fKey);
+    try
+    {
+        if (fshmsegment)
+        {
+            delete fshmsegment;
+            // grow the segment.
+            bi::managed_shared_memory::grow(segmentname, incsize);
+            // open only.
+            fshmsegment = new bi::managed_shared_memory(bi::open_only, keyName.str());
+            // update size.
+            fsize = fshmsegment->get_size();
+        }
+    }
+
+    catch (exception& e)
+    {
+        std::cout << "brmmanagedshmimpl::grow() error " << e.what() << std::endl;
+        throw;
+    }
+
+    return 0;
+}
+
 // Dummy method that has no references in the code.
 int BRMManagedShmImpl::clear(unsigned newKey, off_t newSize)
 {
@@ -446,27 +472,27 @@ void BRMManagedShmImplRBTree::setReadOnly()
     }
 }
 
-int32_t BRMManagedShmImplRBTree::grow(unsigned key, off_t incSize)
+int32_t brmmanagedshmimplrbtree::grow(unsigned key, off_t incsize)
 {
     try
     {
-        if (fShmSegment)
+        if (fshmsegment)
         {
-            // Update key for this process.
-            fKey = key;
-            // Call destructor to unmap the segment.
-            delete fShmSegment;
-            // Grow the segment.
-            bi::managed_shared_memory::grow(segmentName, incSize);
-            // Open only.
-            fShmSegment = new bi::managed_shared_memory(bi::open_only, segmentName);
-            // Update size.
-            fSize = fShmSegment->get_size();
+            // update key for this process.
+            fkey = key;
+            // call destructor to unmap the segment.
+            delete fshmsegment;
+            // grow the segment.
+            bi::managed_shared_memory::grow(segmentname, incsize);
+            // open only.
+            fshmsegment = new bi::managed_shared_memory(bi::open_only, segmentname);
+            // update size.
+            fsize = fshmsegment->get_size();
         }
     }
     catch (exception& e)
     {
-        std::cout << "BRMManagedShmImpl::grow() error " << e.what() << std::endl;
+        std::cout << "brmmanagedshmimpl::grow() error " << e.what() << std::endl;
         throw;
     }
 

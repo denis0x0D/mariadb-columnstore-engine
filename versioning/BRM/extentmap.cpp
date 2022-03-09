@@ -216,12 +216,10 @@ ExtentMapRBTreeImpl* ExtentMapRBTreeImpl::makeExtentMapRBTreeImpl(unsigned key, 
 
     if (fInstance)
     {
-      /*
-        if (key != fInstance->fManagedShm.key())
+        if (size != fInstance->getShmemSize())
         {
-            fInstance->fManagedShm.reMapSegment();
+            fInstance->fManagedShm.remap();
         }
-        */
         return fInstance;
     }
 
@@ -1742,7 +1740,7 @@ void ExtentMap::grabEMEntryTable(OPS op)
         emLocked = true;
     }
 
-    if (!fPExtMapRBTreeImpl || fPExtMapRBTreeImpl->key() != (uint32_t) fEMRBTreeShminfo->tableShmkey)
+    if (!fPExtMapRBTreeImpl)
     {
         if (fEMRBTreeShminfo->allocdSize == 0)
         {
@@ -1765,13 +1763,12 @@ void ExtentMap::grabEMEntryTable(OPS op)
         }
         else
         {
-            fPExtMapRBTreeImpl =
-                ExtentMapRBTreeImpl::makeExtentMapRBTreeImpl(fEMRBTreeShminfo->tableShmkey, 0);
-
+            fPExtMapRBTreeImpl = ExtentMapRBTreeImpl::makeExtentMapRBTreeImpl(getInitialEMRBTreeShmkey(),
+                                                                              fEMShminfo->allocdSize);
             ASSERT(fPExtMapRBTreeImpl);
 
-            // if (r_only)
-            //    fPExtMapRBTreeImpl->makeReadOnly();
+            if (r_only)
+                fPExtMapRBTreeImpl->makeReadOnly();
 
             fExtentMapRBTree = fPExtMapRBTreeImpl->get();
             if (fExtentMapRBTree == nullptr)
@@ -1780,6 +1777,13 @@ void ExtentMap::grabEMEntryTable(OPS op)
                 throw runtime_error("ExtentMap cannot create RBTree in shared memory segment");
             }
         }
+    }
+    else if (fPExtMapRBTreeImpl->getShmemImplSize() != (unsigned) fEMShminfo->allocdSize)
+    {
+        fPExtMapRBTreeImpl->refreshShm();
+        fPExtMapRBTreeImpl =
+            ExtentMapIndexImpl::makeExtentMapRBTreeImpl(getInitialEMRBTreeShmkey(), fEMShminfo->allocdSize);
+        fExtentMapRBTree = fPExtMapRBTreeImpl->get();
     }
     else
     {
@@ -1945,21 +1949,6 @@ void ExtentMap::releaseEMIndex(OPS op)
     }
 }
 
-key_t ExtentMap::chooseEMShmkey()
-{
-    int fixedKeys = 1;
-    key_t ret;
-
-    if (fEMRBTreeShminfo->tableShmkey + 1 ==
-            (key_t)(fShmKeys.KEYRANGE_EXTENTMAP_BASE + fShmKeys.KEYRANGE_SIZE - 1) ||
-        (unsigned) fEMRBTreeShminfo->tableShmkey < fShmKeys.KEYRANGE_EXTENTMAP_BASE)
-        ret = fShmKeys.KEYRANGE_EXTENTMAP_BASE + fixedKeys;
-    else
-        ret = fEMRBTreeShminfo->tableShmkey + 1;
-
-    return ret;
-}
-
 key_t ExtentMap::chooseFLShmkey()
 {
     return chooseShmkey(fFLShminfo, fShmKeys.KEYRANGE_EMFREELIST_BASE);
@@ -1969,6 +1958,11 @@ key_t ExtentMap::chooseFLShmkey()
 key_t ExtentMap::chooseEMIndexShmkey()
 {
     return chooseShmkey(fEMIndexShminfo, fShmKeys.KEYRANGE_EXTENTMAP_INDEX_BASE);
+}
+
+key_t ExtentMap::getInitialEMRBTreeShmkey() const
+{
+    return fShmKeys.KEYRANGE_EXTENTMAP_BASE + 1;
 }
 
 key_t ExtentMap::getInitialEMIndexShmkey() const
@@ -2016,7 +2010,7 @@ void ExtentMap::growEMShmseg(size_t size)
     else
     {
         fEMRBTreeShminfo->tableShmkey = newShmKey;
-        fPExtMapRBTreeImpl->grow(fEMRBTreeShminfo->tableShmkey, allocSize);
+        fPExtMapRBTreeImpl->growBy(allocSize);
     }
 
     fEMRBTreeShminfo->allocdSize += allocSize;

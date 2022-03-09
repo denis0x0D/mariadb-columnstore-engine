@@ -251,7 +251,7 @@ class ExtentMapRBTreeImpl
     ExtentMapRBTreeImpl(const ExtentMapRBTreeImpl& rhs);
     ExtentMapRBTreeImpl& operator=(const ExtentMapRBTreeImpl& rhs);
 
-    BRMManagedShmImplRBTree fManagedShm;
+    BRMManagedShmImpl fManagedShm;
 
     static boost::mutex fInstanceMutex;
     static ExtentMapRBTreeImpl* fInstance;
@@ -1115,6 +1115,7 @@ private:
 
   // TODO: Add comments.
   key_t getInitialEMIndexShmkey() const;
+  key_t ExtentMap::getInitialEMRBTreeShmkey() const;
   // see the code for how keys are segmented
   key_t chooseShmkey(const MSTEntry* masterTableEntry, const uint32_t keyRangeBase) const;
 
