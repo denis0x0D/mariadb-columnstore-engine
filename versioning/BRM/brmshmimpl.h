@@ -113,6 +113,7 @@ class BRMManagedShmImpl : public BRMShmImplParent
     bi::managed_shared_memory* fShmSegment;
 };
 
+/*
 class BRMManagedShmImplRBTree
 {
 public:
@@ -136,5 +137,6 @@ private:
   bool fReadOnly;
   const char* segmentName = "InfiniDB-shm-shared_managed_segment_00";
 };
+*/
 
 } //namespace

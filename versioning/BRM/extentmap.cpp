@@ -216,7 +216,7 @@ ExtentMapRBTreeImpl* ExtentMapRBTreeImpl::makeExtentMapRBTreeImpl(unsigned key, 
 
     if (fInstance)
     {
-        if (size != fInstance->getShmemSize())
+        if (size != fInstance->getSize())
         {
             fInstance->fManagedShm.remap();
         }
@@ -1764,7 +1764,7 @@ void ExtentMap::grabEMEntryTable(OPS op)
         else
         {
             fPExtMapRBTreeImpl = ExtentMapRBTreeImpl::makeExtentMapRBTreeImpl(getInitialEMRBTreeShmkey(),
-                                                                              fEMShminfo->allocdSize);
+                                                                              fEMRBTreeShminfo->allocdSize);
             ASSERT(fPExtMapRBTreeImpl);
 
             if (r_only)
@@ -1778,11 +1778,11 @@ void ExtentMap::grabEMEntryTable(OPS op)
             }
         }
     }
-    else if (fPExtMapRBTreeImpl->getShmemImplSize() != (unsigned) fEMShminfo->allocdSize)
+    else if (fPExtMapRBTreeImpl->getSize() != (unsigned) fEMRBTreeShminfo->allocdSize)
     {
         fPExtMapRBTreeImpl->refreshShm();
-        fPExtMapRBTreeImpl =
-            ExtentMapIndexImpl::makeExtentMapRBTreeImpl(getInitialEMRBTreeShmkey(), fEMShminfo->allocdSize);
+        fPExtMapRBTreeImpl = ExtentMapRBTreeImpl::makeExtentMapRBTreeImpl(getInitialEMRBTreeShmkey(),
+                                                                          fEMRBTreeShminfo->allocdSize);
         fExtentMapRBTree = fPExtMapRBTreeImpl->get();
     }
     else
@@ -1988,7 +1988,7 @@ key_t ExtentMap::chooseShmkey(const MSTEntry* masterTableEntry, const uint32_t k
 void ExtentMap::growEMShmseg(size_t size)
 {
     size_t allocSize;
-    auto newShmKey = chooseEMShmkey();
+    const auto newShmKey = getInitialEMRBTreeShmkey();
 
     if (fEMRBTreeShminfo->allocdSize == 0)
         allocSize = EM_RB_TREE_INITIAL_SIZE;
@@ -2014,8 +2014,9 @@ void ExtentMap::growEMShmseg(size_t size)
     }
 
     fEMRBTreeShminfo->allocdSize += allocSize;
-    // if (r_only)
-    //   fPExtMapImpl->makeReadOnly();
+
+    if (r_only)
+        fPExtMapRBTreeImpl->makeReadOnly();
 
     fExtentMapRBTree = fPExtMapRBTreeImpl->get();
 
@@ -2027,7 +2028,7 @@ void ExtentMap::growEMShmseg(size_t size)
 void ExtentMap::growIfNeededOnExtentCreate()
 {
     const auto freeMem = fPExtMapRBTreeImpl->getFreeMemory();
-    const auto memNeeded = EM_RB_TREE_NODE_SIZE * 10;
+    const auto memNeeded = EM_RB_TREE_NODE_SIZE * 16;
     if (freeMem <= memNeeded)
     {
         // The accurate size is memNeeded - freeMem.

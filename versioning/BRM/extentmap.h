@@ -232,19 +232,24 @@ class ExtentMapRBTreeImpl
         }
     }
 
-    inline void grow(unsigned key, off_t size) { fManagedShm.grow(key, size); }
+    inline void grow(off_t size) { fManagedShm.grow(size); }
+
+    inline void growBy(off_t incSize) { fManagedShm.growBy(incSize); }
 
     inline unsigned key() const { return fManagedShm.key(); }
 
-    inline ExtentMapRBTree* get() const
+    inline ExtentMapRBTree* get()
     {
-        VoidAllocator allocator(fManagedShm.fShmSegment->get_segment_manager());
-        return fManagedShm.fShmSegment->find_or_construct<ExtentMapRBTree>("EmMapRBTree")(
+        VoidAllocator allocator(fManagedShm.getManagedSegment()->get_segment_manager());
+        return fManagedShm.getManagedSegment()->find_or_construct<ExtentMapRBTree>("EmMapRBTree")(
             std::less<int64_t>(), allocator);
     }
 
-    inline uint64_t getFreeMemory() const { return fManagedShm.fShmSegment->get_free_memory(); }
-    inline uint64_t getSize() const { return fManagedShm.fShmSegment->get_size(); }
+    inline void makeReadOnly() { fManagedShm.setReadOnly(); }
+
+    inline uint64_t getFreeMemory() { return fManagedShm.getManagedSegment()->get_free_memory(); }
+
+    inline uint64_t getSize() { return fManagedShm.getManagedSegment()->get_size(); }
 
   private:
     ExtentMapRBTreeImpl(unsigned key, off_t size, bool readOnly = false);
@@ -252,7 +257,6 @@ class ExtentMapRBTreeImpl
     ExtentMapRBTreeImpl& operator=(const ExtentMapRBTreeImpl& rhs);
 
     BRMManagedShmImpl fManagedShm;
-
     static boost::mutex fInstanceMutex;
     static ExtentMapRBTreeImpl* fInstance;
 };
@@ -1115,7 +1119,7 @@ private:
 
   // TODO: Add comments.
   key_t getInitialEMIndexShmkey() const;
-  key_t ExtentMap::getInitialEMRBTreeShmkey() const;
+  key_t getInitialEMRBTreeShmkey() const;
   // see the code for how keys are segmented
   key_t chooseShmkey(const MSTEntry* masterTableEntry, const uint32_t keyRangeBase) const;
 

@@ -50,29 +50,6 @@ bool vFlg;
 bool nFlg;
 std::mutex coutMutex;
 
-void shmDoit(std::string segmentName, const string& label)
-{
-    if (vFlg)
-    {
-        try
-        {
-            bi::shared_memory_object memObj(bi::open_only, segmentName.c_str(), bi::read_only);
-            bi::offset_t memSize = 0;
-            memObj.get_size(memSize);
-            std::lock_guard<std::mutex> lk(coutMutex);
-            cout << label << ": key_name: " << segmentName << "; size: " << memSize << endl;
-        }
-        catch (...)
-        {
-        }
-    }
-
-    if (!nFlg)
-    {
-        bi::shared_memory_object::remove(segmentName.c_str());
-    }
-}
-
 void shmDoit(key_t shm_key, const string& label)
 {
     string key_name = ShmKeys::keyToName(shm_key);
@@ -99,29 +76,6 @@ void shmDoit(key_t shm_key, const string& label)
     if (!nFlg)
     {
         bi::shared_memory_object::remove(key_name.c_str());
-    }
-}
-
-void semDoit(std::string segmentName, const string& label)
-{
-    if (vFlg)
-    {
-        try
-        {
-            bi::shared_memory_object memObj(bi::open_only, segmentName.c_str(), bi::read_only);
-            bi::offset_t memSize = 0;
-            memObj.get_size(memSize);
-            std::lock_guard<std::mutex> lk(coutMutex);
-            cout << label << "; key_name: " << segmentName.c_str() << "; size: " << memSize << endl;
-        }
-        catch (...)
-        {
-        }
-    }
-
-    if (!nFlg)
-    {
-        bi::shared_memory_object::remove(segmentName.c_str());
     }
 }
 
@@ -259,10 +213,6 @@ int main(int argc, char** argv)
     semDoit(BrmKeys.KEYRANGE_VSS_BASE,        "VSS        ");
     semDoit(BrmKeys.KEYRANGE_EXTENTMAP_INDEX_BASE, "EXTMAP_INDX");
     semDoit(BrmKeys.MST_SYSVKEY,              "MST        ");
-    // We have only one segment, and grow it on request.
-    // FIXME: outline to constant.
-    semDoit("InfiniDB-shm-shared_managed_segment_00", "EXTENT_MAP_RB_TREE");
-    shmDoit("InfiniDB-shm-shared_managed_segment_00", "EXTENT_MAP_RB_TREE");
 
     if (!cFlg)
     {

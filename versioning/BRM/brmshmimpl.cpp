@@ -347,20 +347,20 @@ int BRMManagedShmImpl::grow(off_t newSize)
     return 0;
 }
 
-int32_t BRMManagedShmImpl::growBy(off_t incsize)
+int32_t BRMManagedShmImpl::growBy(off_t incSize)
 {
     auto keyName = ShmKeys::keyToName(fKey);
     try
     {
-        if (fshmsegment)
+        if (fShmSegment)
         {
-            delete fshmsegment;
+            delete fShmSegment;
             // grow the segment.
-            bi::managed_shared_memory::grow(segmentname, incsize);
+            bi::managed_shared_memory::grow(keyName.c_str(), incSize);
             // open only.
-            fshmsegment = new bi::managed_shared_memory(bi::open_only, keyName.str());
+            fShmSegment = new bi::managed_shared_memory(bi::open_only, keyName.c_str());
             // update size.
-            fsize = fshmsegment->get_size();
+            fSize = fShmSegment->get_size();
         }
     }
 
@@ -426,6 +426,7 @@ void BRMManagedShmImpl::remap(const bool readOnly)
         fShmSegment = new bi::managed_shared_memory(bi::open_only, keyName.c_str());
 }
 
+/*
 // RBTRee.
 BRMManagedShmImplRBTree::BRMManagedShmImplRBTree(unsigned key, off_t size, bool readOnly)
     : fKey(key), fSize(size), fReadOnly(readOnly)
@@ -521,6 +522,7 @@ void BRMManagedShmImplRBTree::reMapSegment()
 }
 
 void BRMManagedShmImplRBTree::destroy(unsigned key) { bi::shared_memory_object::remove(segmentName); }
+*/
 
 } //namespace
 
