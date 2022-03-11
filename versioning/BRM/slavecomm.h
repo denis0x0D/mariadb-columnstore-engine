@@ -37,6 +37,8 @@
 #include "messagequeue.h"
 #include "bytestream.h"
 
+#define BRM_VERBOSE
+
 #if defined(_MSC_VER) && defined(xxxSLAVECOMM_DLLEXPORT)
 #define EXPORT __declspec(dllexport)
 #else

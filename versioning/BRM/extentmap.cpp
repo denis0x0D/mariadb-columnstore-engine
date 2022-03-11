@@ -216,7 +216,7 @@ ExtentMapRBTreeImpl* ExtentMapRBTreeImpl::makeExtentMapRBTreeImpl(unsigned key, 
 
     if (fInstance)
     {
-        if (size != fInstance->getSize())
+        if (size != (unsigned) fInstance->getSize())
         {
             fInstance->fManagedShm.remap();
         }
@@ -791,8 +791,6 @@ int ExtentMap::setMaxMin(const LBID_t lbid, const int64_t max, const int64_t min
     }
 
 #endif
-    int entries;
-    int i;
     LBID_t lastBlock;
     int32_t curSequence;
 
@@ -909,8 +907,6 @@ void ExtentMap::setExtentsMaxMin(const CPMaxMinMap_t& cpMap, bool firstNode, boo
     }
 
 #endif
-    int entries;
-    int i;
     int32_t curSequence;
     const int32_t extentsToUpdate = cpMap.size();
     int32_t extentsUpdated = 0;
@@ -1258,8 +1254,6 @@ int ExtentMap::getMaxMin(const LBID_t lbid, int64_t& max, int64_t& min, int32_t&
     max = numeric_limits<uint64_t>::max();
     min = 0;
     seqNum *= (-1);
-    int entries;
-    int i;
     LBID_t lastBlock;
     int isValid = CP_INVALID;
 
@@ -1470,7 +1464,7 @@ void ExtentMap::loadVersion4(IDBDataFile* in)
     int err;
     char *writePos;
 
-    for (int32_t i = 0; i < emNumElements; ++i)
+    for (uint32_t i = 0; i < emNumElements; ++i)
     {
         progress = 0;
         EMEntry emEntry;
@@ -1766,7 +1760,6 @@ void ExtentMap::grabEMEntryTable(OPS op)
             fPExtMapRBTreeImpl = ExtentMapRBTreeImpl::makeExtentMapRBTreeImpl(getInitialEMRBTreeShmkey(),
                                                                               fEMRBTreeShminfo->allocdSize);
             ASSERT(fPExtMapRBTreeImpl);
-
             if (r_only)
                 fPExtMapRBTreeImpl->makeReadOnly();
 
@@ -1988,7 +1981,8 @@ key_t ExtentMap::chooseShmkey(const MSTEntry* masterTableEntry, const uint32_t k
 void ExtentMap::growEMShmseg(size_t size)
 {
     size_t allocSize;
-    const auto newShmKey = getInitialEMRBTreeShmkey();
+    // FIXME: Do we need a keys anymore?
+    fEMRBTreeShminfo->tableShmkey = getInitialEMRBTreeShmkey();
 
     if (fEMRBTreeShminfo->allocdSize == 0)
         allocSize = EM_RB_TREE_INITIAL_SIZE;
@@ -1996,24 +1990,17 @@ void ExtentMap::growEMShmseg(size_t size)
         allocSize = EM_RB_TREE_INCREMENT;
 
     allocSize = std::max(size, allocSize);
-
     ASSERT((allocSize == EM_RB_TREE_INITIAL_SIZE && !fPExtMapRBTreeImpl) || fPExtMapRBTreeImpl);
 
+    // Increase a current `allocdSize` by `allocSize`.
+    fEMRBTreeShminfo->allocdSize += allocSize;
     if (!fPExtMapRBTreeImpl)
     {
-        if (fEMRBTreeShminfo->tableShmkey == 0)
-            fEMRBTreeShminfo->tableShmkey = newShmKey;
-
         fPExtMapRBTreeImpl = ExtentMapRBTreeImpl::makeExtentMapRBTreeImpl(
-            fEMRBTreeShminfo->tableShmkey, allocSize, r_only);
+            fEMRBTreeShminfo->tableShmkey, fEMRBTreeShminfo->allocdSize, r_only);
     }
     else
-    {
-        fEMRBTreeShminfo->tableShmkey = newShmKey;
         fPExtMapRBTreeImpl->growBy(allocSize);
-    }
-
-    fEMRBTreeShminfo->allocdSize += allocSize;
 
     if (r_only)
         fPExtMapRBTreeImpl->makeReadOnly();
@@ -2114,7 +2101,6 @@ int ExtentMap::lookup(LBID_t lbid, LBID_t& firstLbid, LBID_t& lastLbid)
     }
 
 #endif
-    int entries, i;
     LBID_t lastBlock;
 
 #ifdef BRM_DEBUG
@@ -2188,8 +2174,6 @@ int ExtentMap::lookupLocal(LBID_t lbid, int& OID, uint16_t& dbRoot, uint32_t& pa
     }
 
 #endif
-    LBID_t lastBlock;
-
     if (lbid < 0)
     {
         ostringstream oss;
@@ -2306,7 +2290,6 @@ int ExtentMap::lookupLocal_DBroot(int OID, uint16_t dbroot, uint32_t partitionNu
     }
 
 #endif
-    int entries, i, offset;
 
     if (OID < 0)
     {
@@ -2321,14 +2304,12 @@ int ExtentMap::lookupLocal_DBroot(int OID, uint16_t dbroot, uint32_t partitionNu
     {
         const auto& emEntry = emIt->second;
         // TODO:  Blockoffset logic.
-        if (emEntry.fileID == OID && emEntry.dbRoot == dbroot &&
-            emEntry.partitionNum == partitionNum && emEntry.segmentNum == segmentNum &&
-            emEntry.blockOffset <= fileBlockOffset &&
-            fileBlockOffset <=
-                (emEntry.blockOffset + (static_cast<LBID_t>(emEntry.range.size) * 1024) - 1))
+        if (emEntry.fileID == OID && emEntry.dbRoot == dbroot && emEntry.partitionNum == partitionNum &&
+            emEntry.segmentNum == segmentNum && emEntry.blockOffset <= fileBlockOffset &&
+            fileBlockOffset <= (emEntry.blockOffset + (static_cast<LBID_t>(emEntry.range.size) * 1024) - 1))
         {
 
-            offset = fileBlockOffset - emEntry.blockOffset;
+            const auto offset = fileBlockOffset - emEntry.blockOffset;
             LBID = emEntry.range.start + offset;
 
             releaseEMIndex(READ);
@@ -4129,7 +4110,6 @@ void ExtentMap::deleteOID(int OID)
     DBRootVec dbRootVec(std::move(getAllDbRoots()));
     for (auto dbRoot: dbRootVec)
         fPExtMapIndexImpl_->deleteOID(dbRoot, OID);
-    const bool clearEMIndex = false;
 
     auto it = fExtentMapRBTree->begin();
     auto end = fExtentMapRBTree->end();
@@ -4866,7 +4846,6 @@ void ExtentMap::bulkUpdateDBRoot(const vector<BulkUpdateDBRootArg>& args)
     tr1::unordered_set<BulkUpdateDBRootArg, BUHasher, BUEqual> sArgs;
     tr1::unordered_set<BulkUpdateDBRootArg, BUHasher, BUEqual>::iterator sit;
     BulkUpdateDBRootArg key;
-    int emEntries;
 
     for (uint32_t i = 0; i < args.size(); i++)
         sArgs.insert(args[i]);
@@ -5613,7 +5592,6 @@ void ExtentMap::lookup(OID_t OID, LBIDRange_v& ranges)
 
 #endif
 
-    int i, emEntries;
     LBIDRange tmp;
 
     ranges.clear();
@@ -5667,7 +5645,7 @@ int ExtentMap::checkConsistency()
         */
 
     LBID_t emBegin, emEnd, flBegin, flEnd;
-    int i, j, flEntries, emEntries;
+    int i, j, flEntries;
     uint32_t usedEntries;
 
     grabEMEntryTable(READ);

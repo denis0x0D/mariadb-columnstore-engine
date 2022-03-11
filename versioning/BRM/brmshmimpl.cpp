@@ -44,11 +44,10 @@ namespace BRM
 const constexpr uint32_t ShmCreateMaxRetries = 10;
 const constexpr unsigned int NapTimer = 500000;
 
-BRMShmImplParent::BRMShmImplParent(unsigned key, off_t size, bool readOnly):
-        fKey(key), fSize(size), fReadOnly(readOnly)
-    { };
+BRMShmImplParent::BRMShmImplParent(unsigned key, off_t size, bool readOnly)
+    : fKey(key), fSize(size), fReadOnly(readOnly){};
 
-BRMShmImplParent::~BRMShmImplParent() { };
+BRMShmImplParent::~BRMShmImplParent(){};
 
 BRMShmImpl::BRMShmImpl(unsigned key, off_t size, bool readOnly) : BRMShmImplParent(key, size, readOnly)
 {
