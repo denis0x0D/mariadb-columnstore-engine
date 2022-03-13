@@ -1464,9 +1464,7 @@ void ExtentMap::loadVersion4(IDBDataFile* in)
 
     // Calculate how much memory we need.
     const uint32_t memorySizeNeeded = (emNumElements * EM_RB_TREE_NODE_SIZE) + EM_RB_TREE_EMPTY_SIZE;
-
     growEMShmseg(memorySizeNeeded);
-    growEMIndexShmseg(ExtentMapIndexImpl::estimateEMIndexSize(emNumElements));
 
     size_t progress = 0, writeSize = emNumElements * sizeof(EMEntry);
     int err;
@@ -2005,13 +2003,15 @@ void ExtentMap::growEMShmseg(size_t size)
 
     ASSERT((allocSize == EM_RB_TREE_INITIAL_SIZE && !fPExtMapRBTreeImpl) || fPExtMapRBTreeImpl);
 
+    // We use grow by semantics.
+    fEMRBTreeShminfo->allocdSize += allocSize;
     if (!fPExtMapRBTreeImpl)
     {
         if (fEMRBTreeShminfo->tableShmkey == 0)
             fEMRBTreeShminfo->tableShmkey = newShmKey;
 
         fPExtMapRBTreeImpl = ExtentMapRBTreeImpl::makeExtentMapRBTreeImpl(
-            fEMRBTreeShminfo->tableShmkey, allocSize, r_only);
+            fEMRBTreeShminfo->tableShmkey, fEMRBTreeShminfo->allocdSize, r_only);
     }
     else
     {
@@ -2019,7 +2019,6 @@ void ExtentMap::growEMShmseg(size_t size)
         fPExtMapRBTreeImpl->grow(fEMRBTreeShminfo->tableShmkey, allocSize);
     }
 
-    fEMRBTreeShminfo->allocdSize += allocSize;
     // if (r_only)
     //   fPExtMapImpl->makeReadOnly();
 
