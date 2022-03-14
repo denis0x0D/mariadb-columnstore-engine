@@ -130,7 +130,8 @@ private:
   unsigned fKey;
   off_t fSize;
   bool fReadOnly;
-  const char* segmentName = "InfiniDB-shm-shared_managed_segment_00";
+  // The `segment` name is fixed.
+  const char* segmentName = "MCS-shm-00020001";
 };
 
 } //namespace

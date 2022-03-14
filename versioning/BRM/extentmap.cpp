@@ -216,12 +216,10 @@ ExtentMapRBTreeImpl* ExtentMapRBTreeImpl::makeExtentMapRBTreeImpl(unsigned key, 
 
     if (fInstance)
     {
-      /*
         if (key != fInstance->fManagedShm.key())
         {
             fInstance->fManagedShm.reMapSegment();
         }
-        */
         return fInstance;
     }
 
@@ -793,8 +791,6 @@ int ExtentMap::setMaxMin(const LBID_t lbid, const int64_t max, const int64_t min
     }
 
 #endif
-    int entries;
-    int i;
     LBID_t lastBlock;
     int32_t curSequence;
 
@@ -911,8 +907,6 @@ void ExtentMap::setExtentsMaxMin(const CPMaxMinMap_t& cpMap, bool firstNode, boo
     }
 
 #endif
-    int entries;
-    int i;
     int32_t curSequence;
     const int32_t extentsToUpdate = cpMap.size();
     int32_t extentsUpdated = 0;
@@ -1260,8 +1254,6 @@ int ExtentMap::getMaxMin(const LBID_t lbid, int64_t& max, int64_t& min, int32_t&
     max = numeric_limits<uint64_t>::max();
     min = 0;
     seqNum *= (-1);
-    int entries;
-    int i;
     LBID_t lastBlock;
     int isValid = CP_INVALID;
 
@@ -1470,7 +1462,7 @@ void ExtentMap::loadVersion4(IDBDataFile* in)
     int err;
     char *writePos;
 
-    for (int32_t i = 0; i < emNumElements; ++i)
+    for (uint32_t i = 0; i < emNumElements; ++i)
     {
         progress = 0;
         EMEntry emEntry;
@@ -2118,8 +2110,6 @@ int ExtentMap::lookup(LBID_t lbid, LBID_t& firstLbid, LBID_t& lastLbid)
     }
 
 #endif
-    int entries, i;
-    LBID_t lastBlock;
 
 #ifdef BRM_DEBUG
 
@@ -2142,7 +2132,7 @@ int ExtentMap::lookup(LBID_t lbid, LBID_t& firstLbid, LBID_t& lastLbid)
     {
         auto& emEntry = emIt->second;
         {
-            lastBlock = emEntry.range.start + (static_cast<LBID_t>(emEntry.range.size) * 1024) - 1;
+            LBID_t lastBlock = emEntry.range.start + (static_cast<LBID_t>(emEntry.range.size) * 1024) - 1;
             if (lbid >= emEntry.range.start && lbid <= lastBlock)
             {
                 firstLbid = emEntry.range.start;
@@ -2192,8 +2182,6 @@ int ExtentMap::lookupLocal(LBID_t lbid, int& OID, uint16_t& dbRoot, uint32_t& pa
     }
 
 #endif
-    LBID_t lastBlock;
-
     if (lbid < 0)
     {
         ostringstream oss;
@@ -2310,7 +2298,6 @@ int ExtentMap::lookupLocal_DBroot(int OID, uint16_t dbroot, uint32_t partitionNu
     }
 
 #endif
-    int entries, i, offset;
 
     if (OID < 0)
     {
@@ -2332,7 +2319,7 @@ int ExtentMap::lookupLocal_DBroot(int OID, uint16_t dbroot, uint32_t partitionNu
                 (emEntry.blockOffset + (static_cast<LBID_t>(emEntry.range.size) * 1024) - 1))
         {
 
-            offset = fileBlockOffset - emEntry.blockOffset;
+            auto offset = fileBlockOffset - emEntry.blockOffset;
             LBID = emEntry.range.start + offset;
 
             releaseEMIndex(READ);
@@ -4133,7 +4120,6 @@ void ExtentMap::deleteOID(int OID)
     DBRootVec dbRootVec(std::move(getAllDbRoots()));
     for (auto dbRoot: dbRootVec)
         fPExtMapIndexImpl_->deleteOID(dbRoot, OID);
-    const bool clearEMIndex = false;
 
     auto it = fExtentMapRBTree->begin();
     auto end = fExtentMapRBTree->end();
@@ -4870,7 +4856,6 @@ void ExtentMap::bulkUpdateDBRoot(const vector<BulkUpdateDBRootArg>& args)
     tr1::unordered_set<BulkUpdateDBRootArg, BUHasher, BUEqual> sArgs;
     tr1::unordered_set<BulkUpdateDBRootArg, BUHasher, BUEqual>::iterator sit;
     BulkUpdateDBRootArg key;
-    int emEntries;
 
     for (uint32_t i = 0; i < args.size(); i++)
         sArgs.insert(args[i]);
@@ -5143,7 +5128,10 @@ void ExtentMap::deletePartition(const set<OID_t>& oids,
     std::set<LogicalPartition> foundPartitions;
     std::vector<ExtentMapRBTree::iterator> extents;
 
-    for (auto it = fExtentMapRBTree->begin(), end = fExtentMapRBTree->end(); it != end; ++it)
+    auto it = fExtentMapRBTree->begin();
+    auto end = fExtentMapRBTree->end();
+
+    while (it != end)
     {
         const auto& emEntry = it->second;
         LogicalPartition lp(emEntry.dbRoot, emEntry.partitionNum, emEntry.segmentNum);
@@ -5154,8 +5142,17 @@ void ExtentMap::deletePartition(const set<OID_t>& oids,
             if (id != oids.end())
             {
                 foundPartitions.insert(lp);
-                extents.push_back(it);
+                //                extents.push_back(it);
+                it = deleteExtent(it);
             }
+            else
+            {
+                ++it;
+            }
+        }
+        else
+        {
+            ++it;
         }
     }
 
@@ -5183,12 +5180,6 @@ void ExtentMap::deletePartition(const set<OID_t>& oids,
     // This has to be the last error code to set and can not be over-written.
     if (foundPartitions.empty())
         rc = WARN_NO_PARTITION_PERFORMED;
-
-    // Really delete extents.
-    // FIXME: Implement a proper delete function, I'm not sure about are iterators still valid after
-    // single delete?
-    for (uint32_t i = 0, e = extents.size(); i < e; ++i)
-        deleteExtent(extents[i]);
 
     // @bug 4772 throw exception on any error because they are all warnings.
     if (rc)
@@ -5617,9 +5608,7 @@ void ExtentMap::lookup(OID_t OID, LBIDRange_v& ranges)
 
 #endif
 
-    int i, emEntries;
     LBIDRange tmp;
-
     ranges.clear();
 
     if (OID < 0)
@@ -5671,7 +5660,7 @@ int ExtentMap::checkConsistency()
         */
 
     LBID_t emBegin, emEnd, flBegin, flEnd;
-    int i, j, flEntries, emEntries;
+    int i, j, flEntries;
     uint32_t usedEntries;
 
     grabEMEntryTable(READ);
