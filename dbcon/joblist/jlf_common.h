@@ -29,6 +29,7 @@
 #include <stack>
 #include <string>
 #include <vector>
+#include <unordered_map>
 
 #include <boost/shared_ptr.hpp>
 #include <boost/uuid/uuid.hpp>
@@ -367,6 +368,10 @@ struct JobInfo
   // in simpleScalarFilterToParseTree() for later deletion in
   // ~csep() or csep.unserialize()
   std::vector<execplan::ParseTree*> dynamicParseTreeVec;
+
+  // Represents a `join edges` to be restored in `join order` part.
+  std::set<pair<uint32_t, uint32_t>> joinEdgesToRestore;
+  std::unordered_map<uint32_t, uint32_t> tablesForLargeSide;
 
  private:
   // defaults okay
