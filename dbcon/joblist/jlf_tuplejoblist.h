@@ -128,19 +128,27 @@ void orExpresssion(const execplan::Operator* op, JobInfo& jobInfo);
 // union the queries and return the tuple union step
 SJSTEP unionQueries(JobStepVector& queries, uint64_t distinctUnionNum, JobInfo& jobInfo);
 
+enum class TableColor
+{
+  WHITE,
+  GREY,
+  BLACK
+};
+
 struct JoinTableNode
 {
-  bool fVisited;
+  TableColor fTableColor;
   uint32_t fParent;
   std::vector<uint32_t> fAdjacentList;
-  JoinTableNode() : fVisited(false), fParent(-1)
+  JoinTableNode() : fTableColor(TableColor::WHITE), fParent(UINT_MAX)
   {
   }
 };
 
 using JoinGraph = std::map<uint32_t, JoinTableNode>;
-using JoinEdges = std::set<pair<uint32_t, uint32_t>>;
-using Cycles = std::vector<std::vector<std::pair<uint32_t, uint32_t>>>;
-using Cycle = std::vector<std::pair<uint32_t, uint32_t>>;
-using PostJoinFilterKeys = std::vector<std::pair<std::pair<uint32_t, uint32_t>, std::vector<uint32_t>>>;
+using JoinEdge = std::pair<uint32_t, uint32_t>;
+using JoinEdges = std::set<JoinEdge>;
+using Cycle = std::vector<JoinEdge>;
+using Cycles = std::vector<std::vector<JoinEdge>>;
+using PostJoinFilterKeys = std::vector<std::pair<JoinEdge, std::vector<uint32_t>>>;
 }  // namespace joblist
