@@ -368,6 +368,10 @@ struct JobInfo
   // ~csep() or csep.unserialize()
   std::vector<execplan::ParseTree*> dynamicParseTreeVec;
 
+  // Represents a `join edges` to be restored in `join order` part.
+  std::set<pair<uint32_t, uint32_t>> joinEdgesToRestore;
+  std::set<uint32_t> tablesForLargeSide;
+
  private:
   // defaults okay
   // JobInfo(const JobInfo& rhs);
