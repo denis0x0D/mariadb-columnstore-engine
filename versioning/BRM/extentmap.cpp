@@ -640,43 +640,30 @@ ExtentMapRBTree::iterator ExtentMap::findByLBID(const LBID_t lbid)
 
 int ExtentMap::_markInvalid(const LBID_t lbid, const execplan::CalpontSystemCatalog::ColDataType colDataType)
 {
-    LBID_t lastBlock;
+  LBID_t lastBlock;
 
-    auto emIt = findByLBID(lbid);
-    if (emIt == fExtentMapRBTree->end())
-        throw logic_error("ExtentMap::markInvalid(): lbid isn't allocated");
-
-    auto& emEntry = emIt->second;
-    {
-        lastBlock = emEntry.range.start + (static_cast<LBID_t>(emEntry.range.size) * 1024) - 1;
-
-        {
-            // FIXME: Remove this check, since we use tree.
-            if (lbid >= emEntry.range.start && lbid <= lastBlock)
-            {
-                makeUndoRecordRBTree(UndoRecordType::DEFAULT, emEntry);
-                emEntry.partition.cprange.isValid = CP_UPDATING;
-
-                if (isUnsigned(colDataType))
-                {
-                    emEntry.partition.cprange.lo_val = numeric_limits<uint64_t>::max();
-                    emEntry.partition.cprange.hi_val = 0;
-                }
-                else
-                {
-                    emEntry.partition.cprange.lo_val = numeric_limits<int64_t>::max();
-                    emEntry.partition.cprange.hi_val = numeric_limits<int64_t>::min();
-                }
-
-                incSeqNum(emEntry.partition.cprange.sequenceNum);
-                return 0;
-            }
-        }
-    }
-
+  auto emIt = findByLBID(lbid);
+  if (emIt == fExtentMapRBTree->end())
     throw logic_error("ExtentMap::markInvalid(): lbid isn't allocated");
-}
 
+  auto& emEntry = emIt->second;
+  makeUndoRecordRBTree(UndoRecordType::DEFAULT, emEntry);
+  emEntry.partition.cprange.isValid = CP_UPDATING;
+
+  if (isUnsigned(colDataType))
+  {
+    emEntry.partition.cprange.lo_val = numeric_limits<uint64_t>::max();
+    emEntry.partition.cprange.hi_val = 0;
+  }
+  else
+  {
+    emEntry.partition.cprange.lo_val = numeric_limits<int64_t>::max();
+    emEntry.partition.cprange.hi_val = numeric_limits<int64_t>::min();
+  }
+
+  incSeqNum(emEntry.partition.cprange.sequenceNum);
+  return 0;
+}
 
 int ExtentMap::markInvalid(const LBID_t lbid,
                            const execplan::CalpontSystemCatalog::ColDataType colDataType)
@@ -809,54 +796,45 @@ int ExtentMap::setMaxMin(const LBID_t lbid, const int64_t max, const int64_t min
         throw logic_error("ExtentMap::getMaxMin(): that lbid isn't allocated");
 
     auto& emEntry = emIt->second;
-    {
-        lastBlock = emEntry.range.start + (static_cast<LBID_t>(emEntry.range.size) * 1024) - 1;
-        curSequence = emEntry.partition.cprange.sequenceNum;
+    curSequence = emEntry.partition.cprange.sequenceNum;
 
-        if (lbid >= emEntry.range.start && lbid <= lastBlock)
-        {
 #ifdef BRM_DEBUG
-
-            if (firstNode)
-            {
-                ostringstream os;
-                os << "ExtentMap::setMaxMin(): casual partitioning update: firstLBID="
-                   << emEntry.range.start
-                   << " lastLBID=" << emEntry.range.start + emEntry.range.size * 1024 - 1
-                   << " OID=" << emEntry.fileID << " min=" << min << " max=" << max
-                   << "seq=" << seqNum;
-                log(os.str(), logging::LOG_TYPE_DEBUG);
-            }
+    if (firstNode)
+    {
+      ostringstream os;
+      os << "ExtentMap::setMaxMin(): casual partitioning update: firstLBID=" << emEntry.range.start
+         << " lastLBID=" << emEntry.range.start + emEntry.range.size * 1024 - 1 << " OID=" << emEntry.fileID
+         << " min=" << min << " max=" << max << "seq=" << seqNum;
+      log(os.str(), logging::LOG_TYPE_DEBUG);
+    }
 
 #endif
 
-            if (curSequence == seqNum)
-            {
-                makeUndoRecordRBTree(UndoRecordType::DEFAULT, emEntry);
-                emEntry.partition.cprange.hi_val = max;
-                emEntry.partition.cprange.lo_val = min;
-                emEntry.partition.cprange.isValid = CP_VALID;
-                incSeqNum(emEntry.partition.cprange.sequenceNum);
-                return 0;
-            }
-            // special val to indicate a reset--used by editem -c.
-            // Also used by COMMIT and ROLLBACK to invalidate CP.
-            else if (seqNum == -1)
-            {
-                makeUndoRecordRBTree(UndoRecordType::DEFAULT, emEntry);
-                // We set hi_val and lo_val to correct values for signed or unsigned
-                // during the markinvalid step, which sets the invalid variable to CP_UPDATING.
-                // During this step (seqNum == -1), the min and max passed in are not reliable
-                // and should not be used.
-                emEntry.partition.cprange.isValid = CP_INVALID;
-                incSeqNum(emEntry.partition.cprange.sequenceNum);
-                return 0;
-            }
-            else
-            {
-                return 0;
-            }
-        }
+    if (curSequence == seqNum)
+    {
+      makeUndoRecordRBTree(UndoRecordType::DEFAULT, emEntry);
+      emEntry.partition.cprange.hi_val = max;
+      emEntry.partition.cprange.lo_val = min;
+      emEntry.partition.cprange.isValid = CP_VALID;
+      incSeqNum(emEntry.partition.cprange.sequenceNum);
+      return 0;
+    }
+    // special val to indicate a reset--used by editem -c.
+    // Also used by COMMIT and ROLLBACK to invalidate CP.
+    else if (seqNum == -1)
+    {
+      makeUndoRecordRBTree(UndoRecordType::DEFAULT, emEntry);
+      // We set hi_val and lo_val to correct values for signed or unsigned
+      // during the markinvalid step, which sets the invalid variable to CP_UPDATING.
+      // During this step (seqNum == -1), the min and max passed in are not reliable
+      // and should not be used.
+      emEntry.partition.cprange.isValid = CP_INVALID;
+      incSeqNum(emEntry.partition.cprange.sequenceNum);
+      return 0;
+    }
+    else
+    {
+      return 0;
     }
 
     if (emIndexLocked)
@@ -1272,26 +1250,14 @@ int ExtentMap::getMaxMin(const LBID_t lbid, int64_t& max, int64_t& min, int32_t&
         throw logic_error("ExtentMap::getMaxMin(): that lbid isn't allocated");
 
     auto& emEntry = emIt->second;
-    {
-        lastBlock = emEntry.range.start + (static_cast<LBID_t>(emEntry.range.size) * 1024) - 1;
-        if (lbid >= emEntry.range.start && lbid <= lastBlock)
-        {
-            max = emEntry.partition.cprange.hi_val;
-            min = emEntry.partition.cprange.lo_val;
-            seqNum = emEntry.partition.cprange.sequenceNum;
-            isValid = emEntry.partition.cprange.isValid;
-
-            releaseEMIndex(READ);
-            releaseEMEntryTable(READ);
-            return isValid;
-        }
-    }
+    max = emEntry.partition.cprange.hi_val;
+    min = emEntry.partition.cprange.lo_val;
+    seqNum = emEntry.partition.cprange.sequenceNum;
+    isValid = emEntry.partition.cprange.isValid;
 
     releaseEMIndex(READ);
     releaseEMEntryTable(READ);
-    throw logic_error("ExtentMap::getMaxMin(): that lbid isn't allocated");
-
-    return -1;
+    return isValid;
 }
 
 /* Removes a range from the freelist.  Used by load() */
@@ -1412,10 +1378,8 @@ std::vector<ExtentMapRBTree::iterator> ExtentMap::getEmIteratorsByLbids(const st
         // Materialize.
         emEntries.push_back(emIt);
     }
-
     return emEntries;
 }
-
 
 /*
 	The file layout looks like this:
@@ -1456,9 +1420,7 @@ void ExtentMap::loadVersion4(IDBDataFile* in)
 
     // Calculate how much memory we need.
     const uint32_t memorySizeNeeded = (emNumElements * EM_RB_TREE_NODE_SIZE) + EM_RB_TREE_EMPTY_SIZE;
-
     growEMShmseg(memorySizeNeeded);
-//    growEMIndexShmseg(ExtentMapIndexImpl::estimateEMIndexSize(emNumElements));
 
     size_t progress = 0, writeSize = emNumElements * sizeof(EMEntry);
     int err;
@@ -1905,8 +1867,13 @@ void ExtentMap::releaseEMEntryTable(OPS op)
         fMST.releaseTable_read(MasterSegmentTable::EMTable);
     else
     {
-        emLocked = false;
-        fMST.releaseTable_write(MasterSegmentTable::EMTable);
+      // Note: Technically we should mark it unlocked after it's unlocked,
+      // however, that's a race condition. The only reason the up operation
+      // here will fail is if the underlying semaphore doesn't exist anymore
+      // or there is a locking logic error somewhere else.  Either way,
+      // declaring the EM unlocked here is OK. Same with all similar assignments.
+      emLocked = false;
+      fMST.releaseTable_write(MasterSegmentTable::EMTable);
     }
 }
 
@@ -2125,25 +2092,14 @@ int ExtentMap::lookup(LBID_t lbid, LBID_t& firstLbid, LBID_t& lastLbid)
     if (emIt == fExtentMapRBTree->end())
         return -1;
 
-    {
-        auto& emEntry = emIt->second;
-        {
-            LBID_t lastBlock = emEntry.range.start + (static_cast<LBID_t>(emEntry.range.size) * 1024) - 1;
-            if (lbid >= emEntry.range.start && lbid <= lastBlock)
-            {
-                firstLbid = emEntry.range.start;
-                lastLbid = lastBlock;
-
-                releaseEMIndex(READ);
-                releaseEMEntryTable(READ);
-                return 0;
-            }
-        }
-    }
+    auto& emEntry = emIt->second;
+    LBID_t lastBlock = emEntry.range.start + (static_cast<LBID_t>(emEntry.range.size) * 1024) - 1;
+    firstLbid = emEntry.range.start;
+    lastLbid = lastBlock;
 
     releaseEMIndex(READ);
     releaseEMEntryTable(READ);
-    return -1;
+    return 0;
 }
 
 // @bug 1055+.  New functions added for multiple files per OID enhancement.
@@ -2193,31 +2149,19 @@ int ExtentMap::lookupLocal(LBID_t lbid, int& OID, uint16_t& dbRoot, uint32_t& pa
     if (emIt == fExtentMapRBTree->end())
         return -1;
 
-    {
-        auto& emEntry = emIt->second;
-        {
-            LBID_t lastBlock = emEntry.range.start + (static_cast<LBID_t>(emEntry.range.size) * 1024) - 1;
-            if (lbid >= emEntry.range.start && lbid <= lastBlock)
-            {
-                OID = emEntry.fileID;
-                dbRoot = emEntry.dbRoot;
-                segmentNum = emEntry.segmentNum;
-                partitionNum = emEntry.partitionNum;
+    auto& emEntry = emIt->second;
+    OID = emEntry.fileID;
+    dbRoot = emEntry.dbRoot;
+    segmentNum = emEntry.segmentNum;
+    partitionNum = emEntry.partitionNum;
 
-                // TODO:  Offset logic.
-                auto offset = lbid - emEntry.range.start;
-                fileBlockOffset = emEntry.blockOffset + offset;
-
-                releaseEMIndex(READ);
-                releaseEMEntryTable(READ);
-                return 0;
-            }
-        }
-    }
+    // TODO:  Offset logic.
+    auto offset = lbid - emEntry.range.start;
+    fileBlockOffset = emEntry.blockOffset + offset;
 
     releaseEMIndex(READ);
     releaseEMEntryTable(READ);
-    return -1;
+    return 0;
 }
 
 int ExtentMap::lookupLocal(int OID, uint32_t partitionNum, uint16_t segmentNum, uint32_t fileBlockOffset, LBID_t& LBID)
@@ -3142,7 +3086,7 @@ LBID_t ExtentMap::_createColumnExtentExactFile(uint32_t size, int OID, uint32_t 
 
     // Insert into RBTree.
     makeUndoRecordRBTree(UndoRecordType::INSERT, newEmEntry);
-    std::pair<int64_t, EMEntry> lbidEmEntryPair = make_pair(startLBID, newEmEntry);
+    std::pair<LBID_t, EMEntry> lbidEmEntryPair = make_pair(startLBID, newEmEntry);
     fExtentMapRBTree->insert(lbidEmEntryPair);
     startBlockOffset = newEmEntry.blockOffset;
     makeUndoRecord(fEMRBTreeShminfo, sizeof(MSTEntry));
@@ -4114,7 +4058,7 @@ void ExtentMap::deleteOIDs(const OidsMap_t& OIDs)
     grabEMIndex(WRITE);
     grabFreeList(WRITE);
 
-    DBRootVec dbRootVec(std::move(getAllDbRoots()));
+    DBRootVec dbRootVec(getAllDbRoots());
     for (auto dbRoot: dbRootVec)
     {
         for (auto& oidOidPair : OIDs)
