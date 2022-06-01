@@ -81,6 +81,10 @@ class Opt
  public:
   int m_debug;
   bool m_fg;
+  Opt(int m_debug, bool m_fg) : m_debug(m_debug), m_fg(m_fg)
+  {
+  }
+
   Opt(int argc, char* argv[]) : m_debug(0), m_fg(false)
   {
     int c;
@@ -98,16 +102,32 @@ class Opt
   }
 };
 
+static std::mutex servicePPMutex;
+
 class ServicePrimProc : public Service, public Opt
 {
  public:
-  ServicePrimProc(const Opt& opt) : Service("PrimProc"), Opt(opt)
+  static ServicePrimProc* instance()
   {
+    std::lock_guard<std::mutex> lock(servicePPMutex);
+
+    if (!fInstance)
+      fInstance = new ServicePrimProc();
+
+    return fInstance;
   }
+
+  void setOpt(const Opt& opt)
+  {
+     m_debug = opt.m_debug;
+     m_fg = opt.m_fg;
+  }
+
   void LogErrno() override
   {
     cerr << strerror(errno) << endl;
   }
+
   void ParentLogChildMessage(const std::string& str) override
   {
     cout << str << endl;
@@ -123,9 +143,18 @@ class ServicePrimProc : public Service, public Opt
   }
 
  private:
+  ServicePrimProc() : Service("PrimProc"), Opt(0, false)
+  {
+  }
+
+  static ServicePrimProc* fInstance;
   // Since C++20 flag's init value is false.
   std::atomic_flag startupRaceFlag_{false};
+  boost::shared_ptr<threadpool::PriorityThreadPool> primServerThreadPool;
+  boost::shared_ptr<threadpool::PriorityThreadPool> OOBThreadPool;
 };
+
+ServicePrimProc* ServicePrimProc::fInstance = nullptr;
 
 namespace primitiveprocessor
 {
@@ -764,6 +793,9 @@ int ServicePrimProc::Child()
   }
 #endif
 
+  primServerThreadPool = server.getProcessorThreadPool();
+  OOBThreadPool = server.getOOBThreadPool();
+
   server.start(this, startupRaceLock);
 
   cerr << "server.start() exited!" << endl;
@@ -783,5 +815,6 @@ int main(int argc, char** argv)
   // Initialize the charset library
   MY_INIT(argv[0]);
 
-  return ServicePrimProc(opt).Run();
+  ServicePrimProc::instance()->setOpt(opt);
+  return ServicePrimProc::instance()->Run();
 }
