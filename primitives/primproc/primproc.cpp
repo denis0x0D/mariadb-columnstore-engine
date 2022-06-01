@@ -76,86 +76,6 @@ using namespace idbdatafile;
 #include "service.h"
 #include "serviceexemgr.h"
 
-class Opt
-{
- public:
-  int m_debug;
-  bool m_fg;
-  Opt(int m_debug, bool m_fg) : m_debug(m_debug), m_fg(m_fg)
-  {
-  }
-
-  Opt(int argc, char* argv[]) : m_debug(0), m_fg(false)
-  {
-    int c;
-
-    while ((c = getopt(argc, argv, "df")) != EOF)
-    {
-      switch (c)
-      {
-        case 'd': m_debug++; break;
-        case 'f': m_fg = true; break;
-        case '?':
-        default: break;
-      }
-    }
-  }
-};
-
-static std::mutex servicePPMutex;
-
-class ServicePrimProc : public Service, public Opt
-{
- public:
-  static ServicePrimProc* instance()
-  {
-    std::lock_guard<std::mutex> lock(servicePPMutex);
-
-    if (!fInstance)
-      fInstance = new ServicePrimProc();
-
-    return fInstance;
-  }
-
-  void setOpt(const Opt& opt)
-  {
-     m_debug = opt.m_debug;
-     m_fg = opt.m_fg;
-  }
-
-  void LogErrno() override
-  {
-    cerr << strerror(errno) << endl;
-  }
-
-  void ParentLogChildMessage(const std::string& str) override
-  {
-    cout << str << endl;
-  }
-  int Child() override;
-  int Run()
-  {
-    return m_fg ? Child() : RunForking();
-  }
-  std::atomic_flag& getStartupRaceFlag()
-  {
-    return startupRaceFlag_;
-  }
-
- private:
-  ServicePrimProc() : Service("PrimProc"), Opt(0, false)
-  {
-  }
-
-  static ServicePrimProc* fInstance;
-  // Since C++20 flag's init value is false.
-  std::atomic_flag startupRaceFlag_{false};
-  boost::shared_ptr<threadpool::PriorityThreadPool> primServerThreadPool;
-  boost::shared_ptr<threadpool::PriorityThreadPool> OOBThreadPool;
-};
-
-ServicePrimProc* ServicePrimProc::fInstance = nullptr;
-
 namespace primitiveprocessor
 {
 extern uint32_t BPPCount;
@@ -363,6 +283,15 @@ void* waitForSIGUSR1(void* p)
 #endif
 
 }  // namespace
+
+ServicePrimProc* ServicePrimProc::fInstance = nullptr;
+ServicePrimProc* ServicePrimProc::instance()
+{
+  if (!fInstance)
+    fInstance = new ServicePrimProc();
+
+  return fInstance;
+}
 
 int ServicePrimProc::Child()
 {
