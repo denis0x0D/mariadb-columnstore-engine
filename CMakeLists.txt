@@ -220,7 +220,7 @@ elseif (CMAKE_CXX_COMPILER_ID STREQUAL "GNU")
     MY_CHECK_AND_SET_COMPILER_FLAG("-Wno-register")
 endif()
 
-MY_CHECK_AND_SET_COMPILER_FLAG("-Werror -Wall")
+#MY_CHECK_AND_SET_COMPILER_FLAG("-Werror -Wall")
 SET (ENGINE_LDFLAGS    "-Wl,--no-as-needed -Wl,--add-needed")
 SET (ENGINE_DT_LIB datatypes)
 SET (ENGINE_COMMON_LIBS     messageqcpp loggingcpp configcpp idbboot ${Boost_LIBRARIES} xml2 pthread rt libmysql_client ${ENGINE_DT_LIB})

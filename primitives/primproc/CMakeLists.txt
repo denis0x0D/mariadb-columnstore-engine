@@ -3,7 +3,13 @@ include_directories( ${ENGINE_COMMON_INCLUDES} ../blockcache ../linux-port)
 
 
 ########### next target ###############
+set(ServicePrimProc_SRCS
+    serviceprimproc.cpp)
 
+add_library(serviceprimproc SHARED ${ServicePrimProc_SRCS})
+install(TARGETS serviceprimproc DESTINATION ${ENGINE_LIBDIR} COMPONENT columnstore-engine)
+
+########### next target ###############
 set(PrimProc_SRCS
     primproc.cpp
     batchprimitiveprocessor.cpp
@@ -30,6 +36,6 @@ add_executable(PrimProc ${PrimProc_SRCS})
 
 add_dependencies(PrimProc loggingcpp)
 target_include_directories(PrimProc PRIVATE ${Boost_INCLUDE_DIRS})
-target_link_libraries(PrimProc ${ENGINE_LDFLAGS} ${NETSNMP_LIBRARIES} ${MARIADB_CLIENT_LIBS} ${ENGINE_WRITE_LIBS} threadpool cacheutils dbbc processor)
+target_link_libraries(PrimProc ${ENGINE_LDFLAGS} ${NETSNMP_LIBRARIES} ${MARIADB_CLIENT_LIBS} ${ENGINE_WRITE_LIBS} threadpool cacheutils dbbc processor serviceprimproc)
 
 install(TARGETS PrimProc DESTINATION ${ENGINE_BINDIR} COMPONENT columnstore-engine)
