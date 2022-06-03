@@ -172,6 +172,16 @@ class ServicePrimProc : public Service, public Opt
     return startupRaceFlag_;
   }
 
+  boost::shared_ptr<threadpool::PriorityThreadPool> getPrimitiveServerThreadPool()
+  {
+    return primServerThreadPool;
+  }
+
+  boost::shared_ptr<threadpool::PriorityThreadPool> getOOBThreadPool()
+  {
+    return OOBThreadPool;
+  }
+
  private:
   ServicePrimProc() : Service("PrimProc"), Opt(0, false)
   {

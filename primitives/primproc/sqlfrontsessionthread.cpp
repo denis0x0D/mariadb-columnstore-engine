@@ -16,6 +16,8 @@
    MA 02110-1301, USA. */
 
 #include "sqlfrontsessionthread.h"
+#include "primproc.h"
+#include "primitiveserverthreadpools.h"
 
 namespace exemgr
 {
@@ -515,6 +517,9 @@ namespace exemgr
       logging::SQLLogger sqlLog(oss.str(), li);
 
       statementsRunningCount->incr(stmtCounted);
+
+      PrimitiveServerThreadPools threadPools(ServicePrimProc::instance()->getPrimitiveServerThreadPool(),
+                                             ServicePrimProc::instance()->getOOBThreadPool());
 
       if (tryTuples)
       {
