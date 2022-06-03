@@ -850,7 +850,8 @@ void CalpontSystemCatalog::getSysData_EC(CalpontSelectExecutionPlan& csep, NJLSy
 
   ResourceManager* rm = ResourceManager::instance(true);
   DistributedEngineComm* fEc = DistributedEngineComm::instance(rm);
-  SJLP jl = JobListFactory::makeJobList(&csep, rm, true);
+  PrimitiveServerThreadPools threadPools;
+  SJLP jl = JobListFactory::makeJobList(&csep, rm, threadPools, true);
   //@bug 2221. Work around to prevent DMLProc crash.
   int retryNum = 0;
 
@@ -864,7 +865,7 @@ void CalpontSystemCatalog::getSysData_EC(CalpontSelectExecutionPlan& csep, NJLSy
 #else
     sleep(1);
 #endif
-    jl = JobListFactory::makeJobList(&csep, rm, true);
+    jl = JobListFactory::makeJobList(&csep, rm, threadPools, true);
     retryNum++;
   }
 

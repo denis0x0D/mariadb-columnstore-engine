@@ -2004,7 +2004,8 @@ void handleException(std::exception_ptr e, JobList* jl, JobInfo& jobInfo, unsign
   jl = nullptr;
 }
 
-SJLP makeJobList_(CalpontExecutionPlan* cplan, ResourceManager* rm, bool isExeMgr, unsigned& errCode,
+SJLP makeJobList_(CalpontExecutionPlan* cplan, ResourceManager* rm,
+                  const PrimitiveServerThreadPools& threadPools, bool isExeMgr, unsigned& errCode,
                   string& emsg)
 {
   // TODO: This part requires a proper refactoring, we have to move common methods from
@@ -2042,6 +2043,7 @@ SJLP makeJobList_(CalpontExecutionPlan* cplan, ResourceManager* rm, bool isExeMg
     jobInfo.statementId = csep->statementID();
     jobInfo.queryType = csep->queryType();
     jobInfo.csc = csc;
+    jobInfo.threadPools = threadPools;
     // TODO: clean up the vestiges of the bool trace
     jobInfo.trace = csep->traceOn();
     jobInfo.traceFlags = csep->traceFlags();
@@ -2292,14 +2294,14 @@ SJLP makeJobList_(CalpontExecutionPlan* cplan, ResourceManager* rm, bool isExeMg
 namespace joblist
 {
 /* static */
-SJLP JobListFactory::makeJobList(CalpontExecutionPlan* cplan, ResourceManager* rm, bool tryTuple,
-                                 bool isExeMgr)
+SJLP JobListFactory::makeJobList(CalpontExecutionPlan* cplan, ResourceManager* rm,
+                                 const PrimitiveServerThreadPools& threadPools, bool tryTuple, bool isExeMgr)
 {
   SJLP ret;
   string emsg;
   unsigned errCode = 0;
 
-  ret = makeJobList_(cplan, rm, isExeMgr, errCode, emsg);
+  ret = makeJobList_(cplan, rm, threadPools, isExeMgr, errCode, emsg);
 
   if (!ret)
   {

@@ -30,6 +30,16 @@ class PrimitiveServerThreadPools
   {
   }
 
+  boost::shared_ptr<threadpool::PriorityThreadPool> getPrimitiveServerThreadPool()
+  {
+    return fPrimServerThreadPool;
+  }
+
+  boost::shared_ptr<threadpool::PriorityThreadPool> getOOBThreadPool()
+  {
+    return fOOBThreadPool;
+  }
+
  private:
   boost::shared_ptr<threadpool::PriorityThreadPool> fPrimServerThreadPool;
   boost::shared_ptr<threadpool::PriorityThreadPool> fOOBThreadPool;
