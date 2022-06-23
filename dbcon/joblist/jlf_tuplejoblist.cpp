@@ -3682,6 +3682,33 @@ void joinTablesInOrder(uint32_t largest, JobStepVector& joinSteps, TableInfoMap&
                                             largeIndicesOnCycle.end());
         }
       }
+
+      std::cout << "smallSideRG size " << smallSideRGs.size() << std::endl;
+      for (const auto& rg : smallSideRGs)
+      {
+        std::cout << rg.toString() << std::endl;
+      }
+
+      std::cout << "small keys indices " << std::endl;
+      for (auto keys : smallKeyIndices)
+      {
+        for (auto k : keys)
+        {
+          cout << k << " ";
+        }
+        cout << endl;
+      }
+
+      std::cout << "large keys indices " << std::endl;
+      for (auto keys : largeKeyIndices)
+      {
+        for (auto k : keys)
+        {
+          cout << k << " ";
+        }
+        cout << endl;
+      }
+
       thjs->configJoinKeyIndex(jointypes, typeless, smallKeyIndices, largeKeyIndices);
 
       tableInfoMap[large].fQuerySteps.push_back(spjs);

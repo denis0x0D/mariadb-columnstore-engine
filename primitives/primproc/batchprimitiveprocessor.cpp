@@ -298,7 +298,7 @@ void BatchPrimitiveProcessor::initBPP(ByteStream& bs)
     if (ot == ROW_GROUP)
     {
       bs >> joinerCount;
-      // 			cout << "joinerCount = " << joinerCount << endl;
+      cout << "joinerCount = " << joinerCount << endl;
       joinTypes.reset(new JoinType[joinerCount]);
 
       tJoiners.reset(new boost::shared_array<boost::shared_ptr<TJoiner> >[joinerCount]);
@@ -398,6 +398,7 @@ void BatchPrimitiveProcessor::initBPP(ByteStream& bs)
 
       if (getTupleJoinRowGroupData)
       {
+        std::cout << "getTupleJoinRowGroupData " << std::endl;
         deserializeVector(bs, smallSideRGs);
         // 				cout << "deserialized " << smallSideRGs.size() << " small-side
         // rowgroups\n";
@@ -411,7 +412,6 @@ void BatchPrimitiveProcessor::initBPP(ByteStream& bs)
         for (i = 0; i < joinerCount; i++)
         {
           smallSideRowLengths[i] = smallSideRGs[i].getRowSize();
-          ;
           smallSideRowData[i] = RGData(smallSideRGs[i], tJoinerSizes[i]);
           //					smallSideRowData[i].reset(new uint8_t[
           //					  smallSideRGs[i].getEmptySize() +
@@ -1178,7 +1178,8 @@ uint32_t BatchPrimitiveProcessor::executeTupleJoin(uint32_t startRid)
      * 		  are NULL values to match against, but there is no filter, all rows can be eliminated.
      */
 
-    // cout << "large side row: " << oldRow.toString() << endl;
+    cout << "large side row: " << oldRow.toString() << endl;
+    std::cout << "joiner count " << joinerCount << std::endl;
     for (j = 0; j < joinerCount; j++)
     {
       bool found;

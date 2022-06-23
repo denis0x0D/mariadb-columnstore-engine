@@ -188,6 +188,7 @@ TupleJoiner::TupleJoiner(const rowgroup::RowGroup& smallInput, const rowgroup::R
   }
 
   keyLength = calculateKeyLength(smallKeyColumns, smallRG, &largeKeyColumns, &largeRG);
+  std::cout << "key lenght " << keyLength << std::endl;
 
   discreteValues.reset(new bool[smallKeyColumns.size()]);
   cpValues.reset(new vector<int128_t>[smallKeyColumns.size()]);
