@@ -194,6 +194,7 @@ inline void addColumnsToRG(uint32_t tid, vector<uint32_t>& pos, vector<uint32_t>
                            vector<CalpontSystemCatalog::ColDataType>& types, vector<uint32_t>& csNums,
                            TableInfoMap& tableInfoMap, JobInfo& jobInfo)
 {
+  // TODO: Add all of this to circular join.
   // -- the selected columns
   vector<uint32_t>& pjCol = tableInfoMap[tid].fProjectCols;
 
@@ -1652,7 +1653,7 @@ void collectCycles(JoinGraph& joinGraph, const JobInfo& jobInfo, TableInfoMap& t
           std::cout << "Edge: " << edge.first << " <-> " << edge.second << std::endl;
           const auto it = jobInfo.tableJoinMap.find(edge);
 
-          cout << "Left keys: " << endl;
+          std::cout << "Left keys: " << std::endl;
           for (const auto key : it->second.fLeftKeys)
             std::cout << "Key: " << key << " column oid: " << jobInfo.keyInfo->tupleKeyVec[key].fId
                       << std::endl;
@@ -1762,8 +1763,7 @@ bool isForeignKeyForeignKeyLink(TableInfoMap& infoMap, const JobInfo& jobInfo, c
 }
 
 void chooseEdgeToTransformOuterJoins(TableInfoMap& infoMap, const JobInfo& jobInfo, Cycle& cycle,
-                                     JoinEdges& edgesToTransform, JoinEdge& resultEdge,
-                                     JobStepVector& joinSteps)
+                                     JobStepVector& joinSteps, JoinEdge& resultEdge)
 {
   // 1. Build a weightet join graph.
   std::map<pair<uint32_t, uint32_t>, uint32_t> weights;
@@ -1793,7 +1793,7 @@ void chooseEdgeToTransformOuterJoins(TableInfoMap& infoMap, const JobInfo& jobIn
 }
 
 void chooseEdgeToTransformInnerJoins(TableInfoMap& infoMap, const JobInfo& jobInfo, Cycle& cycle,
-                                     JoinEdges& edgesToTransform, JoinEdge& resultEdge)
+                                     const JoinEdges& edgesToTransform, JoinEdge& resultEdge)
 {
   // Use statistics if possible.
   auto* statisticsManager = statistics::StatisticsManager::instance();
@@ -1805,9 +1805,7 @@ void chooseEdgeToTransformInnerJoins(TableInfoMap& infoMap, const JobInfo& jobIn
       const auto edgeBackward = std::make_pair(edgeForward.second, edgeForward.first);
       if (!edgesToTransform.count(edgeForward) && !edgesToTransform.count(edgeBackward))
       {
-        edgesToTransform.insert(edgeForward);
         resultEdge = edgeForward;
-        // Success.
         return;
       }
     }
@@ -1817,7 +1815,6 @@ void chooseEdgeToTransformInnerJoins(TableInfoMap& infoMap, const JobInfo& jobIn
     std::cout << "FK FK key not found, removing the first one inner join edge" << std::endl;
 
   // Take just a first.
-  edgesToTransform.insert(cycle.front());
   resultEdge = cycle.front();
 }
 
@@ -1900,13 +1897,12 @@ void breakCyclesAndCollectEdges(TableInfoMap& infoMap, const JobInfo& jobInfo, C
     if (isInnerJoin)
       chooseEdgeToTransformInnerJoins(infoMap, jobInfo, cycle, edgesToTransform, edgeForward);
     else
-      chooseEdgeToTransformOuterJoins(infoMap, jobInfo, cycle, edgesToTransform, edgeForward, joinSteps);
-
-    if (jobInfo.trace)
-      std::cout << "Remove " << edgeForward.first << " from adjlist of " << edgeForward.second << std::endl;
+      chooseEdgeToTransformOuterJoins(infoMap, jobInfo, cycle, joinSteps, edgeForward);
+    edgesToTransform.insert(edgeForward);
 
     auto tableInfoIt = jobInfo.tableJoinMap.find(edgeForward);
-
+    // Other expressions.
+    // This is needed to avoid elimination of some columns while creating result rowgroup.
     auto& firstExp2 = infoMap[edgeForward.first].fColsInExp2;
     firstExp2.insert(firstExp2.end(), tableInfoIt->second.fLeftKeys.begin(),
                      tableInfoIt->second.fLeftKeys.end());
@@ -1922,6 +1918,10 @@ void breakCyclesAndCollectEdges(TableInfoMap& infoMap, const JobInfo& jobInfo, C
     // join edge a `TupleHashJoinStep`. We have to remove the associated `TupleHashJoinStep` from the given
     // `join  steps`, to avoid creating extra and useless join.
     removeAssociatedHashJoinStepFromJoinSteps(edgeForward, jobInfo, joinSteps);
+
+    if (jobInfo.trace)
+      std::cout << "Remove " << edgeForward.first << " from adjlist of " << edgeForward.second << std::endl;
+
   }
 }
 
@@ -2477,8 +2477,116 @@ string joinTypeToString(const JoinType& joinType)
   return ret;
 }
 
-void matchEdgesInRowGroup(const JobInfo& jobInfo, const RowGroup& rg, JoinEdges& edgesToTransform,
-                          PostJoinFilterKeys& postJoinFilterKeys)
+bool matchKeys(const vector<vector<uint32_t>>& keysToSearch, const vector<uint32_t>& keysToMatch,
+               std::vector<uint32_t>& rowGroupIndices)
+{
+  std::unordered_map<uint32_t, uint32_t> keysMap;
+  for (uint32_t rowGroupIndex = 0, e = keysToSearch.size(); rowGroupIndex < e; ++rowGroupIndex)
+  {
+    const auto& keys = keysToSearch[rowGroupIndex];
+    for (const auto key : keys)
+      keysMap.insert({key, rowGroupIndex});
+  }
+
+  for (const auto key : keysToMatch)
+  {
+    if (!keysMap.count(key))
+      return false;
+    rowGroupIndices.push_back(keysMap[key]);
+  }
+
+  return true;
+}
+
+bool matchKeys(const vector<uint32_t>& keysToSearch, const vector<uint32_t>& keysToMatch)
+{
+  std::unordered_set<uint32_t> keysMap;
+  for (const auto key : keysToSearch)
+    keysMap.insert(key);
+
+  for (const auto key : keysToMatch)
+  {
+    if (!keysMap.count(key))
+      return false;
+  }
+
+  return true;
+}
+
+void matchEdgesInRowGroups(const JobInfo& jobInfo, const std::vector<RowGroup>& smallSidesRG,
+                           const RowGroup& largeSideRG, JoinEdges& edgesToTransform,
+                           std::vector<uint32_t>& smallIndicesOnCycle,
+                           std::vector<uint32_t>& largeIndicesOnCycle)
+{
+  if (jobInfo.trace)
+    std::cout << "\nTry to match edges for the small and large sides rowgroups" << std::endl;
+
+  std::vector<pair<uint32_t, uint32_t>> takenEdges;
+  for (const auto& edge : edgesToTransform)
+  {
+    auto it = jobInfo.tableJoinMap.find(edge);
+    // Edge keys.
+    const auto& leftKeys = it->second.fLeftKeys;
+    const auto& rightKeys = it->second.fRightKeys;
+
+    // Keys for the given rowgroups.
+    // Large side.
+    const auto& largeSideKeys = largeSideRG.getKeys();
+    // Small side.
+    vector<vector<uint32_t>> smallSidesKeys;
+    smallSidesKeys.reserve(smallSidesRG.size());
+    for (const auto& rg : smallSidesRG)
+      smallSidesKeys.push_back(rg.getKeys());
+
+    vector<uint32_t> rowGroupIndicesSmallSide;
+    // Check if left in large and right in small.
+    if (matchKeys(largeSideKeys, leftKeys) && matchKeys(smallSidesKeys, rightKeys, rowGroupIndicesSmallSide))
+    {
+      for (uint32_t i = 0, e = leftKeys.size(); i < e; ++i)
+        largeIndicesOnCycle.push_back(getKeyIndex(leftKeys[i], largeSideRG));
+
+      for(uint32_t i = 0, e = rightKeys.size(); i < e; ++i)
+        smallIndicesOnCycle.push_back(getKeyIndex(rightKeys[i], smallSidesRG[rowGroupIndicesSmallSide[i]]));
+
+      if (jobInfo.trace)
+      {
+        // TODO: Debug output for matched keys.
+        std::cout << "Left keys matched in large side, right keys matched in small side" << std::endl;
+      }
+
+      takenEdges.push_back(edge);
+      continue;
+    }
+
+    // Otherwise check right in large and left in small.
+    rowGroupIndicesSmallSide.clear();
+    if (matchKeys(largeSideKeys, rightKeys) && matchKeys(smallSidesKeys, leftKeys, rowGroupIndicesSmallSide))
+    {
+      for (uint32_t i = 0, e = rightKeys.size(); i < e; ++i)
+        largeIndicesOnCycle.push_back(getKeyIndex(rightKeys[i], largeSideRG));
+
+      for (uint32_t i = 0, e = leftKeys.size(); i < e; ++i)
+        smallIndicesOnCycle.push_back(getKeyIndex(leftKeys[i], smallSidesRG[rowGroupIndicesSmallSide[i]]));
+
+      if (jobInfo.trace)
+      {
+        // TODO: Debug output for matched keys.
+        std::cout << "Right keys matched in large side, left keys in small side" << std::endl;
+      }
+
+      takenEdges.push_back(edge);
+    }
+  }
+    // Erase taken edges.
+  for (const auto& edge : takenEdges)
+  {
+    auto it = edgesToTransform.find(edge);
+    edgesToTransform.erase(it);
+  }
+}
+
+void matchEdgesInResultRowGroup(const JobInfo& jobInfo, const RowGroup& rg, JoinEdges& edgesToTransform,
+                                PostJoinFilterKeys& postJoinFilterKeys)
 {
   if (jobInfo.trace)
   {
@@ -2865,7 +2973,6 @@ SP_JoinInfo joinToLargeTable(uint32_t large, TableInfoMap& tableInfoMap, JobInfo
       dl->OID(large);
       outJsa.outAdd(spdl);
       thjs->outputAssociation(outJsa);
-
       thjs->configSmallSideRG(smallSideRGs, tableNames);
       thjs->configLargeSideRG(tableInfoMap[large].fRowGroup);
       thjs->configJoinKeyIndex(jointypes, typeless, smallKeyIndices, largeKeyIndices);
@@ -2950,7 +3057,7 @@ SP_JoinInfo joinToLargeTable(uint32_t large, TableInfoMap& tableInfoMap, JobInfo
 
     PostJoinFilterKeys postJoinFilterKeys;
     if (edgesToTransform.size())
-      matchEdgesInRowGroup(jobInfo, rg, edgesToTransform, postJoinFilterKeys);
+      matchEdgesInResultRowGroup(jobInfo, rg, edgesToTransform, postJoinFilterKeys);
 
     // check additional compares for semi-join.
     if (readyExpSteps.size() || postJoinFilterKeys.size())
@@ -3458,6 +3565,8 @@ void joinTablesInOrder(uint32_t largest, JobStepVector& joinSteps, TableInfoMap&
 
       vector<uint32_t> smallIndices;
       vector<uint32_t> largeIndices;
+      // In case we have a cycle.
+      // Place for the keys.
       const vector<uint32_t>& keys1 = info->fJoinData.fLeftKeys;
       const vector<uint32_t>& keys2 = info->fJoinData.fRightKeys;
       vector<uint32_t>::const_iterator k1 = keys1.begin();
@@ -3555,6 +3664,24 @@ void joinTablesInOrder(uint32_t largest, JobStepVector& joinSteps, TableInfoMap&
 
       thjs->configSmallSideRG(smallSideRGs, tableNames);
       thjs->configLargeSideRG(joinInfoMap[large]->fRowGroup);
+
+      if (edgesToTransform.size())
+      {
+        vector<uint32_t> smallIndicesOnCycle;
+        vector<uint32_t> largeIndicesOnCycle;
+        matchEdgesInRowGroups(jobInfo, thjs->getSmallRowGroups(), thjs->getLargeRowGroup(), edgesToTransform,
+                              smallIndicesOnCycle, largeIndicesOnCycle);
+        if (smallIndicesOnCycle.size() && largeIndicesOnCycle.size())
+        {
+          auto& smallKeyIndicesCurrentJoin = smallKeyIndices.back();
+          smallKeyIndicesCurrentJoin.insert(smallKeyIndicesCurrentJoin.end(), smallIndicesOnCycle.begin(),
+                                            smallIndicesOnCycle.end());
+
+          auto& largeKeyIndicesCurrentJoin = largeKeyIndices.back();
+          largeKeyIndicesCurrentJoin.insert(largeKeyIndicesCurrentJoin.end(), largeIndicesOnCycle.begin(),
+                                            largeIndicesOnCycle.end());
+        }
+      }
       thjs->configJoinKeyIndex(jointypes, typeless, smallKeyIndices, largeKeyIndices);
 
       tableInfoMap[large].fQuerySteps.push_back(spjs);
