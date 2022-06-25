@@ -3420,6 +3420,16 @@ void joinTablesInOrder(uint32_t largest, JobStepVector& joinSteps, TableInfoMap&
       small = tid1;
     }
 
+    if (edgesToTransform.size() && js == 1)
+    {
+      swap(large, small);
+    }
+
+    std::cout << "priority large" << std::endl;
+    std::cout << joinStepMap[large].second  << std::endl;
+    std::cout << "priority small " << std::endl;
+    std::cout << joinStepMap[small].second << std::endl;
+
     updateJoinSides(small, large, joinInfoMap, smallSides, tableInfoMap, jobInfo);
 
     if (find(joinedTable.begin(), joinedTable.end(), small) == joinedTable.end())
@@ -3428,6 +3438,7 @@ void joinTablesInOrder(uint32_t largest, JobStepVector& joinSteps, TableInfoMap&
     smallSideTid.insert(small);
 
     // merge in the next step if the large side is the same
+    /*
     for (uint64_t ns = js + 1; ns < joins.size(); js++, ns++)
     {
       uint32_t tid1 = joins[ns].fTid1;
@@ -3473,6 +3484,7 @@ void joinTablesInOrder(uint32_t largest, JobStepVector& joinSteps, TableInfoMap&
 
       smallSideTid.insert(small);
     }
+    */
 
     joinedTable.push_back(large);
 
@@ -3555,9 +3567,11 @@ void joinTablesInOrder(uint32_t largest, JobStepVector& joinSteps, TableInfoMap&
       }
     }
 
+    std::cout << "EM: small side size " << smallSides.size() << std::endl;
     for (vector<SP_JoinInfo>::iterator i = smallSides.begin(); i != smallSides.end(); i++)
     {
       JoinInfo* info = i->get();
+      // Defines number of joiner on bpp.
       smallSideDLs.push_back(info->fDl);
       smallSideRGs.push_back(info->fRowGroup);
       jointypes.push_back(info->fJoinData.fTypes[0]);
@@ -3667,6 +3681,7 @@ void joinTablesInOrder(uint32_t largest, JobStepVector& joinSteps, TableInfoMap&
 
       if (edgesToTransform.size())
       {
+        /*
         vector<uint32_t> smallIndicesOnCycle;
         vector<uint32_t> largeIndicesOnCycle;
         matchEdgesInRowGroups(jobInfo, thjs->getSmallRowGroups(), thjs->getLargeRowGroup(), edgesToTransform,
@@ -3681,6 +3696,7 @@ void joinTablesInOrder(uint32_t largest, JobStepVector& joinSteps, TableInfoMap&
           largeKeyIndicesCurrentJoin.insert(largeKeyIndicesCurrentJoin.end(), largeIndicesOnCycle.begin(),
                                             largeIndicesOnCycle.end());
         }
+        */
       }
 
       std::cout << "smallSideRG size " << smallSideRGs.size() << std::endl;
@@ -3725,6 +3741,26 @@ void joinTablesInOrder(uint32_t largest, JobStepVector& joinSteps, TableInfoMap&
       inJsa.outAdd(smallSideDLs, startPos);
       thjs->inputAssociation(inJsa);
       thjs->setLargeSideDLIndex(inJsa.outSize() - 1);
+
+      std::cout << "2v small keys indices " << std::endl;
+      for (auto keys : smallKeyIndices)
+      {
+        for (auto k : keys)
+        {
+          cout << k << " ";
+        }
+        cout << endl;
+      }
+
+      std::cout << "2v large keys indices " << std::endl;
+      for (auto keys : largeKeyIndices)
+      {
+        for (auto k : keys)
+        {
+          cout << k << " ";
+        }
+        cout << endl;
+      }
 
       thjs->addSmallSideRG(smallSideRGs, tableNames);
       thjs->addJoinKeyIndex(jointypes, typeless, smallKeyIndices, largeKeyIndices);
@@ -3809,8 +3845,11 @@ void joinTablesInOrder(uint32_t largest, JobStepVector& joinSteps, TableInfoMap&
       readyExpSteps.insert(readyExpSteps.end(), jobInfo.outerJoinExpressions.begin(),
                            jobInfo.outerJoinExpressions.end());
 
+    PostJoinFilterKeys postJoinFilterKeys;
+    if (edgesToTransform.size())
+      matchEdgesInResultRowGroup(jobInfo, rg, edgesToTransform, postJoinFilterKeys);
     // check additional compares for semi-join
-    if (readyExpSteps.size() > 0)
+    if (readyExpSteps.size() > 0 || postJoinFilterKeys.size())
     {
       map<uint32_t, uint32_t> keyToIndexMap;  // map keys to the indices in the RG
 
@@ -3822,95 +3861,110 @@ void joinTablesInOrder(uint32_t largest, JobStepVector& joinSteps, TableInfoMap&
       map<uint32_t, int> correlateTables;          // index in thjs
       map<uint32_t, ParseTree*> correlateCompare;  // expression
 
-      for (size_t i = 0; i != smallSides.size(); i++)
+      if (readyExpSteps.size())
       {
-        if ((jointypes[i] & SEMI) || (jointypes[i] & ANTI) || (jointypes[i] & SCALAR))
+        for (size_t i = 0; i != smallSides.size(); i++)
         {
-          uint32_t tid = getTableKey(jobInfo, smallSides[i]->fTableOid, smallSides[i]->fAlias,
-                                     smallSides[i]->fSchema, smallSides[i]->fView);
-          correlateTables[tid] = i;
-          correlateCompare[tid] = NULL;
+          if ((jointypes[i] & SEMI) || (jointypes[i] & ANTI) || (jointypes[i] & SCALAR))
+          {
+            uint32_t tid = getTableKey(jobInfo, smallSides[i]->fTableOid, smallSides[i]->fAlias,
+                                       smallSides[i]->fSchema, smallSides[i]->fView);
+            correlateTables[tid] = i;
+            correlateCompare[tid] = NULL;
+          }
+        }
+
+        if (correlateTables.size() > 0)
+        {
+          // separate additional compare for each table pair
+          JobStepVector::iterator eit = readyExpSteps.begin();
+
+          while (eit != readyExpSteps.end())
+          {
+            ExpressionStep* e = dynamic_cast<ExpressionStep*>(eit->get());
+
+            if (e->selectFilter())
+            {
+              // @bug3780, leave select filter to normal expression
+              eit++;
+              continue;
+            }
+
+            const vector<uint32_t>& tables = e->tableKeys();
+            map<uint32_t, int>::iterator j = correlateTables.end();
+
+            for (size_t i = 0; i < tables.size(); i++)
+            {
+              j = correlateTables.find(tables[i]);
+
+              if (j != correlateTables.end())
+                break;
+            }
+
+            if (j == correlateTables.end())
+            {
+              eit++;
+              continue;
+            }
+
+            // map the input column index
+            e->updateInputIndex(keyToIndexMap, jobInfo);
+            ParseTree* pt = correlateCompare[j->first];
+
+            if (pt == NULL)
+            {
+              // first expression
+              pt = new ParseTree;
+              pt->copyTree(*(e->expressionFilter()));
+            }
+            else
+            {
+              // combine the expressions
+              ParseTree* left = pt;
+              ParseTree* right = new ParseTree;
+              right->copyTree(*(e->expressionFilter()));
+              pt = new ParseTree(new LogicOperator("and"));
+              pt->left(left);
+              pt->right(right);
+            }
+
+            correlateCompare[j->first] = pt;
+            eit = readyExpSteps.erase(eit);
+          }
+
+          map<uint32_t, int>::iterator k = correlateTables.begin();
+
+          while (k != correlateTables.end())
+          {
+            ParseTree* pt = correlateCompare[k->first];
+
+            if (pt != NULL)
+            {
+              boost::shared_ptr<ParseTree> sppt(pt);
+              thjs->addJoinFilter(sppt, startPos + k->second);
+            }
+
+            k++;
+          }
+
+          thjs->setJoinFilterInputRG(rg);
         }
       }
 
-      if (correlateTables.size() > 0)
+      std::vector<SimpleFilter*> postJoinFilters;
+      if (postJoinFilterKeys.size())
+        createPostJoinFilters(jobInfo, tableInfoMap, postJoinFilterKeys, keyToIndexMap, postJoinFilters);
+
+      if (postJoinFilters.size())
       {
-        // separate additional compare for each table pair
-        JobStepVector::iterator eit = readyExpSteps.begin();
-
-        while (eit != readyExpSteps.end())
-        {
-          ExpressionStep* e = dynamic_cast<ExpressionStep*>(eit->get());
-
-          if (e->selectFilter())
-          {
-            // @bug3780, leave select filter to normal expression
-            eit++;
-            continue;
-          }
-
-          const vector<uint32_t>& tables = e->tableKeys();
-          map<uint32_t, int>::iterator j = correlateTables.end();
-
-          for (size_t i = 0; i < tables.size(); i++)
-          {
-            j = correlateTables.find(tables[i]);
-
-            if (j != correlateTables.end())
-              break;
-          }
-
-          if (j == correlateTables.end())
-          {
-            eit++;
-            continue;
-          }
-
-          // map the input column index
-          e->updateInputIndex(keyToIndexMap, jobInfo);
-          ParseTree* pt = correlateCompare[j->first];
-
-          if (pt == NULL)
-          {
-            // first expression
-            pt = new ParseTree;
-            pt->copyTree(*(e->expressionFilter()));
-          }
-          else
-          {
-            // combine the expressions
-            ParseTree* left = pt;
-            ParseTree* right = new ParseTree;
-            right->copyTree(*(e->expressionFilter()));
-            pt = new ParseTree(new LogicOperator("and"));
-            pt->left(left);
-            pt->right(right);
-          }
-
-          correlateCompare[j->first] = pt;
-          eit = readyExpSteps.erase(eit);
-        }
-
-        map<uint32_t, int>::iterator k = correlateTables.begin();
-
-        while (k != correlateTables.end())
-        {
-          ParseTree* pt = correlateCompare[k->first];
-
-          if (pt != NULL)
-          {
-            boost::shared_ptr<ParseTree> sppt(pt);
-            thjs->addJoinFilter(sppt, startPos + k->second);
-          }
-
-          k++;
-        }
-
+        ParseTree* joinFilter = new ParseTree(postJoinFilters.front());
+        boost::shared_ptr<ParseTree> sppt(joinFilter);
+        thjs->addJoinFilter(sppt, 0);
         thjs->setJoinFilterInputRG(rg);
       }
 
       // normal expression if any
-      if (readyExpSteps.size() > 0)
+      if (readyExpSteps.size() > 0 && correlateTables.size())
       {
         // add the expression steps in where clause can be solved by this join to bps
         ParseTree* pt = NULL;

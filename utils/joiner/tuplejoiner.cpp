@@ -1352,6 +1352,7 @@ class WideDecimalKeyConverter
 
 // smallSideColWidths is non-nullptr valid pointer only
 // if there is a skew b/w small and large side columns widths.
+// key columns
 uint32 TypelessData::hash(const RowGroup& r, const std::vector<uint32_t>& keyCols,
                           const std::vector<uint32_t>* smallSideKeyColumnsIds,
                           const rowgroup::RowGroup* smallSideRG) const

@@ -1054,7 +1054,7 @@ void BatchPrimitiveProcessorJL::createBPP(ByteStream& bs) const
   if (ot == ROW_GROUP)
   {
     bs << projectionRG;
-    // 		cout << "BPPJL: projectionRG is:\n" << projectionRG.toString() << endl;
+    cout << "BPPJL: projectionRG is:\n" << projectionRG.toString() << endl;
 
     /* F&E serialization */
     if (fe1)
@@ -1093,7 +1093,15 @@ void BatchPrimitiveProcessorJL::createBPP(ByteStream& bs) const
       for (i = 0; i < PMJoinerCount; i++)
       {
         bs << (uint32_t)tJoiners[i]->size();
-        bs << tJoiners[i]->getJoinType();
+
+        if (tJoiners[i]->hasFEFilter())
+        {
+          bs << (tJoiners[i]->getJoinType() | WITHFCNEXP);
+        }
+        else
+        {
+          bs << tJoiners[i]->getJoinType();
+        }
 
         // bs << (uint64_t) tJoiners[i]->smallNullValue();
 
