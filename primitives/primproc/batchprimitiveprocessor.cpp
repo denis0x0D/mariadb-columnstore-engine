@@ -271,13 +271,11 @@ void BatchPrimitiveProcessor::initBPP(ByteStream& bs)
   if (ot == ROW_GROUP)
   {
     bs >> outputRG;
-    std::cout << "out put row group " << outputRG.toString() << std::endl;
     // outputRG.setUseStringTable(true);
     bs >> tmp8;
 
     if (tmp8)
     {
-      std::cout << "FE1 " << std::endl;
       fe1.reset(new FuncExpWrapper());
       bs >> *fe1;
       bs >> fe1Input;
@@ -299,7 +297,6 @@ void BatchPrimitiveProcessor::initBPP(ByteStream& bs)
 
     if (ot == ROW_GROUP)
     {
-      std::cout << "out put row group " << outputRG.toString() << std::endl;
       bs >> joinerCount;
       cout << "joinerCount = " << joinerCount << endl;
       joinTypes.reset(new JoinType[joinerCount]);
@@ -349,7 +346,6 @@ void BatchPrimitiveProcessor::initBPP(ByteStream& bs)
 
         if (joinTypes[i] & WITHFCNEXP)
         {
-          std::cout << "join FE filter " << std::endl;
           hasJoinFEFilters = true;
           joinFEFilters[i].reset(new FuncExpWrapper());
           bs >> *joinFEFilters[i];
@@ -362,7 +358,6 @@ void BatchPrimitiveProcessor::initBPP(ByteStream& bs)
         {
           bs >> joinNullValues[i];
           bs >> largeSideKeyColumns[i];
-          cout << "large side key is " << largeSideKeyColumns[i] << endl;
           for (uint j = 0; j < processorThreads; ++j)
             tJoiners[i][j].reset(new TJoiner(10, TupleJoiner::hasher()));
         }
@@ -481,7 +476,6 @@ void BatchPrimitiveProcessor::initBPP(ByteStream& bs)
   }
 
   bs >> projectCount;
-  cout << "deserializing " << projectCount << " projected columns\n\n";
   projectSteps.resize(projectCount);
 
   for (i = 0; i < projectCount; ++i)
@@ -925,10 +919,6 @@ void BatchPrimitiveProcessor::initProcessor()
 
   if (ot == ROW_GROUP)
   {
-    std::cout << "project count " << projectCount << std::endl;
-    std::cout << " calculate the projection -> outputRG mappin " << std::endl;
-    std::cout << "OUTPUT RG " << outputRG.toString() << std::endl;
-
     projectionMap.reset(new int[projectCount]);
     bool* reserved = (bool*)alloca(outputRG.getColumnCount() * sizeof(bool));
 

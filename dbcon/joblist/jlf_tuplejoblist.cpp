@@ -1836,8 +1836,9 @@ void removeAssociatedHashJoinStepFromJoinSteps(const JoinEdge& joinEdge, const J
   }
 
   // Match the given `join edge` in `join steps` vector.
-  auto matchedJoinStepIt = joinSteps.end();
-  for (auto joinStepIt = joinSteps.begin(); joinStepIt < joinSteps.end(); joinStepIt++)
+  auto end = joinSteps.end();
+  auto joinStepIt = joinSteps.begin();
+  while (joinStepIt != end)
   {
     auto* tupleHashJoinStep = dynamic_cast<TupleHashJoinStep*>(joinStepIt->get());
     if (tupleHashJoinStep)
@@ -1848,24 +1849,19 @@ void removeAssociatedHashJoinStepFromJoinSteps(const JoinEdge& joinEdge, const J
       if ((tableKey1 == joinEdge.first && tableKey2 == joinEdge.second) ||
           (tableKey1 == joinEdge.second && tableKey2 == joinEdge.first))
       {
-        matchedJoinStepIt = joinStepIt;
-        break;
+        std::cout << "Erase matched hash join step with keys: "
+                  << getTableKey(jobInfo, tupleHashJoinStep->tupleId1()) << " <-> "
+                  << getTableKey(jobInfo, tupleHashJoinStep->tupleId2()) << std::endl;
+
+        // Erase matched join step.
+        joinStepIt = joinSteps.erase(joinStepIt);
+        end = joinSteps.end();
+      }
+      else
+      {
+        ++joinStepIt;
       }
     }
-  }
-
-  // Erase matched `hash join step` from the given `join steps` vector.
-  if (matchedJoinStepIt != joinSteps.end())
-  {
-    if (jobInfo.trace)
-    {
-      auto* tupleHashJoinStep = dynamic_cast<TupleHashJoinStep*>(matchedJoinStepIt->get());
-      std::cout << "Erase matched hash join step with keys: "
-                << getTableKey(jobInfo, tupleHashJoinStep->tupleId1()) << " <-> "
-                << getTableKey(jobInfo, tupleHashJoinStep->tupleId2()) << std::endl;
-    }
-
-    joinSteps.erase(matchedJoinStepIt);
   }
 
   if (jobInfo.trace)
@@ -3425,11 +3421,6 @@ void joinTablesInOrder(uint32_t largest, JobStepVector& joinSteps, TableInfoMap&
       swap(large, small);
     }
 
-    std::cout << "priority large" << std::endl;
-    std::cout << joinStepMap[large].second  << std::endl;
-    std::cout << "priority small " << std::endl;
-    std::cout << joinStepMap[small].second << std::endl;
-
     updateJoinSides(small, large, joinInfoMap, smallSides, tableInfoMap, jobInfo);
 
     if (find(joinedTable.begin(), joinedTable.end(), small) == joinedTable.end())
@@ -3643,7 +3634,7 @@ void joinTablesInOrder(uint32_t largest, JobStepVector& joinSteps, TableInfoMap&
       traces.push_back(oss.str());
     }
 
-    if (bps || tsas || umstream || (thjs && joinStepMap[large].second < 1))
+    if (bps || tsas || umstream || thjs) //  && joinStepMap[large].second < 1))
     {
       thjs = new TupleHashJoinStep(jobInfo);
       thjs->tableOid1(smallSides[0]->fTableOid);
@@ -3700,10 +3691,6 @@ void joinTablesInOrder(uint32_t largest, JobStepVector& joinSteps, TableInfoMap&
       }
 
       std::cout << "smallSideRG size " << smallSideRGs.size() << std::endl;
-      for (const auto& rg : smallSideRGs)
-      {
-        std::cout << rg.toString() << std::endl;
-      }
 
       std::cout << "small keys indices " << std::endl;
       for (auto keys : smallKeyIndices)
@@ -3730,6 +3717,7 @@ void joinTablesInOrder(uint32_t largest, JobStepVector& joinSteps, TableInfoMap&
       tableInfoMap[large].fQuerySteps.push_back(spjs);
       tableInfoMap[large].fDl = spdl;
     }
+    /*
     else  // thjs && joinStepMap[large].second >= 1
     {
       JobStepAssociation inJsa = thjs->inputAssociation();
@@ -3765,6 +3753,7 @@ void joinTablesInOrder(uint32_t largest, JobStepVector& joinSteps, TableInfoMap&
       thjs->addSmallSideRG(smallSideRGs, tableNames);
       thjs->addJoinKeyIndex(jointypes, typeless, smallKeyIndices, largeKeyIndices);
     }
+    */
 
     RowGroup rg;
     set<uint32_t>& tableSet = tableInfoMap[large].fJoinedTables;
@@ -3957,8 +3946,25 @@ void joinTablesInOrder(uint32_t largest, JobStepVector& joinSteps, TableInfoMap&
 
       if (postJoinFilters.size())
       {
-        ParseTree* joinFilter = new ParseTree(postJoinFilters.front());
-        boost::shared_ptr<ParseTree> sppt(joinFilter);
+        std::cout << "EM: join filter size " << postJoinFilters.size() << std::endl;
+        ParseTree* pt = nullptr;
+        for (auto* joinFilter : postJoinFilters)
+        {
+          if (pt == nullptr)
+          {
+            pt = new ParseTree(joinFilter);
+          }
+          else
+          {
+            ParseTree* left = pt;
+            ParseTree* right = new ParseTree(joinFilter);
+            pt = new ParseTree(new LogicOperator("and"));
+            pt->left(left);
+            pt->right(right);
+          }
+        }
+
+        boost::shared_ptr<ParseTree> sppt(pt);
         thjs->addJoinFilter(sppt, 0);
         thjs->setJoinFilterInputRG(rg);
       }

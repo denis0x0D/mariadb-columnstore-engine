@@ -1054,7 +1054,7 @@ void BatchPrimitiveProcessorJL::createBPP(ByteStream& bs) const
   if (ot == ROW_GROUP)
   {
     bs << projectionRG;
-    cout << "BPPJL: projectionRG is:\n" << projectionRG.toString() << endl;
+//    cout << "BPPJL: projectionRG is:\n" << projectionRG.toString() << endl;
 
     /* F&E serialization */
     if (fe1)

@@ -184,6 +184,7 @@ void TupleHashJoinStep::run()
     outputIt = outputDL->getIterator();
   }
 
+  std::cout << "EM: JOINER SIZE " << smallDLs.size() << std::endl;
   joiners.resize(smallDLs.size());
   mainRunner = jobstepThreadPool.invoke(HJRunner(this));
 }
