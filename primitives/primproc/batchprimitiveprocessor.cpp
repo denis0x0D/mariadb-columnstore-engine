@@ -276,6 +276,7 @@ void BatchPrimitiveProcessor::initBPP(ByteStream& bs)
 
     if (tmp8)
     {
+      std::cout << "BPP: FE1 " << std::endl;
       fe1.reset(new FuncExpWrapper());
       bs >> *fe1;
       bs >> fe1Input;
@@ -285,6 +286,7 @@ void BatchPrimitiveProcessor::initBPP(ByteStream& bs)
 
     if (tmp8)
     {
+      std::cout << "BPP: FE2 " << std::endl;
       fe2.reset(new FuncExpWrapper());
       bs >> *fe2;
       bs >> fe2Output;
@@ -346,6 +348,7 @@ void BatchPrimitiveProcessor::initBPP(ByteStream& bs)
 
         if (joinTypes[i] & WITHFCNEXP)
         {
+          std::cout << "BPP: JOIN FILTER " << std::endl;
           hasJoinFEFilters = true;
           joinFEFilters[i].reset(new FuncExpWrapper());
           bs >> *joinFEFilters[i];
@@ -434,7 +437,7 @@ void BatchPrimitiveProcessor::initBPP(ByteStream& bs)
 
         bs >> largeSideRG;
         bs >> joinedRG;
-        // 				cout << "got the joined Rowgroup: " << joinedRG.toString() << "\n";
+        cout << "BPP: got the large Side Rowgroup: " << largeSideRG.toString() << "\n";
       }
     }
 
@@ -944,7 +947,8 @@ void BatchPrimitiveProcessor::initProcessor()
       outputRG.initRow(&oldRow);
       outputRG.initRow(&newRow);
 
-      std::cout << "project count " << projectCount << std::endl;
+      std::cout << "BPP: project count " << projectCount << std::endl;
+      std::cout << "BPP: large side key columns size: " << tlLargeSideKeyColumns[0].size() << std::endl;
       tSmallSideMatches.reset(new MatchedData[joinerCount]);
       keyColumnProj.reset(new bool[projectCount]);
 
@@ -975,6 +979,13 @@ void BatchPrimitiveProcessor::initProcessor()
           }
         }
       }
+
+      cout << "key column proj " << std::endl;
+      for (i = 0; i < projectCount; i++)
+      {
+        std::cout << keyColumnProj[i]  << " ";
+      }
+      cout << endl;
 
       if (hasJoinFEFilters)
       {
@@ -1312,6 +1323,7 @@ uint32_t BatchPrimitiveProcessor::executeTupleJoin(uint32_t startRid)
             applyMapping(joinFEMappings[j], smallRows[j], &joinFERow);
 
             std::cout << "BPP: EVALUATE FILTER" << std::endl;
+            std::cout << "join FE row " << joinFERow.toString() << std::endl;
             if (joinFEFilters[j]->evaluate(&joinFERow))
             {
               /* The first match includes it in a SEMI join result and excludes it from an ANTI join
@@ -1734,40 +1746,19 @@ void BatchPrimitiveProcessor::execute()
         {
           if (keyColumnProj[j] ||
               (projectionMap[j] != -1 && (hasJoinFEFilters || oldRow.isLongString(projectionMap[j]))))
-          {
-#ifdef PRIMPROC_STOPWATCH
-            stopwatch->start("-- projectIntoRowGroup");
             projectSteps[j]->projectIntoRowGroup(outputRG, projectionMap[j]);
-            stopwatch->stop("-- projectIntoRowGroup");
-#else
-            projectSteps[j]->projectIntoRowGroup(outputRG, projectionMap[j]);
-#endif
-          }
         }
 
         do  // while (startRid > 0)
         {
-#ifdef PRIMPROC_STOPWATCH
-          stopwatch->start("-- executeTupleJoin()");
           startRid = executeTupleJoin(startRid);
-          stopwatch->stop("-- executeTupleJoin()");
-#else
-          startRid = executeTupleJoin(startRid);
-//                    sStartRid = startRid;
-#endif
           /* project the non-key columns */
           for (j = 0; j < projectCount; ++j)
           {
             if (projectionMap[j] != -1 && !keyColumnProj[j] && !hasJoinFEFilters &&
                 !oldRow.isLongString(projectionMap[j]))
             {
-#ifdef PRIMPROC_STOPWATCH
-              stopwatch->start("-- projectIntoRowGroup");
               projectSteps[j]->projectIntoRowGroup(outputRG, projectionMap[j]);
-              stopwatch->stop("-- projectIntoRowGroup");
-#else
-              projectSteps[j]->projectIntoRowGroup(outputRG, projectionMap[j]);
-#endif
             }
           }
           /* The RowGroup is fully joined at this point.

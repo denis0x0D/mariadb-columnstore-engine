@@ -3672,7 +3672,6 @@ void joinTablesInOrder(uint32_t largest, JobStepVector& joinSteps, TableInfoMap&
 
       if (edgesToTransform.size())
       {
-        /*
         vector<uint32_t> smallIndicesOnCycle;
         vector<uint32_t> largeIndicesOnCycle;
         matchEdgesInRowGroups(jobInfo, thjs->getSmallRowGroups(), thjs->getLargeRowGroup(), edgesToTransform,
@@ -3686,11 +3685,11 @@ void joinTablesInOrder(uint32_t largest, JobStepVector& joinSteps, TableInfoMap&
           auto& largeKeyIndicesCurrentJoin = largeKeyIndices.back();
           largeKeyIndicesCurrentJoin.insert(largeKeyIndicesCurrentJoin.end(), largeIndicesOnCycle.begin(),
                                             largeIndicesOnCycle.end());
+          typeless.back() = true;
         }
-        */
       }
 
-      std::cout << "smallSideRG size " << smallSideRGs.size() << std::endl;
+      // std::cout << "smallSideRG size " << smallSideRGs.size() << std::endl;
 
       std::cout << "small keys indices " << std::endl;
       for (auto keys : smallKeyIndices)
@@ -3835,8 +3834,9 @@ void joinTablesInOrder(uint32_t largest, JobStepVector& joinSteps, TableInfoMap&
                            jobInfo.outerJoinExpressions.end());
 
     PostJoinFilterKeys postJoinFilterKeys;
-    if (edgesToTransform.size())
+    if (false && edgesToTransform.size())
       matchEdgesInResultRowGroup(jobInfo, rg, edgesToTransform, postJoinFilterKeys);
+
     // check additional compares for semi-join
     if (readyExpSteps.size() > 0 || postJoinFilterKeys.size())
     {

@@ -1549,10 +1549,13 @@ int TypelessData::cmp(const RowGroup& r, const std::vector<uint32_t>& keyCols, c
 }
 
 // Called in joblist code to produce SmallSide TypelessData to be sent to PP.
+// KEY.
 TypelessData makeTypelessKey(const Row& r, const vector<uint32_t>& keyCols, uint32_t keylen,
                              FixedAllocator* fa, const rowgroup::RowGroup& otherSideRG,
                              const std::vector<uint32_t>& otherKeyCols)
 {
+  std::cout << "makeTyplessKey " << std::endl;
+  std::cout << "small key size " << keyCols.size() << std::endl;
   TypelessData ret;
   uint32_t off = 0, i;
   execplan::CalpontSystemCatalog::ColDataType type;
