@@ -1608,9 +1608,9 @@ class CircularJoinGraphTransformer
 
  protected:
   void breakCyclesAndCollectEdges();
-  void initJoinGraph();
+  virtual void initializeJoinGraph();
   bool isForeignKeyForeignKeyLink(const JoinEdge& edge, statistics::StatisticsManager* statisticsManager);
-  void collectCycles(uint32_t currentTable, uint32_t prevTable);
+  virtual void collectCycles(uint32_t currentTable, uint32_t prevTable);
   void removeFromAdjacentList(uint32_t tableId, std::vector<uint32_t>& adjList);
   void removeAssociatedHashJoinStepFromJoinSteps(const JoinEdge& joinEdge);
   virtual void chooseEdgeToTransform(Cycle& cycle, JoinEdge& resultEdge);
@@ -1624,6 +1624,7 @@ class CircularJoinGraphTransformer
   JoinGraph joinGraph;
   Cycles cycles;
   JoinEdges edgesToTransform;
+  uint32_t headVertex{0};
 };
 
 // This class represents circular outer join graph transformer.
@@ -1645,8 +1646,11 @@ class CircularOuterJoinGraphTransformer : public CircularJoinGraphTransformer
 
  private:
   void chooseEdgeToTransform(Cycle& cycle, JoinEdge& resultEdge) override;
+  void initializeJoinGraph() override;
+  void collectCycles(uint32_t currentTable, uint32_t prevTable) override;
 };
 
+// Circular inner joins methods.
 void CircularJoinGraphTransformer::collectCycles(uint32_t currentTable, uint32_t prevTable)
 {
   // Mark as visited.
@@ -1817,72 +1821,6 @@ bool CircularJoinGraphTransformer::isForeignKeyForeignKeyLink(
   return false;
 }
 
-void CircularOuterJoinGraphTransformer::chooseEdgeToTransform(Cycle& cycle, JoinEdge& resultEdge)
-{
-  std::map<JoinEdge, uint32_t> joinEdgesToWeights;
-  std::unordered_map<uint32_t, JoinEdge> weightsToJoinEdges;
-
-  for (auto joinStepIt = joinSteps.begin(); joinStepIt < joinSteps.end(); joinStepIt++)
-  {
-    auto* tupleHashJoinStep = dynamic_cast<TupleHashJoinStep*>(joinStepIt->get());
-    if (tupleHashJoinStep)
-    {
-      const uint32_t weight = tupleHashJoinStep->joinId();
-      const auto tableKey1 = getTableKey(jobInfo, tupleHashJoinStep->tupleId1());
-      const auto tableKey2 = getTableKey(jobInfo, tupleHashJoinStep->tupleId2());
-
-      JoinEdge edgeForward{tableKey1, tableKey2};
-      JoinEdge edgeBackward{tableKey2, tableKey1};
-
-      if (!joinEdgesToWeights.count(edgeForward))
-        joinEdgesToWeights.insert({edgeForward, weight});
-      if (!joinEdgesToWeights.count(edgeBackward))
-        joinEdgesToWeights.insert({edgeBackward, weight});
-
-      if (!weightsToJoinEdges.count(weight))
-        weightsToJoinEdges.insert({weight, edgeForward});
-      if (!weightsToJoinEdges.count(weight))
-        weightsToJoinEdges.insert({weight, edgeBackward});
-    }
-  }
-
-  // Choose one with highest weight.
-  int32_t maxWeight = 0;
-  for (auto& edgeForward : cycle)
-  {
-    const int32_t currentWeight = joinEdgesToWeights[edgeForward];
-    if (currentWeight > maxWeight)
-    {
-      maxWeight = currentWeight;
-      resultEdge = edgeForward;
-    }
-  }
-
-  --maxWeight;
-  while (maxWeight >= 0)
-  {
-    auto it = weightsToJoinEdges.find(maxWeight);
-    if (it != weightsToJoinEdges.end())
-    {
-      auto joinEdge = weightsToJoinEdges[maxWeight];
-      if (joinEdge.first == resultEdge.first || joinEdge.first == resultEdge.second)
-      {
-        jobInfo.tablesForLargeSide.insert(joinEdge.first);
-        if (jobInfo.trace)
-          std::cout << "Set `need to be on a large` side for table: " << joinEdge.first << std::endl;
-      }
-      else if (joinEdge.second == resultEdge.first || joinEdge.second == resultEdge.first)
-      {
-        jobInfo.tablesForLargeSide.insert(joinEdge.second);
-        if (jobInfo.trace)
-          std::cout << "Set `need to be on a large` side for table: " << joinEdge.second << std::endl;
-      }
-      break;
-    }
-    --maxWeight;
-  }
-}
-
 void CircularJoinGraphTransformer::chooseEdgeToTransform(Cycle& cycle, JoinEdge& resultEdge)
 {
   // Use statistics if possible.
@@ -2007,7 +1945,7 @@ void CircularJoinGraphTransformer::breakCyclesAndCollectEdges()
   }
 }
 
-void CircularJoinGraphTransformer::initJoinGraph()
+void CircularJoinGraphTransformer::initializeJoinGraph()
 {
   for (const auto& infoPair : infoMap)
   {
@@ -2016,13 +1954,182 @@ void CircularJoinGraphTransformer::initJoinGraph()
     joinTableNode.fAdjacentList = infoPair.second.fAdjacentList;
     joinGraph[infoPair.first] = joinTableNode;
   }
+
+  // For inner join we can choose any table to be a head.
+  headVertex = joinGraph.begin()->first;
+}
+
+void CircularOuterJoinGraphTransformer::initializeJoinGraph()
+{
+  for (const auto& infoPair : infoMap)
+  {
+    JoinTableNode joinTableNode;
+    // Copy adjacent list.
+    joinTableNode.fAdjacentList = infoPair.second.fAdjacentList;
+    joinGraph[infoPair.first] = joinTableNode;
+  }
+
+  // TODO: Choose a right vertex.
+  headVertex = joinGraph.begin()->first;
+}
+
+void CircularOuterJoinGraphTransformer::collectCycles(uint32_t currentTable, uint32_t prevTable)
+{
+  // Mark as visited.
+  joinGraph[currentTable].fVisited = true;
+  joinGraph[currentTable].fParent = prevTable;
+
+  // For each adjacent node.
+  for (const auto adjNode : joinGraph[currentTable].fAdjacentList)
+  {
+    // If visited and not a back edge consider as a cycle.
+    if (joinGraph[adjNode].fVisited && prevTable != adjNode)
+    {
+      Cycle cycle;
+      const auto edgeForward = make_pair(currentTable, adjNode);
+      const auto edgeBackward = make_pair(adjNode, currentTable);
+
+      if (!edgesToTransform.count(edgeForward) && !edgesToTransform.count(edgeBackward))
+      {
+        edgesToTransform.insert(edgeForward);
+        cycle.push_back(edgeForward);
+      }
+
+      auto nodeIt = currentTable;
+      auto nextNode = joinGraph[nodeIt].fParent;
+      // Walk back until we find node `adjNode` we identified before.
+      while (nextNode != UINT_MAX && nextNode != adjNode)
+      {
+        const auto edgeForward = make_pair(nextNode, nodeIt);
+        const auto edgeBackward = make_pair(nodeIt, nextNode);
+
+        if (!edgesToTransform.count(edgeForward) && !edgesToTransform.count(edgeBackward))
+        {
+          edgesToTransform.insert(edgeForward);
+          cycle.push_back(edgeForward);
+        }
+
+        nodeIt = nextNode;
+        nextNode = joinGraph[nodeIt].fParent;
+      }
+
+      // Add the last edge.
+      if (nextNode != UINT_MAX)
+      {
+        const auto edgeForward = make_pair(nextNode, nodeIt);
+        const auto edgeBackward = make_pair(nodeIt, nextNode);
+
+        if (!edgesToTransform.count(edgeForward) && !edgesToTransform.count(edgeBackward))
+        {
+          edgesToTransform.insert(edgeForward);
+          cycle.push_back(edgeForward);
+        }
+      }
+
+      if (jobInfo.trace && cycle.size())
+      {
+        std::cout << "Collected cycle (while walking join graph): " << std::endl;
+        for (const auto& edge : cycle)
+        {
+          std::cout << "Edge: " << edge.first << " <-> " << edge.second << std::endl;
+          const auto it = jobInfo.tableJoinMap.find(edge);
+
+          std::cout << "Left keys: " << std::endl;
+          for (const auto key : it->second.fLeftKeys)
+            std::cout << "Key: " << key << " column oid: " << jobInfo.keyInfo->tupleKeyVec[key].fId
+                      << std::endl;
+
+          std::cout << "Right keys: " << std::endl;
+          for (const auto key : it->second.fRightKeys)
+            std::cout << "Key: " << key << " column oid: " << jobInfo.keyInfo->tupleKeyVec[key].fId
+                      << std::endl;
+        }
+      }
+
+      // Collect the cycle.
+      if (cycle.size())
+        cycles.push_back(std::move(cycle));
+    }
+    // If not visited - go there.
+    else if (joinGraph[adjNode].fVisited == false)
+    {
+      collectCycles(adjNode, currentTable);
+    }
+  }
+}
+
+// Circular outer join methods.
+void CircularOuterJoinGraphTransformer::chooseEdgeToTransform(Cycle& cycle, JoinEdge& resultEdge)
+{
+  std::map<JoinEdge, uint32_t> joinEdgesToWeights;
+  std::unordered_map<uint32_t, JoinEdge> weightsToJoinEdges;
+
+  for (auto joinStepIt = joinSteps.begin(); joinStepIt < joinSteps.end(); joinStepIt++)
+  {
+    auto* tupleHashJoinStep = dynamic_cast<TupleHashJoinStep*>(joinStepIt->get());
+    if (tupleHashJoinStep)
+    {
+      const uint32_t weight = tupleHashJoinStep->joinId();
+      const auto tableKey1 = getTableKey(jobInfo, tupleHashJoinStep->tupleId1());
+      const auto tableKey2 = getTableKey(jobInfo, tupleHashJoinStep->tupleId2());
+
+      JoinEdge edgeForward{tableKey1, tableKey2};
+      JoinEdge edgeBackward{tableKey2, tableKey1};
+
+      if (!joinEdgesToWeights.count(edgeForward))
+        joinEdgesToWeights.insert({edgeForward, weight});
+      if (!joinEdgesToWeights.count(edgeBackward))
+        joinEdgesToWeights.insert({edgeBackward, weight});
+
+      if (!weightsToJoinEdges.count(weight))
+        weightsToJoinEdges.insert({weight, edgeForward});
+      if (!weightsToJoinEdges.count(weight))
+        weightsToJoinEdges.insert({weight, edgeBackward});
+    }
+  }
+
+  // Choose one with highest weight.
+  int32_t maxWeight = 0;
+  for (auto& edgeForward : cycle)
+  {
+    const int32_t currentWeight = joinEdgesToWeights[edgeForward];
+    if (currentWeight > maxWeight)
+    {
+      maxWeight = currentWeight;
+      resultEdge = edgeForward;
+    }
+  }
+
+  --maxWeight;
+  while (maxWeight >= 0)
+  {
+    auto it = weightsToJoinEdges.find(maxWeight);
+    if (it != weightsToJoinEdges.end())
+    {
+      auto joinEdge = weightsToJoinEdges[maxWeight];
+      if (joinEdge.first == resultEdge.first || joinEdge.first == resultEdge.second)
+      {
+        jobInfo.tablesForLargeSide.insert(joinEdge.first);
+        if (jobInfo.trace)
+          std::cout << "Set `need to be on a large` side for table: " << joinEdge.first << std::endl;
+      }
+      else if (joinEdge.second == resultEdge.first || joinEdge.second == resultEdge.first)
+      {
+        jobInfo.tablesForLargeSide.insert(joinEdge.second);
+        if (jobInfo.trace)
+          std::cout << "Set `need to be on a large` side for table: " << joinEdge.second << std::endl;
+      }
+      break;
+    }
+    --maxWeight;
+  }
 }
 
 void CircularJoinGraphTransformer::transform()
 {
-  initJoinGraph();
+  initializeJoinGraph();
 
-  collectCycles(/*currentTable=*/joinGraph.begin()->first, /*prevTable=*/UINT_MAX);
+  collectCycles(/*currentTable=*/headVertex, /*prevTable=*/UINT_MAX);
   edgesToTransform.clear();
 
   if (dynamic_cast<CircularOuterJoinGraphTransformer*>(this) && cycles.size() > 1)
