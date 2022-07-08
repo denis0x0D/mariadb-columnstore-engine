@@ -1987,7 +1987,7 @@ class CircularOuterJoinGraphTransformer : public CircularJoinGraphTransformer
   // Marks a table to be on a large side for join ordering pass.
   void markAssociatedTableAsLargeSide(const std::pair<JoinEdge, uint32_t>& joinEdgeTable);
 
-  std::map<JoinEdge, uint32_t> joinEdgesToWeights;
+  std::map<JoinEdge, std::pair<uint32_t, uint32_t>> joinEdgesToWeights;
   std::unordered_map<uint32_t, JoinEdge> weightsToJoinEdges;
   std::vector<std::pair<JoinEdge, uint32_t>> joinEdgesAndTables;
 };
@@ -1995,7 +1995,7 @@ class CircularOuterJoinGraphTransformer : public CircularJoinGraphTransformer
 void CircularOuterJoinGraphTransformer::markAssociatedTableAsLargeSide(
     const std::pair<JoinEdge, uint32_t>& joinEdgeTable)
 {
-  const auto tableWeight = joinEdgesToWeights[joinEdgeTable.first];
+  const auto tableWeight = joinEdgesToWeights[joinEdgeTable.first].first;
   // Increase weight for the table if it already in a hash table.
   jobInfo.tablesForLargeSide.insert({joinEdgeTable.second, tableWeight});
 }
@@ -2020,6 +2020,7 @@ void CircularOuterJoinGraphTransformer::initializeJoinGraph()
 
   uint32_t minWeightFullGraph = UINT_MAX;
   uint32_t maxWeightFullGraph = 0;
+  // TODO: more comments on why do we take min and max join edge weight.
   for (auto joinStepIt = joinSteps.begin(); joinStepIt < joinSteps.end(); joinStepIt++)
   {
     auto* tupleHashJoinStep = dynamic_cast<TupleHashJoinStep*>(joinStepIt->get());
@@ -2029,14 +2030,33 @@ void CircularOuterJoinGraphTransformer::initializeJoinGraph()
       const auto tableKey1 = getTableKey(jobInfo, tupleHashJoinStep->tupleId1());
       const auto tableKey2 = getTableKey(jobInfo, tupleHashJoinStep->tupleId2());
 
+      // Edge forward.
       JoinEdge edgeForward{tableKey1, tableKey2};
+      auto joinEdgeToWeightIt = joinEdgesToWeights.find(edgeForward);
+      if (joinEdgeToWeightIt == joinEdgesToWeights.end())
+      {
+        joinEdgesToWeights.insert({edgeForward, {weight, weight}});
+      }
+      else
+      {
+        joinEdgeToWeightIt->second.first = std::min(joinEdgeToWeightIt->second.first, weight);
+        joinEdgeToWeightIt->second.second = std::max(joinEdgeToWeightIt->second.second, weight);
+      }
+
+      // Edge backward.
       JoinEdge edgeBackward{tableKey2, tableKey1};
+      joinEdgeToWeightIt = joinEdgesToWeights.find(edgeBackward);
+      if (joinEdgeToWeightIt == joinEdgesToWeights.end())
+      {
+        joinEdgesToWeights.insert({edgeBackward, {weight, weight}});
+      }
+      else
+      {
+        joinEdgeToWeightIt->second.first = std::min(joinEdgeToWeightIt->second.first, weight);
+        joinEdgeToWeightIt->second.second = std::max(joinEdgeToWeightIt->second.second, weight);
+      }
 
-      if (!joinEdgesToWeights.count(edgeForward))
-        joinEdgesToWeights.insert({edgeForward, weight});
-      if (!joinEdgesToWeights.count(edgeBackward))
-        joinEdgesToWeights.insert({edgeBackward, weight});
-
+      // Initialize weights to join edges map.
       if (!weightsToJoinEdges.count(weight))
         weightsToJoinEdges.insert({weight, edgeForward});
       if (!weightsToJoinEdges.count(weight))
@@ -2044,13 +2064,21 @@ void CircularOuterJoinGraphTransformer::initializeJoinGraph()
 
       minWeightFullGraph = std::min(weight, minWeightFullGraph);
       maxWeightFullGraph = std::max(weight, maxWeightFullGraph);
+    }
+  }
 
-      if (jobInfo.trace)
-        std::cout << edgeForward.first << " <-> " << edgeForward.second << " : " << weight << std::endl;
+  if (jobInfo.trace)
+  {
+    for (const auto& joinEdgeToWeight : joinEdgesToWeights)
+    {
+      std::cout << joinEdgeToWeight.first.first << " <-> " << joinEdgeToWeight.first.second
+                << " [min: " << joinEdgeToWeight.second.first << ", max: " << joinEdgeToWeight.second.second
+                << "]\n";
     }
   }
 
   // Find a head table.
+  // TODO: more comments on this.
   const auto joinEdgeWithMinWeight = weightsToJoinEdges[minWeightFullGraph];
 
   if (jobInfo.trace)
@@ -2093,7 +2121,7 @@ void CircularOuterJoinGraphTransformer::analyzeJoinGraph(uint32_t currentTable, 
     if (prevTable != adjNode)
     {
       const JoinEdge joinEdge{currentTable, adjNode};
-      const auto weight = joinEdgesToWeights[joinEdge];
+      const auto weight = joinEdgesToWeights[joinEdge].first;
       adjacentListWeighted.push_back({adjNode, weight});
     }
   }
