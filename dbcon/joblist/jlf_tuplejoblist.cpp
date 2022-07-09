@@ -1968,12 +1968,27 @@ class CircularOuterJoinGraphTransformer : public CircularJoinGraphTransformer
   // Analyzes the given `join graph`.
   void analyzeJoinGraph(uint32_t currentTable, uint32_t prevTable) override;
   void chooseEdgeToTransform(Cycle& cycle, JoinEdge& resultEdge) override;
+  uint32_t getSublingsMinWeight(uint32_t headTable, uint32_t associatedTable);
   // Initializes `join graph` from the table connections.
   void initializeJoinGraph() override;
 
   std::map<JoinEdge, uint32_t> joinEdgesToWeights;
   std::unordered_map<uint32_t, JoinEdge> weightsToJoinEdges;
 };
+
+uint32_t CircularOuterJoinGraphTransformer::getSublingsMinWeight(uint32_t headTable, uint32_t associatedTable)
+{
+  uint32_t minWeight = UINT_MAX;
+  for (const auto adjNode : joinGraph[headTable].fAdjacentList)
+  {
+    if (adjNode != associatedTable)
+    {
+      JoinEdge joinEdge(adjNode, headTable);
+      minWeight = std::min(joinEdgesToWeights[joinEdge], minWeight);
+    }
+  }
+  return minWeight == UINT_MAX ? 0 : minWeight;
+}
 
 void CircularOuterJoinGraphTransformer::initializeJoinGraph()
 {
@@ -2023,24 +2038,11 @@ void CircularOuterJoinGraphTransformer::initializeJoinGraph()
     std::cout << "Minimum weight edge is: " << joinEdgeWithMinWeight.first << " <-> "
               << joinEdgeWithMinWeight.second << std::endl;
 
-  JoinEdge secondJoinEdge;
-  uint32_t minWeight = minWeightFullGraph + 1;
-
-  while (minWeight <= maxWeightFullGraph)
-  {
-    if (weightsToJoinEdges.count(minWeight))
-    {
-      secondJoinEdge = weightsToJoinEdges[minWeight];
-      break;
-    }
-    ++minWeight;
-  }
-
-  if (joinEdgeWithMinWeight.first == secondJoinEdge.first ||
-      joinEdgeWithMinWeight.first == secondJoinEdge.second)
-    headTable = joinEdgeWithMinWeight.second;
-  else
+  if (getSublingsMinWeight(joinEdgeWithMinWeight.first, joinEdgeWithMinWeight.second) <
+      getSublingsMinWeight(joinEdgeWithMinWeight.second, joinEdgeWithMinWeight.first))
     headTable = joinEdgeWithMinWeight.first;
+  else
+    headTable = joinEdgeWithMinWeight.second;
 
   if (jobInfo.trace)
     std::cout << "Head table is: " << headTable << std::endl;
