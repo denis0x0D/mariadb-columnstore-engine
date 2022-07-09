@@ -1643,32 +1643,19 @@ class CircularJoinGraphTransformer
 void CircularJoinGraphTransformer::analyzeJoinGraph(uint32_t currentTable, uint32_t prevTable)
 {
   // Mark as visited.
-  joinGraph[currentTable].fVisited = true;
+  joinGraph[currentTable].fTableColor = TableColor::GREY;
   joinGraph[currentTable].fParent = prevTable;
 
   // For each adjacent node.
   for (const auto adjNode : joinGraph[currentTable].fAdjacentList)
   {
-    // If visited and not a back edge consider as a cycle.
-    if (joinGraph[adjNode].fVisited && prevTable != adjNode)
+    if (prevTable != adjNode)
     {
-      Cycle cycle;
-      const auto edgeForward = make_pair(currentTable, adjNode);
-      const auto edgeBackward = make_pair(adjNode, currentTable);
-
-      if (!edgesToTransform.count(edgeForward) && !edgesToTransform.count(edgeBackward))
+      if (joinGraph[adjNode].fTableColor == TableColor::GREY)
       {
-        edgesToTransform.insert(edgeForward);
-        cycle.push_back(edgeForward);
-      }
-
-      auto nodeIt = currentTable;
-      auto nextNode = joinGraph[nodeIt].fParent;
-      // Walk back until we find node `adjNode` we identified before.
-      while (nextNode != UINT_MAX && nextNode != adjNode)
-      {
-        const auto edgeForward = make_pair(nextNode, nodeIt);
-        const auto edgeBackward = make_pair(nodeIt, nextNode);
+        Cycle cycle;
+        const auto edgeForward = make_pair(currentTable, adjNode);
+        const auto edgeBackward = make_pair(adjNode, currentTable);
 
         if (!edgesToTransform.count(edgeForward) && !edgesToTransform.count(edgeBackward))
         {
@@ -1676,41 +1663,58 @@ void CircularJoinGraphTransformer::analyzeJoinGraph(uint32_t currentTable, uint3
           cycle.push_back(edgeForward);
         }
 
-        nodeIt = nextNode;
-        nextNode = joinGraph[nodeIt].fParent;
-      }
-
-      // Add the last edge.
-      if (nextNode != UINT_MAX)
-      {
-        const auto edgeForward = make_pair(nextNode, nodeIt);
-        const auto edgeBackward = make_pair(nodeIt, nextNode);
-
-        if (!edgesToTransform.count(edgeForward) && !edgesToTransform.count(edgeBackward))
+        auto nodeIt = currentTable;
+        auto nextNode = joinGraph[nodeIt].fParent;
+        // Walk back until we find node `adjNode` we identified before.
+        while (nextNode != UINT_MAX && nextNode != adjNode)
         {
-          edgesToTransform.insert(edgeForward);
-          cycle.push_back(edgeForward);
+          const auto edgeForward = make_pair(nextNode, nodeIt);
+          const auto edgeBackward = make_pair(nodeIt, nextNode);
+
+          if (!edgesToTransform.count(edgeForward) && !edgesToTransform.count(edgeBackward))
+          {
+            edgesToTransform.insert(edgeForward);
+            cycle.push_back(edgeForward);
+          }
+
+          nodeIt = nextNode;
+          nextNode = joinGraph[nodeIt].fParent;
         }
-      }
 
-      if (jobInfo.trace && cycle.size())
+        // Add the last edge.
+        if (nextNode != UINT_MAX)
+        {
+          const auto edgeForward = make_pair(nextNode, nodeIt);
+          const auto edgeBackward = make_pair(nodeIt, nextNode);
+
+          if (!edgesToTransform.count(edgeForward) && !edgesToTransform.count(edgeBackward))
+          {
+            edgesToTransform.insert(edgeForward);
+            cycle.push_back(edgeForward);
+          }
+        }
+
+        if (jobInfo.trace && cycle.size())
+        {
+          std::cout << "Cycle found.\n";
+          std::cout << "Collected cycle \n";
+          for (const auto& edge : cycle)
+            std::cout << "Join edge: " << edge.first << " <-> " << edge.second << '\n';
+        }
+
+        // Collect the cycle.
+        if (cycle.size())
+          cycles.push_back(std::move(cycle));
+      }
+      // If not visited - go there.
+      else if (joinGraph[adjNode].fTableColor == TableColor::WHITE)
       {
-        std::cout << "Cycle found.\n";
-        std::cout << "Collected cycle \n";
-        for (const auto& edge : cycle)
-          std::cout << "Join edge: " << edge.first << " <-> " << edge.second << '\n';
+        analyzeJoinGraph(adjNode, currentTable);
       }
-
-      // Collect the cycle.
-      if (cycle.size())
-        cycles.push_back(std::move(cycle));
-    }
-    // If not visited - go there.
-    else if (joinGraph[adjNode].fVisited == false)
-    {
-      analyzeJoinGraph(adjNode, currentTable);
     }
   }
+
+  joinGraph[currentTable].fTableColor = TableColor::BLACK;
 }
 
 void CircularJoinGraphTransformer::removeFromAdjacentList(uint32_t tableId, std::vector<uint32_t>& adjList)
@@ -2051,7 +2055,7 @@ void CircularOuterJoinGraphTransformer::initializeJoinGraph()
 void CircularOuterJoinGraphTransformer::analyzeJoinGraph(uint32_t currentTable, uint32_t prevTable)
 {
   // Mark as visited.
-  joinGraph[currentTable].fVisited = true;
+  joinGraph[currentTable].fTableColor = TableColor::GREY;
   joinGraph[currentTable].fParent = prevTable;
 
   std::vector<std::pair<uint32_t, uint32_t>> adjacentListWeighted;
@@ -2077,7 +2081,7 @@ void CircularOuterJoinGraphTransformer::analyzeJoinGraph(uint32_t currentTable, 
   {
     const auto adjNode = adjNodeWeighted.first;
     // If visited and not a back edge consider as a cycle.
-    if (joinGraph[adjNode].fVisited)
+    if (joinGraph[adjNode].fTableColor == TableColor::GREY)
     {
       Cycle cycle;
       const auto edgeForward = make_pair(currentTable, adjNode);
@@ -2124,11 +2128,13 @@ void CircularOuterJoinGraphTransformer::analyzeJoinGraph(uint32_t currentTable, 
       if (cycle.size())
         cycles.push_back(std::move(cycle));
     }
-    else if (joinGraph[adjNode].fVisited == false)
+    else if (joinGraph[adjNode].fTableColor == TableColor::WHITE)
     {
       analyzeJoinGraph(adjNode, currentTable);
     }
   }
+
+  joinGraph[currentTable].fTableColor = TableColor::BLACK;
 }
 
 void CircularOuterJoinGraphTransformer::chooseEdgeToTransform(Cycle& cycle, JoinEdge& resultEdge)

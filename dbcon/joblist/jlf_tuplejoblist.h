@@ -129,12 +129,19 @@ void orExpresssion(const execplan::Operator* op, JobInfo& jobInfo);
 // union the queries and return the tuple union step
 SJSTEP unionQueries(JobStepVector& queries, uint64_t distinctUnionNum, JobInfo& jobInfo);
 
+enum class TableColor
+{
+  WHITE,
+  GREY,
+  BLACK
+};
+
 struct JoinTableNode
 {
-  bool fVisited;
+  TableColor fTableColor;
   uint32_t fParent;
   std::vector<uint32_t> fAdjacentList;
-  JoinTableNode() : fVisited(false), fParent(-1)
+  JoinTableNode() : fTableColor(TableColor::WHITE), fParent(UINT_MAX)
   {
   }
 };
