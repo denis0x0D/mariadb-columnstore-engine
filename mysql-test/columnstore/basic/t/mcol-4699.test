@@ -26,6 +26,7 @@ select * from t1 inner join t2 on (t1.a = t2.a) right join t3 on (t1.a = t3.a an
 select * from t1 inner join t2 on (t1.a = t2.a) right join t3 on (t1.a = t3.a and t2.b = t3.b) where (t3.a = 1 or t3.a = 3);
 select * from t1 inner join t2 on (t1.a = t2.a) right join t3 on (t1.a = t3.a and t2.b = t3.b) where (t3.a > 1);
 select * from t1 inner join t2 on (t1.a = t2.a) right join t3 on (t2.a = t3.a) left join t4 on (t3.a = t4.a and t1.b = t4.b);
+select * from t1 inner join t2 on (t1.a = t2.a) right join t3 on (t2.a = t3.a) left join t4 on (t3.a = t4.a and t2.b = t4.b);
 
 # 2 cycles.
 select * from t1 inner join t2 on (t1.a = t2.a) right join t3 on (t1.a = t3.a and t2.b = t3.b) left join t4 on (t3.a = t4.a and t2.a = t4.a);
