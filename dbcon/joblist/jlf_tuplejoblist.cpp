@@ -1974,11 +1974,11 @@ class CircularOuterJoinGraphTransformer : public CircularJoinGraphTransformer
   void analyzeJoinGraph(uint32_t currentTable, uint32_t prevTable) override;
   void chooseEdgeToTransform(Cycle& cycle, JoinEdge& resultEdge) override;
   uint32_t getSublingsMinWeight(uint32_t headTable, uint32_t associatedTable);
+  uint32_t getSublingsMaxWeight(uint32_t headTable, uint32_t associatedTable);
   // Initializes `join graph` from the table connections.
   void initializeJoinGraph() override;
 
   std::map<JoinEdge, uint32_t> joinEdgesToWeights;
-  std::unordered_map<uint32_t, JoinEdge> weightsToJoinEdges;
 };
 
 uint32_t CircularOuterJoinGraphTransformer::getSublingsMinWeight(uint32_t headTable, uint32_t associatedTable)
@@ -1995,6 +1995,20 @@ uint32_t CircularOuterJoinGraphTransformer::getSublingsMinWeight(uint32_t headTa
   return minWeight == UINT_MAX ? 0 : minWeight;
 }
 
+uint32_t CircularOuterJoinGraphTransformer::getSublingsMaxWeight(uint32_t headTable, uint32_t associatedTable)
+{
+  uint32_t maxWeight = 0;
+  for (const auto adjNode : joinGraph[headTable].fAdjacentList)
+  {
+    if (adjNode != associatedTable)
+    {
+      JoinEdge joinEdge(adjNode, headTable);
+      maxWeight = std::max(joinEdgesToWeights[joinEdge], maxWeight);
+    }
+  }
+  return maxWeight == 0 ? UINT_MAX : maxWeight;
+}
+
 void CircularOuterJoinGraphTransformer::initializeJoinGraph()
 {
   // Initialize a join graph at first.
@@ -2005,7 +2019,8 @@ void CircularOuterJoinGraphTransformer::initializeJoinGraph()
     std::cout << "Join edges with weights.\n";
 
   uint32_t minWeightFullGraph = UINT_MAX;
-  uint32_t maxWeightFullGraph = 0;
+  JoinEdge joinEdgeWithMinWeight(0, 0);
+
   for (auto joinStepIt = joinSteps.begin(); joinStepIt < joinSteps.end(); joinStepIt++)
   {
     auto* tupleHashJoinStep = dynamic_cast<TupleHashJoinStep*>(joinStepIt->get());
@@ -2023,21 +2038,16 @@ void CircularOuterJoinGraphTransformer::initializeJoinGraph()
       if (!joinEdgesToWeights.count(edgeBackward))
         joinEdgesToWeights.insert({edgeBackward, weight});
 
-      if (!weightsToJoinEdges.count(weight))
-        weightsToJoinEdges.insert({weight, edgeForward});
-      if (!weightsToJoinEdges.count(weight))
-        weightsToJoinEdges.insert({weight, edgeBackward});
-
-      minWeightFullGraph = std::min(weight, minWeightFullGraph);
-      maxWeightFullGraph = std::max(weight, maxWeightFullGraph);
+      if (minWeightFullGraph > weight)
+      {
+        minWeightFullGraph = weight;
+        joinEdgeWithMinWeight = edgeForward;
+      }
 
       if (jobInfo.trace)
         std::cout << edgeForward.first << " <-> " << edgeForward.second << " : " << weight << std::endl;
     }
   }
-
-  // Find a head table.
-  const auto joinEdgeWithMinWeight = weightsToJoinEdges[minWeightFullGraph];
 
   if (jobInfo.trace)
     std::cout << "Minimum weight edge is: " << joinEdgeWithMinWeight.first << " <-> "
@@ -2161,33 +2171,13 @@ void CircularOuterJoinGraphTransformer::chooseEdgeToTransform(Cycle& cycle, Join
   }
 
   if (jobInfo.trace)
-    std::cout << "Join edge with MAX weight in a cycle: " << joinEdgeWithMaxWeight.first << " <-> "
+    std::cout << "Join edge with max weight in a cycle: " << joinEdgeWithMaxWeight.first << " <-> "
               << joinEdgeWithMaxWeight.second << " weight: " << maxWeightInCycle << "\n";
 
-  // Search for a join edge with previous max weight in join graph.
-  // Since we collect a disjoint set of join edges, we could have a cycle with only one join edge.
-  // TODO: for example.
-  int32_t prevMaxWeight = maxWeightInCycle;
-  JoinEdge joinEdgePrevMaxWeight;
-  --prevMaxWeight;
-  while (prevMaxWeight >= 0)
-  {
-    if (weightsToJoinEdges.count(prevMaxWeight))
-    {
-      joinEdgePrevMaxWeight = weightsToJoinEdges[prevMaxWeight];
-      break;
-    }
-    --prevMaxWeight;
-  }
-
-  if (jobInfo.trace)
-    std::cout << "Join edge with PREVIOUS MAX weight: " << joinEdgePrevMaxWeight.first << " <-> "
-              << joinEdgePrevMaxWeight.second << " weight: " << prevMaxWeight << "\n";
-
-  uint32_t largeSideTable = joinEdgeWithMaxWeight.second;
-  if ((joinEdgeWithMaxWeight.first == joinEdgePrevMaxWeight.first) ||
-      (joinEdgeWithMaxWeight.first == joinEdgePrevMaxWeight.second))
-    largeSideTable = joinEdgeWithMaxWeight.first;
+  uint32_t largeSideTable = joinEdgeWithMaxWeight.first;
+  if (getSublingsMaxWeight(joinEdgeWithMaxWeight.second, joinEdgeWithMaxWeight.first) >
+      getSublingsMaxWeight(joinEdgeWithMaxWeight.first, joinEdgeWithMaxWeight.second))
+    largeSideTable = joinEdgeWithMaxWeight.second;
 
   if (!jobInfo.tablesForLargeSide.count(largeSideTable))
     jobInfo.tablesForLargeSide.insert({largeSideTable, maxWeightInCycle});
