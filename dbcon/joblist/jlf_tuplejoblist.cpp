@@ -2724,7 +2724,8 @@ bool matchKeys(const vector<uint32_t>& keysToSearch, const vector<uint32_t>& key
 
 void tryToRestoreJoinEdges(JobInfo& jobInfo, JoinInfo* joinInfo, const RowGroup& largeSideRG,
                            std::vector<uint32_t>& smallKeyIndices, std::vector<uint32_t>& largeKeyIndices,
-                           std::vector<std::string>& traces)
+                           std::vector<std::string>& traces, std::map<uint32_t, uint32_t>& joinIndexIdMap,
+                           uint32_t smallSideIndex)
 {
   if (!jobInfo.joinEdgesToRestore.size())
     return;
@@ -2828,6 +2829,12 @@ void tryToRestoreJoinEdges(JobInfo& jobInfo, JoinInfo* joinInfo, const RowGroup&
                          largeKeyIndicesToRestore.end());
   // Mark as tupeless for multiple keys join.
   joinInfo->fJoinData.fTypeless = true;
+  // Associate a join id and small side index for the on clause filters.
+  for (const auto& edge : takenEdges)
+  {
+    const auto joinId = joinEdgesToRestore[edge];
+    joinIndexIdMap[joinId] = smallSideIndex;
+  }
 
   if (jobInfo.trace)
   {
@@ -3600,7 +3607,8 @@ void joinTablesInOrder(uint32_t largest, JobStepVector& joinSteps, TableInfoMap&
                        JobInfo& jobInfo, vector<uint32_t>& joinOrder)
 {
   // populate the tableInfo for join
-  map<uint32_t, SP_JoinInfo> joinInfoMap;  // <table, JoinInfo>
+  std::map<uint32_t, SP_JoinInfo> joinInfoMap;  // <table, JoinInfo>
+  std::map<uint32_t, uint32_t> joinIdIndexMap;
 
   // <table,  <last step involved, large priority> >
   // large priority:
@@ -3866,7 +3874,8 @@ void joinTablesInOrder(uint32_t largest, JobStepVector& joinSteps, TableInfoMap&
       }
     }
 
-    for (vector<SP_JoinInfo>::iterator i = smallSides.begin(); i != smallSides.end(); i++)
+    uint32_t smallSideIndex = 0;
+    for (vector<SP_JoinInfo>::iterator i = smallSides.begin(); i != smallSides.end(); i++, smallSideIndex++)
     {
       JoinInfo* info = i->get();
       smallSideDLs.push_back(info->fDl);
@@ -3889,7 +3898,8 @@ void joinTablesInOrder(uint32_t largest, JobStepVector& joinSteps, TableInfoMap&
       }
 
       // Try to restore `circular join edge` if possible.
-      tryToRestoreJoinEdges(jobInfo, info, largeSideRG, smallIndices, largeIndices, traces);
+      tryToRestoreJoinEdges(jobInfo, info, largeSideRG, smallIndices, largeIndices, traces, joinIdIndexMap,
+                            smallSideIndex);
       typeless.push_back(info->fJoinData.fTypeless);
       smallKeyIndices.push_back(smallIndices);
       largeKeyIndices.push_back(largeIndices);
@@ -4012,7 +4022,6 @@ void joinTablesInOrder(uint32_t largest, JobStepVector& joinSteps, TableInfoMap&
     }
 
     // The map for in clause filter.
-    map<uint64_t, size_t> joinIdIndexMap;
     for (size_t i = 0; i < smallSides.size(); i++)
     {
       if (smallSides[i]->fJoinData.fJoinId > 0)
@@ -4052,7 +4061,7 @@ void joinTablesInOrder(uint32_t largest, JobStepVector& joinSteps, TableInfoMap&
       // for on clause condition, need check join ID
       if (ready && exp->associatedJoinId() != 0)
       {
-        map<uint64_t, size_t>::iterator x = joinIdIndexMap.find(exp->associatedJoinId());
+        auto x = joinIdIndexMap.find(exp->associatedJoinId());
         ready = (x != joinIdIndexMap.end());
       }
 
@@ -4186,7 +4195,7 @@ void joinTablesInOrder(uint32_t largest, JobStepVector& joinSteps, TableInfoMap&
           e->updateInputIndex(keyToIndexMap, jobInfo);
 
           // short circuit on clause expressions
-          map<uint64_t, size_t>::iterator x = joinIdIndexMap.find(e->associatedJoinId());
+          auto x = joinIdIndexMap.find(e->associatedJoinId());
 
           if (x != joinIdIndexMap.end())
           {
