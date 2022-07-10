@@ -2722,13 +2722,14 @@ bool matchKeys(const vector<uint32_t>& keysToSearch, const vector<uint32_t>& key
   return true;
 }
 
-bool tryToRestoreJoinEdges(JobInfo& jobInfo, const RowGroup& smallSideRG, const RowGroup& largeSideRG,
+void tryToRestoreJoinEdges(JobInfo& jobInfo, JoinInfo* joinInfo, const RowGroup& largeSideRG,
                            std::vector<uint32_t>& smallKeyIndices, std::vector<uint32_t>& largeKeyIndices,
                            std::vector<std::string>& traces)
 {
   if (!jobInfo.joinEdgesToRestore.size())
-    return false;
+    return;
 
+  const RowGroup& smallSideRG = joinInfo->fRowGroup;
   ostringstream oss;
   if (jobInfo.trace)
     oss << "\n\nTry to match edges for the small and large sides rowgroups\n";
@@ -2810,19 +2811,23 @@ bool tryToRestoreJoinEdges(JobInfo& jobInfo, const RowGroup& smallSideRG, const 
     }
   }
 
+  // Check if keys were not matched.
   if (!smallKeyIndicesToRestore.size())
   {
     if (jobInfo.trace)
       oss << "Keys not matched.\n\n";
 
     traces.push_back(oss.str());
-    return false;
+    return;
   }
 
+  // Add keys.
   smallKeyIndices.insert(smallKeyIndices.end(), smallKeyIndicesToRestore.begin(),
                          smallKeyIndicesToRestore.end());
   largeKeyIndices.insert(largeKeyIndices.end(), largeKeyIndicesToRestore.begin(),
                          largeKeyIndicesToRestore.end());
+  // Mark as tupeless for multiple keys join.
+  joinInfo->fJoinData.fTypeless = true;
 
   if (jobInfo.trace)
   {
@@ -2844,8 +2849,6 @@ bool tryToRestoreJoinEdges(JobInfo& jobInfo, const RowGroup& smallSideRG, const 
     auto it = joinEdgesToRestore.find(edge);
     joinEdgesToRestore.erase(it);
   }
-
-  return true;
 }
 
 void matchEdgesInResultRowGroup(const JobInfo& jobInfo, const RowGroup& rg,
@@ -3599,7 +3602,6 @@ void joinTablesInOrder(uint32_t largest, JobStepVector& joinSteps, TableInfoMap&
   // populate the tableInfo for join
   map<uint32_t, SP_JoinInfo> joinInfoMap;  // <table, JoinInfo>
 
-  // TODO: put it to the enum.
   // <table,  <last step involved, large priority> >
   // large priority:
   //     -1 - must be on small side, like derived tables for semi join;
@@ -3727,6 +3729,7 @@ void joinTablesInOrder(uint32_t largest, JobStepVector& joinSteps, TableInfoMap&
 
     updateJoinSides(small, large, joinInfoMap, smallSides, tableInfoMap, jobInfo);
 
+    // This is a table for multiple join edges, always a stream table.
     if (joinStepMap[large].second > 2)
       umstream = true;
 
@@ -3885,10 +3888,8 @@ void joinTablesInOrder(uint32_t largest, JobStepVector& joinSteps, TableInfoMap&
         largeIndices.push_back(getKeyIndex(*k2, largeSideRG));
       }
 
-      if (tryToRestoreJoinEdges(jobInfo, /*smallSideRG=*/info->fRowGroup, largeSideRG, smallIndices,
-                                largeIndices, traces))
-        info->fJoinData.fTypeless = true;
-
+      // Try to restore `circular join edge` if possible.
+      tryToRestoreJoinEdges(jobInfo, info, largeSideRG, smallIndices, largeIndices, traces);
       typeless.push_back(info->fJoinData.fTypeless);
       smallKeyIndices.push_back(smallIndices);
       largeKeyIndices.push_back(largeIndices);
