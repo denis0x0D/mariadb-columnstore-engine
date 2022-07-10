@@ -1619,14 +1619,14 @@ class CircularJoinGraphTransformer
   virtual void analyzeJoinGraph(uint32_t currentTable, uint32_t prevTable);
   void breakCyclesAndCollectJoinEdges();
   // Removes given `join edge` from the `join graph`.
-  void breakCycleAndCollectJoinEdge(const JoinEdge& edgeForward);
+  void breakCycleAndCollectJoinEdge(const std::pair<JoinEdge, uint32_t>& edgeForward);
   // Initializes the `join graph` based on the table connections.
   virtual void initializeJoinGraph();
   // Check if the given join edge has FK - FK relations.
   bool isForeignKeyForeignKeyLink(const JoinEdge& edge, statistics::StatisticsManager* statisticsManager);
   // Based on column statistics removes tries to search `join edge` which reduces the intermediate join
   // result.
-  virtual void chooseEdgeToTransform(Cycle& cycle, JoinEdge& resultEdge);
+  virtual void chooseEdgeToTransform(Cycle& cycle, std::pair<JoinEdge, uint32_t>& resultEdge);
   // Removes given `tableId` from adjacent list.
   void removeFromAdjacentList(uint32_t tableId, std::vector<uint32_t>& adjList);
   // Removes associated join step associated with the given `joinEdge` from job steps.
@@ -1807,7 +1807,8 @@ bool CircularJoinGraphTransformer::isForeignKeyForeignKeyLink(
   return false;
 }
 
-void CircularJoinGraphTransformer::chooseEdgeToTransform(Cycle& cycle, JoinEdge& resultEdge)
+void CircularJoinGraphTransformer::chooseEdgeToTransform(Cycle& cycle,
+                                                         std::pair<JoinEdge, uint32_t>& resultEdge)
 {
   // Use statistics if possible.
   auto* statisticsManager = statistics::StatisticsManager::instance();
@@ -1819,7 +1820,7 @@ void CircularJoinGraphTransformer::chooseEdgeToTransform(Cycle& cycle, JoinEdge&
       const auto edgeBackward = std::make_pair(edgeForward.second, edgeForward.first);
       if (!jobInfo.joinEdgesToRestore.count(edgeForward) && !jobInfo.joinEdgesToRestore.count(edgeBackward))
       {
-        resultEdge = edgeForward;
+        resultEdge = std::make_pair(edgeForward, 0 /*Dummy weight*/);
         return;
       }
     }
@@ -1829,7 +1830,7 @@ void CircularJoinGraphTransformer::chooseEdgeToTransform(Cycle& cycle, JoinEdge&
     std::cout << "FK FK key not found, removing the first one inner join edge" << std::endl;
 
   // Take just a first.
-  resultEdge = cycle.front();
+  resultEdge = std::make_pair(cycle.front(), 0 /*Dummy weight*/);
 }
 
 void CircularJoinGraphTransformer::removeAssociatedHashJoinStepFromJoinSteps(const JoinEdge& joinEdge)
@@ -1894,10 +1895,12 @@ void CircularJoinGraphTransformer::removeAssociatedHashJoinStepFromJoinSteps(con
   }
 }
 
-void CircularJoinGraphTransformer::breakCycleAndCollectJoinEdge(const JoinEdge& edgeForward)
+void CircularJoinGraphTransformer::breakCycleAndCollectJoinEdge(
+    const std::pair<JoinEdge, uint32_t>& joinEdgeWithWeight)
 {
   // Add edge to be restored.
-  jobInfo.joinEdgesToRestore.insert(edgeForward);
+  jobInfo.joinEdgesToRestore.insert({joinEdgeWithWeight.first, joinEdgeWithWeight.second});
+  const auto edgeForward = joinEdgeWithWeight.first;
 
   // Keep key columns in result rowgroups, to avoid columns elimination at the intermidiate joins.
   auto tableInfoIt = jobInfo.tableJoinMap.find(edgeForward);
@@ -1924,9 +1927,9 @@ void CircularJoinGraphTransformer::breakCyclesAndCollectJoinEdges()
 {
   for (auto& cycle : cycles)
   {
-    JoinEdge edgeForward;
-    chooseEdgeToTransform(cycle, edgeForward);
-    breakCycleAndCollectJoinEdge(edgeForward);
+    std::pair<JoinEdge, uint32_t> joinEdgeWithWeight;
+    chooseEdgeToTransform(cycle, joinEdgeWithWeight);
+    breakCycleAndCollectJoinEdge(joinEdgeWithWeight);
   }
 }
 
@@ -1979,7 +1982,7 @@ class CircularOuterJoinGraphTransformer : public CircularJoinGraphTransformer
   void analyzeJoinGraph(uint32_t currentTable, uint32_t prevTable) override;
   // Chooses a join edge to transfrom from the given cycle based on the join edge weight,
   // the join edge for transformation has a maximym weight in a cycle.
-  void chooseEdgeToTransform(Cycle& cycle, JoinEdge& resultEdge) override;
+  void chooseEdgeToTransform(Cycle& cycle, std::pair<JoinEdge, uint32_t>& resultEdge) override;
   // Returns the maximym weight among all join weights related to the given `headTable`.
   uint32_t getSublingsMinWeight(uint32_t headTable, uint32_t associatedTable);
   // Returns the minimum weight among all join weights related to the given `headTable`.
@@ -2158,7 +2161,8 @@ void CircularOuterJoinGraphTransformer::analyzeJoinGraph(uint32_t currentTable, 
   joinGraph[currentTable].fTableColor = JoinTableColor::BLACK;
 }
 
-void CircularOuterJoinGraphTransformer::chooseEdgeToTransform(Cycle& cycle, JoinEdge& resultEdge)
+void CircularOuterJoinGraphTransformer::chooseEdgeToTransform(Cycle& cycle,
+                                                              std::pair<JoinEdge, uint32_t>& resultEdge)
 {
   uint32_t maxWeightInCycle = 0;
   JoinEdge joinEdgeWithMaxWeight;
@@ -2196,7 +2200,7 @@ void CircularOuterJoinGraphTransformer::chooseEdgeToTransform(Cycle& cycle, Join
     std::cout << "Large side table: " << largeSideTable << std::endl;
 
   // Assign a result edge.
-  resultEdge = joinEdgeWithMaxWeight;
+  resultEdge = std::make_pair(joinEdgeWithMaxWeight, maxWeightInCycle);
 }
 
 void spanningTreeCheck(TableInfoMap& tableInfoMap, JobStepVector& joinSteps, JobInfo& jobInfo)
@@ -2744,8 +2748,9 @@ bool tryToRestoreJoinEdges(JobInfo& jobInfo, const RowGroup& smallSideRG, const 
   // Small side row group: {t1, t2, t3, t4}
   // Large side join keys: {t5, t5}
   // Small side join keys: {t2, t1}
-  for (const auto& edge : joinEdgesToRestore)
+  for (const auto& joinEdgeWithWeight : joinEdgesToRestore)
   {
+    const auto& edge = joinEdgeWithWeight.first;
     auto it = jobInfo.tableJoinMap.find(edge);
     // Edge keys.
     const auto& leftKeys = it->second.fLeftKeys;
@@ -2843,7 +2848,8 @@ bool tryToRestoreJoinEdges(JobInfo& jobInfo, const RowGroup& smallSideRG, const 
   return true;
 }
 
-void matchEdgesInResultRowGroup(const JobInfo& jobInfo, const RowGroup& rg, JoinEdges& edgesToTransform,
+void matchEdgesInResultRowGroup(const JobInfo& jobInfo, const RowGroup& rg,
+                                std::map<JoinEdge, uint32_t>& edgesToRestore,
                                 PostJoinFilterKeys& postJoinFilterKeys)
 {
   if (jobInfo.trace)
@@ -2853,10 +2859,12 @@ void matchEdgesInResultRowGroup(const JobInfo& jobInfo, const RowGroup& rg, Join
   }
 
   std::vector<pair<uint32_t, uint32_t>> takenEdges;
-  for (const auto& edge : edgesToTransform)
+  for (const auto& joinEdgeWithWeight : edgesToRestore)
   {
-    auto it = jobInfo.tableJoinMap.find(edge);
+    const auto& edge = joinEdgeWithWeight.first;
     std::vector<uint32_t> currentKeys;
+    auto it = jobInfo.tableJoinMap.find(edge);
+
     // Combine keys.
     currentKeys = it->second.fLeftKeys;
     currentKeys.insert(currentKeys.end(), it->second.fRightKeys.begin(), it->second.fRightKeys.end());
@@ -2903,8 +2911,8 @@ void matchEdgesInResultRowGroup(const JobInfo& jobInfo, const RowGroup& rg, Join
   // Erase taken edges.
   for (const auto& edge : takenEdges)
   {
-    auto it = edgesToTransform.find(edge);
-    edgesToTransform.erase(it);
+    auto it = edgesToRestore.find(edge);
+    edgesToRestore.erase(it);
   }
 }
 
@@ -3024,7 +3032,7 @@ void createPostJoinFilters(const JobInfo& jobInfo, TableInfoMap& tableInfoMap,
 }
 
 SP_JoinInfo joinToLargeTable(uint32_t large, TableInfoMap& tableInfoMap, JobInfo& jobInfo,
-                             vector<uint32_t>& joinOrder, JoinEdges& joinEdgesToRestore)
+                             vector<uint32_t>& joinOrder, std::map<JoinEdge, uint32_t>& joinEdgesToRestore)
 {
   vector<SP_JoinInfo> smallSides;
   tableInfoMap[large].fVisited = true;
@@ -4002,9 +4010,8 @@ void joinTablesInOrder(uint32_t largest, JobStepVector& joinSteps, TableInfoMap&
       cout << "RowGroup join result: " << endl << rg.toString() << endl << endl;
     }
 
-    // on clause filter association
+    // The map for in clause filter.
     map<uint64_t, size_t> joinIdIndexMap;
-
     for (size_t i = 0; i < smallSides.size(); i++)
     {
       if (smallSides[i]->fJoinData.fJoinId > 0)

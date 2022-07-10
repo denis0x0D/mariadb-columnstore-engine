@@ -366,8 +366,8 @@ struct JobInfo
   std::vector<execplan::ParseTree*> dynamicParseTreeVec;
 
   PrimitiveServerThreadPools primitiveServerThreadPools;
-  // Represents a `join edges` to be restored in `join order` part.
-  std::set<pair<uint32_t, uint32_t>> joinEdgesToRestore;
+  // Represents a `join edges` and `join id` to be restored in `join order` part.
+  std::map<std::pair<uint32_t, uint32_t>, uint32_t> joinEdgesToRestore;
   // Represents a pair of `table` to be on a large side and weight associated with that table.
   std::unordered_map<uint32_t, uint32_t> tablesForLargeSide;
 
