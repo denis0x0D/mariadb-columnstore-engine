@@ -1603,6 +1603,7 @@ class CircularJoinGraphTransformer
    : infoMap(infoMap), jobInfo(jobInfo), joinSteps(joinSteps)
   {
   }
+  // Delete all other ctrs/dctrs.
   CircularJoinGraphTransformer() = delete;
   CircularJoinGraphTransformer(const CircularJoinGraphTransformer&) = delete;
   CircularJoinGraphTransformer(CircularJoinGraphTransformer&&) = delete;
@@ -1621,11 +1622,14 @@ class CircularJoinGraphTransformer
   void breakCycleAndCollectJoinEdge(const JoinEdge& edgeForward);
   // Initializes the `join graph` based on the table connections.
   virtual void initializeJoinGraph();
+  // Check if the given join edge has FK - FK relations.
   bool isForeignKeyForeignKeyLink(const JoinEdge& edge, statistics::StatisticsManager* statisticsManager);
   // Based on column statistics removes tries to search `join edge` which reduces the intermediate join
   // result.
   virtual void chooseEdgeToTransform(Cycle& cycle, JoinEdge& resultEdge);
+  // Removes given `tableId` from adjacent list.
   void removeFromAdjacentList(uint32_t tableId, std::vector<uint32_t>& adjList);
+  // Removes associated join step associated with the given `joinEdge` from job steps.
   void removeAssociatedHashJoinStepFromJoinSteps(const JoinEdge& joinEdge);
 
   // Join information.
@@ -1962,6 +1966,7 @@ class CircularOuterJoinGraphTransformer : public CircularJoinGraphTransformer
    : CircularJoinGraphTransformer(infoMap, jobInfo, joinSteps)
   {
   }
+  // Delete all other ctrs/dcts.
   CircularOuterJoinGraphTransformer() = delete;
   CircularOuterJoinGraphTransformer(const CircularOuterJoinGraphTransformer&) = delete;
   CircularOuterJoinGraphTransformer(CircularOuterJoinGraphTransformer&&) = delete;
@@ -1972,12 +1977,17 @@ class CircularOuterJoinGraphTransformer : public CircularJoinGraphTransformer
  private:
   // Analyzes the given `join graph`.
   void analyzeJoinGraph(uint32_t currentTable, uint32_t prevTable) override;
+  // Chooses a join edge to transfrom from the given cycle based on the join edge weight,
+  // the join edge for transformation has a maximym weight in a cycle.
   void chooseEdgeToTransform(Cycle& cycle, JoinEdge& resultEdge) override;
+  // Returns the maximym weight among all join weights related to the given `headTable`.
   uint32_t getSublingsMinWeight(uint32_t headTable, uint32_t associatedTable);
+  // Returns the minimum weight among all join weights related to the given `headTable`.
   uint32_t getSublingsMaxWeight(uint32_t headTable, uint32_t associatedTable);
   // Initializes `join graph` from the table connections.
   void initializeJoinGraph() override;
 
+  // The map which represents a weight for each join edge in join graph.
   std::map<JoinEdge, uint32_t> joinEdgesToWeights;
 };
 
