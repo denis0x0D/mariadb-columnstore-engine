@@ -36,47 +36,47 @@ using namespace idbdatafile;
 namespace RebuildExtentMap
 {
 std::unordered_map<uint32_t, FileId> systemCatalogMap = {
-    {2073, FileId(2073, 0, 0, 0, 0, execplan::CalpontSystemCatalog::VARCHAR, 0, 0, true)},
-    {2070, FileId(2070, 0, 0, 0, 0, execplan::CalpontSystemCatalog::VARCHAR, 0, 0, true)},
-    {2067, FileId(2067, 0, 0, 0, 0, execplan::CalpontSystemCatalog::VARCHAR, 0, 0, true)},
-    {2064, FileId(2064, 0, 0, 0, 0, execplan::CalpontSystemCatalog::VARCHAR, 0, 0, true)},
-    {2076, FileId(2076, 0, 0, 0, 0, execplan::CalpontSystemCatalog::VARCHAR, 0, 0, true)},
-    {2061, FileId(2061, 0, 0, 0, 0, execplan::CalpontSystemCatalog::VARCHAR, 0, 0, true)},
-    {1004, FileId(1004, 0, 0, 0, 4, execplan::CalpontSystemCatalog::DATE, 0, 0, false)},
-    {1022, FileId(1022, 0, 0, 0, 8, execplan::CalpontSystemCatalog::VARCHAR, 0, 0, false)},
+    {2073, FileId(2073, 0, 0, 0, 0, execplan::CalpontSystemCatalog::VARCHAR, 196732, 0, true)},
+    {2070, FileId(2070, 0, 0, 0, 0, execplan::CalpontSystemCatalog::VARCHAR, 159744, 0, true)},
+    {2067, FileId(2067, 0, 0, 0, 0, execplan::CalpontSystemCatalog::VARCHAR, 110592, 0, true)},
+    {2064, FileId(2064, 0, 0, 0, 0, execplan::CalpontSystemCatalog::VARCHAR, 94208, 0, true)},
+    {2076, FileId(2076, 0, 0, 0, 0, execplan::CalpontSystemCatalog::VARCHAR, 214016, 0, true)},
+    {2061, FileId(2061, 0, 0, 0, 0, execplan::CalpontSystemCatalog::VARCHAR, 77824, 0, true)},
+    {1004, FileId(1004, 0, 0, 0, 4, execplan::CalpontSystemCatalog::DATE, 36864, 0, false)},
+    {1022, FileId(1022, 0, 0, 0, 8, execplan::CalpontSystemCatalog::VARCHAR, 86016, 0, false)},
     {1001, FileId(1001, 0, 0, 0, 8, execplan::CalpontSystemCatalog::VARCHAR, 0, 0, false)},
-    {1023, FileId(1023, 0, 0, 0, 8, execplan::CalpontSystemCatalog::VARCHAR, 0, 0, false)},
-    {1021, FileId(1021, 0, 0, 0, 8, execplan::CalpontSystemCatalog::VARCHAR, 0, 0, false)},
-    {1010, FileId(1010, 0, 0, 0, 4, execplan::CalpontSystemCatalog::INT, 0, 0, false)},
-    {1006, FileId(1006, 0, 0, 0, 4, execplan::CalpontSystemCatalog::INT, 0, 0, false)},
-    {1002, FileId(1002, 0, 0, 0, 8, execplan::CalpontSystemCatalog::VARCHAR, 0, 0, false)},
-    {1009, FileId(1009, 0, 0, 0, 4, execplan::CalpontSystemCatalog::INT, 0, 0, false)},
-    {1005, FileId(1005, 0, 0, 0, 4, execplan::CalpontSystemCatalog::DATE, 0, 0, false)},
-    {1011, FileId(1011, 0, 0, 0, 4, execplan::CalpontSystemCatalog::INT, 0, 0, false)},
-    {1008, FileId(1008, 0, 0, 0, 4, execplan::CalpontSystemCatalog::INT, 0, 0, false)},
-    {1007, FileId(1007, 0, 0, 0, 4, execplan::CalpontSystemCatalog::INT, 0, 0, false)},
-    {1003, FileId(1003, 0, 0, 0, 4, execplan::CalpontSystemCatalog::INT, 0, 0, false)},
-    {1032, FileId(1032, 0, 0, 0, 8, execplan::CalpontSystemCatalog::VARCHAR, 0, 0, false)},
-    {1038, FileId(1038, 0, 0, 0, 4, execplan::CalpontSystemCatalog::INT, 0, 0, false)},
-    {1033, FileId(1033, 0, 0, 0, 4, execplan::CalpontSystemCatalog::INT, 0, 0, false)},
-    {1027, FileId(1027, 0, 0, 0, 4, execplan::CalpontSystemCatalog::INT, 0, 0, false)},
-    {1024, FileId(1024, 0, 0, 0, 4, execplan::CalpontSystemCatalog::INT, 0, 0, false)},
-    {1042, FileId(1042, 0, 0, 0, 8, execplan::CalpontSystemCatalog::UBIGINT, 0, 0, false)},
-    {1040, FileId(1040, 0, 0, 0, 8, execplan::CalpontSystemCatalog::VARCHAR, 0, 0, false)},
-    {1025, FileId(1025, 0, 0, 0, 4, execplan::CalpontSystemCatalog::INT, 0, 0, false)},
-    {1035, FileId(1035, 0, 0, 0, 4, execplan::CalpontSystemCatalog::INT, 0, 0, false)},
-    {1028, FileId(1028, 0, 0, 0, 4, execplan::CalpontSystemCatalog::INT, 0, 0, false)},
-    {1036, FileId(1036, 0, 0, 0, 1, execplan::CalpontSystemCatalog::CHAR, 0, 0, false)},
-    {1031, FileId(1031, 0, 0, 0, 4, execplan::CalpontSystemCatalog::DATE, 0, 0, false)},
-    {1037, FileId(1037, 0, 0, 0, 4, execplan::CalpontSystemCatalog::INT, 0, 0, false)},
-    {1039, FileId(1039, 0, 0, 0, 8, execplan::CalpontSystemCatalog::VARCHAR, 0, 0, false)},
-    {1030, FileId(1030, 0, 0, 0, 4, execplan::CalpontSystemCatalog::INT, 0, 0, false)},
-    {1034, FileId(1034, 0, 0, 0, 4, execplan::CalpontSystemCatalog::INT, 0, 0, false)},
-    {1026, FileId(1026, 0, 0, 0, 4, execplan::CalpontSystemCatalog::INT, 0, 0, false)},
-    {1041, FileId(1041, 0, 0, 0, 4, execplan::CalpontSystemCatalog::INT, 0, 0, false)},
-    {1029, FileId(1029, 0, 0, 0, 4, execplan::CalpontSystemCatalog::INT, 0, 0, false)},
-    {2001, FileId(2001, 0, 0, 0, 0, execplan::CalpontSystemCatalog::VARCHAR, 0, 0, true)},
-    {2004, FileId(2004, 0, 0, 0, 4, execplan::CalpontSystemCatalog::INT, 0, 0, true)},
+    {1023, FileId(1023, 0, 0, 0, 8, execplan::CalpontSystemCatalog::VARCHAR, 102400, 0, false)},
+    {1021, FileId(1021, 0, 0, 0, 8, execplan::CalpontSystemCatalog::VARCHAR, 69632, 0, false)},
+    {1010, FileId(1010, 0, 0, 0, 4, execplan::CalpontSystemCatalog::INT, 61440, 0, false)},
+    {1006, FileId(1006, 0, 0, 0, 4, execplan::CalpontSystemCatalog::INT, 45056, 0, false)},
+    {1002, FileId(1002, 0, 0, 0, 8, execplan::CalpontSystemCatalog::VARCHAR, 16384, 0, false)},
+    {1009, FileId(1009, 0, 0, 0, 4, execplan::CalpontSystemCatalog::INT, 57344, 0, false)},
+    {1005, FileId(1005, 0, 0, 0, 4, execplan::CalpontSystemCatalog::DATE, 40960, 0, false)},
+    {1011, FileId(1011, 0, 0, 0, 4, execplan::CalpontSystemCatalog::INT, 65536, 0, false)},
+    {1008, FileId(1008, 0, 0, 0, 4, execplan::CalpontSystemCatalog::INT, 53248, 0, false)},
+    {1007, FileId(1007, 0, 0, 0, 4, execplan::CalpontSystemCatalog::INT, 49152, 0, false)},
+    {1003, FileId(1003, 0, 0, 0, 4, execplan::CalpontSystemCatalog::INT, 32768, 0, false)},
+    {1032, FileId(1032, 0, 0, 0, 8, execplan::CalpontSystemCatalog::VARCHAR, 151552, 0, false)},
+    {1038, FileId(1038, 0, 0, 0, 4, execplan::CalpontSystemCatalog::INT, 185344, 0, false)},
+    {1033, FileId(1033, 0, 0, 0, 4, execplan::CalpontSystemCatalog::INT, 167936, 0, false)},
+    {1027, FileId(1027, 0, 0, 0, 4, execplan::CalpontSystemCatalog::INT, 131072, 0, false)},
+    {1024, FileId(1024, 0, 0, 0, 4, execplan::CalpontSystemCatalog::INT, 118784, 0, false)},
+    {1042, FileId(1042, 0, 0, 0, 8, execplan::CalpontSystemCatalog::UBIGINT, 226304, 0, false)},
+    {1040, FileId(1040, 0, 0, 0, 8, execplan::CalpontSystemCatalog::VARCHAR, 205824, 0, false)},
+    {1025, FileId(1025, 0, 0, 0, 4, execplan::CalpontSystemCatalog::INT, 122880, 0, false)},
+    {1035, FileId(1035, 0, 0, 0, 4, execplan::CalpontSystemCatalog::INT, 176128, 0, false)},
+    {1028, FileId(1028, 0, 0, 0, 4, execplan::CalpontSystemCatalog::INT, 135168, 0, false)},
+    {1036, FileId(1036, 0, 0, 0, 1, execplan::CalpontSystemCatalog::CHAR, 180224, 0, false)},
+    {1031, FileId(1031, 0, 0, 0, 4, execplan::CalpontSystemCatalog::DATE, 147456, 0, false)},
+    {1037, FileId(1037, 0, 0, 0, 4, execplan::CalpontSystemCatalog::INT, 181248, 0, false)},
+    {1039, FileId(1039, 0, 0, 0, 8, execplan::CalpontSystemCatalog::VARCHAR, 189440, 0, false)},
+    {1030, FileId(1030, 0, 0, 0, 4, execplan::CalpontSystemCatalog::INT, 143360, 0, false)},
+    {1034, FileId(1034, 0, 0, 0, 4, execplan::CalpontSystemCatalog::INT, 172032, 0, false)},
+    {1026, FileId(1026, 0, 0, 0, 4, execplan::CalpontSystemCatalog::INT, 126976, 0, false)},
+    {1041, FileId(1041, 0, 0, 0, 4, execplan::CalpontSystemCatalog::INT, 222208, 0, false)},
+    {1029, FileId(1029, 0, 0, 0, 4, execplan::CalpontSystemCatalog::INT, 139264, 0, false)},
+    {2001, FileId(2001, 0, 0, 0, 0, execplan::CalpontSystemCatalog::VARCHAR, 8192, 0, true)},
+    {2004, FileId(2004, 0, 0, 0, 4, execplan::CalpontSystemCatalog::INT, 24576, 0, true)},
 };
 
 void EMReBuilder::collectFileNames(const std::string& partialPath, std::string currentPath,
@@ -280,6 +280,7 @@ int32_t EMReBuilder::collectExtent(const std::string& fullFileName)
       std::cout << "HWM is: " << hwm << std::endl;
 
     systemFileId.hwm = hwm;
+    systemFileId.dbroot = getDBRoot();
     systemExtentMap.push_back(systemFileId);
   }
 
@@ -288,30 +289,11 @@ int32_t EMReBuilder::collectExtent(const std::string& fullFileName)
 
 int32_t EMReBuilder::rebuildExtentMap()
 {
+  // Initialize `extentMap` with system extents.
+  extentMap.insert(extentMap.end(), systemExtentMap.begin(), systemExtentMap.end());
+
   if (doVerbose())
     std::cout << "Build extent map with size " << extentMap.size() << std::endl;
-
-  for (const auto& fileId : systemExtentMap)
-  {
-    if (fileId.hwm)
-    {
-      if (doVerbose())
-      {
-        std::cout << "Setting a HWM for system file " << fileId << std::endl;
-      }
-      try
-      {
-        getEM().setLocalHWM(fileId.oid, fileId.partition, fileId.segment, fileId.hwm, false, true);
-      }
-      catch (std::exception& e)
-      {
-        getEM().undoChanges();
-        std::cerr << "Cannot set local HWM: " << e.what() << std::endl;
-        return -1;
-      }
-      getEM().confirmChanges();
-    }
-  }
 
   // We have to restore extent map by restoring individual extent in order
   // they were created. This is important part, otherwise we will get invalid
