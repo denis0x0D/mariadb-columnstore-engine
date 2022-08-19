@@ -1559,18 +1559,28 @@ void ExtentMap::loadVersion4or5(T* in, bool upgradeV4ToV5)
 
   if (!upgradeV4ToV5)
   {
-    writeSize = emNumElements * sizeof(EMEntry);
-    writePos = (char*)fExtentMap;
-
-    while (progress < writeSize)
+    for (uint32_t i = 0; i < emNumElements; ++i)
     {
-      err = in->read(writePos + progress, writeSize - progress);
-      if (err <= 0)
+      progress = 0;
+      EMEntry emEntry;
+      writeSize = sizeof(EMEntry);
+      writePos = reinterpret_cast<char*>(&emEntry);
+
+      while (progress < writeSize)
       {
-        log_errno("ExtentMap::loadVersion4or5(): read ");
-        throw runtime_error("ExtentMap::loadVersion4or5(): read failed. Check the error log.");
+        err = in->read(writePos + progress, writeSize - progress);
+        if (err <= 0)
+        {
+          log_errno("ExtentMap::loadVersion4(): read ");
+          throw runtime_error("ExtentMap::loadVersion4(): read failed. Check the error log.");
+        }
+        progress += (uint)err;
       }
-      progress += (uint)err;
+      if (fPExtMapRBTreeImpl->getFreeMemory() < freeShmemThreshold)
+        growEMShmseg(EM_RB_TREE_INCREMENT);
+
+      std::pair<int64_t, EMEntry> lbidEMEntryPair = make_pair(emEntry.range.start, emEntry);
+      fExtentMapRBTree->insert(lbidEMEntryPair);
     }
   }
   else
@@ -1581,7 +1591,8 @@ void ExtentMap::loadVersion4or5(T* in, bool upgradeV4ToV5)
       EMEntry_v4 emEntryV4;
       progress = 0;
       writeSize = sizeof(EMEntry_v4);
-      writePos = (char*)&(emEntryV4);
+      writePos = reinterpret_cast<char*>(&emEntryV4);
+
       while (progress < writeSize)
       {
         err = in->read(writePos + progress, writeSize - progress);
@@ -1594,62 +1605,70 @@ void ExtentMap::loadVersion4or5(T* in, bool upgradeV4ToV5)
         progress += (uint)err;
       }
 
-      fExtentMap[i].range.start = emEntryV4.range.start;
-      fExtentMap[i].range.size = emEntryV4.range.size;
-      fExtentMap[i].fileID = emEntryV4.fileID;
-      fExtentMap[i].blockOffset = emEntryV4.blockOffset;
-      fExtentMap[i].HWM = emEntryV4.HWM;
-      fExtentMap[i].partitionNum = emEntryV4.partitionNum;
-      fExtentMap[i].segmentNum = emEntryV4.segmentNum;
-      fExtentMap[i].dbRoot = emEntryV4.dbRoot;
-      fExtentMap[i].colWid = emEntryV4.colWid;
-      fExtentMap[i].status = emEntryV4.status;
-      fExtentMap[i].partition.cprange.hiVal = emEntryV4.partition.cprange.hi_val;
-      fExtentMap[i].partition.cprange.loVal = emEntryV4.partition.cprange.lo_val;
-      fExtentMap[i].partition.cprange.sequenceNum = emEntryV4.partition.cprange.sequenceNum;
-      fExtentMap[i].partition.cprange.isValid = emEntryV4.partition.cprange.isValid;
+      if (fPExtMapRBTreeImpl->getFreeMemory() < freeShmemThreshold)
+        growEMShmseg(EM_RB_TREE_INCREMENT);
+
+      EMEntry emEntry;
+      emEntry.range.start = emEntryV4.range.start;
+      emEntry.range.size = emEntryV4.range.size;
+      emEntry.fileID = emEntryV4.fileID;
+      emEntry.blockOffset = emEntryV4.blockOffset;
+      emEntry.HWM = emEntryV4.HWM;
+      emEntry.partitionNum = emEntryV4.partitionNum;
+      emEntry.segmentNum = emEntryV4.segmentNum;
+      emEntry.dbRoot = emEntryV4.dbRoot;
+      emEntry.colWid = emEntryV4.colWid;
+      emEntry.status = emEntryV4.status;
+      emEntry.partition.cprange.hiVal = emEntryV4.partition.cprange.hi_val;
+      emEntry.partition.cprange.loVal = emEntryV4.partition.cprange.lo_val;
+      emEntry.partition.cprange.sequenceNum = emEntryV4.partition.cprange.sequenceNum;
+      emEntry.partition.cprange.isValid = emEntryV4.partition.cprange.isValid;
+
+      std::pair<int64_t, EMEntry> lbidEMEntryPair = make_pair(emEntry.range.start, emEntry);
+      fExtentMapRBTree->insert(lbidEMEntryPair);
     }
 
     std::cout << emNumElements << " extents successfully upgraded" << std::endl;
   }
 
-  for (int i = 0; i < emNumElements; i++)
+  for (auto& lbidEMEntryPair : *fExtentMapRBTree)
   {
-    reserveLBIDRange(fExtentMap[i].range.start, fExtentMap[i].range.size);
+    EMEntry& emEntry = lbidEMEntryPair.second;
+    reserveLBIDRange(emEntry.range.start, emEntry.range.size);
 
     //@bug 1911 - verify status value is valid
-    if (fExtentMap[i].status < EXTENTSTATUSMIN || fExtentMap[i].status > EXTENTSTATUSMAX)
-      fExtentMap[i].status = EXTENTAVAILABLE;
+    if (emEntry.status < EXTENTSTATUSMIN || emEntry.status > EXTENTSTATUSMAX)
+      emEntry.status = EXTENTAVAILABLE;
 
-    auto resShmemHasGrownPair = fPExtMapIndexImpl_->insert(fExtentMap[i], i);
+    auto resShmemHasGrownPair = fPExtMapIndexImpl_->insert(emEntry, emEntry.range.start);
 
     if (resShmemHasGrownPair.second)
       fEMIndexShminfo->allocdSize = fPExtMapIndexImpl_->getShmemSize();
 
     if (!resShmemHasGrownPair.first)
-      logAndSetEMIndexReadOnly("loadVersion4or5");
+      logAndSetEMIndexReadOnly("loadVersion4");
   }
 
-  fEMShminfo->currentSize = emNumElements * sizeof(EMEntry);
+  fEMRBTreeShminfo->currentSize = (emNumElements * EM_RB_TREE_NODE_SIZE) + EM_RB_TREE_EMPTY_SIZE;
 
 #ifdef DUMP_EXTENT_MAP
-  EMEntry* emSrc = fExtentMap;
   cout << "lbid\tsz\toid\tfbo\thwm\tpart#\tseg#\tDBRoot\twid\tst\thi\tlo\tsq\tv" << endl;
 
-  for (int i = 0; i < emNumElements; i++)
+  for (const auto& lbidEMEntryPair : *fExtentMapRBTRee)
   {
-    cout << emSrc[i].start << '\t' << emSrc[i].size << '\t' << emSrc[i].fileID << '\t' << emSrc[i].blockOffset
-         << '\t' << emSrc[i].HWM << '\t' << emSrc[i].partitionNum << '\t' << emSrc[i].segmentNum << '\t'
-         << emSrc[i].dbRoot << '\t' << emSrc[i].status << '\t' << emSrc[i].partition.cprange.hiVal << '\t'
-         << emSrc[i].partition.cprange.loVal << '\t' << emSrc[i].partition.cprange.sequenceNum << '\t'
-         << (int)(emSrc[i].partition.cprange.isValid) << endl;
-  }
+    const EMEntry& emEntry = lbidEMEntryPair.second;
+    cout << emEntry.start << '\t' << emEntry.size << '\t' << emEntry.fileID << '\t' << emEntry.blockOffset
+         << '\t' << emEntry.HWM << '\t' << emEntry.partitionNum << '\t' << emEntry.segmentNum << '\t'
+         << emEntry.dbRoot << '\t' << emEntry.status << '\t' << emEntry.partition.cprange.hiVal << '\t'
+         << emEntry.partition.cprange.loVal << '\t' << emEntry.partition.cprange.sequenceNum << '\t'
+         << (int)(emEntry.partition.cprange.isValid) << endl;
+    }
 
-  cout << "Free list entries:" << endl;
-  cout << "start\tsize" << endl;
+    cout << "Free list entries:" << endl;
+    cout << "start\tsize" << endl;
 
-  for (int i = 0; i < flNumElements; i++)
-    cout << fFreeList[i].start << '\t' << fFreeList[i].size << endl;
+    for (uint32_t i = 0; i < flNumElements; i++)
+        cout << fFreeList[i].start << '\t' << fFreeList[i].size << endl;
 
 #endif
 }
@@ -1712,25 +1731,6 @@ void ExtentMap::load(const string& filename, bool fixFL)
   releaseEMEntryTable(WRITE);
 }
 
-// This is a quick workaround, to be able to initialize initial system tables
-// from binary blob.
-// This should be updated, probably we need inherit from `IDBDataFile`.
-struct EMBinaryReader
-{
-  EMBinaryReader(const char* data) : src(data)
-  {
-  }
-
-  ssize_t read(char* dst, size_t size)
-  {
-    memcpy(dst, src, size);
-    src += size;
-    return size;
-  }
-
-  const char* src;
-};
-
 template <typename T>
 void ExtentMap::load(T* in)
 {
@@ -1771,8 +1771,6 @@ void ExtentMap::save(const string& filename)
 
 #endif
 
-  int allocdSize, loadSize[3], i;
-
   grabEMEntryTable(READ);
   grabEMIndex(READ);
 
@@ -1809,16 +1807,15 @@ void ExtentMap::save(const string& filename)
     throw ios_base::failure("ExtentMap::save(): open failed. Check the error log.");
   }
 
+  int loadSize[3];
   loadSize[0] = EM_MAGIC_V5;
-  loadSize[1] = fEMShminfo->currentSize / sizeof(EMEntry);
+  loadSize[1] = fExtentMapRBTree->size();
   loadSize[2] = fFLShminfo->allocdSize / sizeof(InlineLBIDRange);  // needs to send all entries
-
-  int bytes = 0;
 
   try
   {
-    const int wsize = 3 * sizeof(int);
-    bytes = out->write((char*)loadSize, wsize);
+    const int32_t wsize = 3 * sizeof(uint32_t);
+    const int32_t bytes = out->write((char*)loadSize, wsize);
 
     if (bytes != wsize)
       throw ios_base::failure("ExtentMap::save(): write failed. Check the error log.");
@@ -1831,44 +1828,16 @@ void ExtentMap::save(const string& filename)
     throw;
   }
 
-  allocdSize = fEMShminfo->allocdSize / sizeof(EMEntry);
-  // const int emEntrySize = sizeof(EMEntry);
+  for (auto& lbidEMEntryPair : *fExtentMapRBTree)
+  {
+    EMEntry& emEntry = lbidEMEntryPair.second;
+    const uint32_t writeSize = sizeof(EMEntry);
+    char* writePos = reinterpret_cast<char*>(&emEntry);
+    uint32_t progress = 0;
 
-  int first = -1, last = -1, err;
-  size_t progress, writeSize;
-  for (i = 0; i < allocdSize; i++)
-  {
-    if (fExtentMap[i].range.size > 0 && first == -1)
-      first = i;
-    else if (fExtentMap[i].range.size <= 0 && first != -1)
-    {
-      last = i;
-      writeSize = (last - first) * sizeof(EMEntry);
-      progress = 0;
-      char* writePos = (char*)&fExtentMap[first];
-      while (progress < writeSize)
-      {
-        err = out->write(writePos + progress, writeSize - progress);
-        if (err < 0)
-        {
-          releaseFreeList(READ);
-          releaseEMIndex(READ);
-          releaseEMEntryTable(READ);
-          throw ios_base::failure("ExtentMap::save(): write failed. Check the error log.");
-        }
-        progress += err;
-      }
-      first = -1;
-    }
-  }
-  if (first != -1)
-  {
-    writeSize = (allocdSize - first) * sizeof(EMEntry);
-    progress = 0;
-    char* writePos = (char*)&fExtentMap[first];
     while (progress < writeSize)
     {
-      err = out->write(writePos + progress, writeSize - progress);
+      auto err = out->write(writePos + progress, writeSize - progress);
       if (err < 0)
       {
         releaseFreeList(READ);
@@ -1880,12 +1849,12 @@ void ExtentMap::save(const string& filename)
     }
   }
 
-  progress = 0;
-  writeSize = fFLShminfo->allocdSize;
-  char* writePos = (char*)fFreeList;
+  uint32_t progress = 0;
+  const uint32_t writeSize = fFLShminfo->allocdSize;
+  char* writePos = reinterpret_cast<char*>(fFreeList);
   while (progress < writeSize)
   {
-    err = out->write(writePos + progress, writeSize - progress);
+    auto err = out->write(writePos + progress, writeSize - progress);
     if (err < 0)
     {
       releaseFreeList(READ);
@@ -1893,7 +1862,6 @@ void ExtentMap::save(const string& filename)
       releaseEMEntryTable(READ);
       throw ios_base::failure("ExtentMap::save(): write failed. Check the error log.");
     }
-
     progress += err;
   }
 
