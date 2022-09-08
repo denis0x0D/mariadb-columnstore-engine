@@ -17,6 +17,7 @@
 
 #include <iostream>
 #include <atomic>
+#include <random>
 #include <boost/filesystem.hpp>
 
 #include "statistics.h"
@@ -31,62 +32,108 @@ using namespace logging;
 
 namespace statistics
 {
-using ColumnsCache = std::vector<std::unordered_set<uint32_t>>;
-
 StatisticsManager* StatisticsManager::instance()
 {
   static StatisticsManager* sm = new StatisticsManager();
   return sm;
 }
 
-void StatisticsManager::analyzeColumnKeyTypes(const rowgroup::RowGroup& rowGroup, bool trace)
+void StatisticsManager::collectSample(const rowgroup::RowGroup& rowGroup)
 {
   std::lock_guard<std::mutex> lock(mut);
-  auto rowCount = rowGroup.getRowCount();
+  const auto rowCount = rowGroup.getRowCount();
   const auto columnCount = rowGroup.getColumnCount();
   if (!rowCount || !columnCount)
     return;
 
-  auto& oids = rowGroup.getOIDs();
+  const auto& oids = rowGroup.getOIDs();
+  for (const auto oid : oids)
+  {
+    // Initialize a column data with 0.
+    if (!columnGroups.count(oid))
+      columnGroups[oid] = std::vector<uint64_t>(maxSampleSize, 0);
+  }
 
+  // Initialize a first row from the given `rowGroup`.
   rowgroup::Row r;
   rowGroup.initRow(&r);
   rowGroup.getRow(0, &r);
 
-  ColumnsCache columns(columnCount, std::unordered_set<uint32_t>());
-  // Init key types.
-  for (uint32_t index = 0; index < columnCount; ++index)
-    keyTypes[oids[index]] = KeyType::PK;
+  // Generate a uniform distribution.
+  std::random_device randomDevice;
+  std::mt19937 gen32(randomDevice());
+  std::uniform_int_distribution<> uniformDistribution(0, currentRowIndex + rowCount - 1);
 
-  const uint32_t maxRowCount = 4096;
-  // TODO: We should read just couple of blocks from columns, not all data, but this requires
-  // more deep refactoring of column commands.
-  rowCount = std::min(rowCount, maxRowCount);
-  // This is strange, it's a CS but I'm processing data as row by row, how to fix it?
   for (uint32_t i = 0; i < rowCount; ++i)
   {
-    for (uint32_t j = 0; j < columnCount; ++j)
+    if (currentSampleSize < maxSampleSize)
     {
-      if (r.isNullValue(j) || columns[j].count(r.getIntField(j)))
-        keyTypes[oids[j]] = KeyType::FK;
-      else
-        columns[j].insert(r.getIntField(j));
+      for (uint32_t j = 0; j < columnCount; ++j)
+      {
+        // FIXME: Handle null values as well.
+        if (!r.isNullValue(j))
+          columnGroups[oids[j]][currentSampleSize] = r.getIntField(j);
+      }
+      ++currentSampleSize;
+    }
+    else
+    {
+      const uint32_t index = uniformDistribution(gen32);
+      if (index < maxSampleSize)
+      {
+        for (uint32_t j = 0; j < columnCount; ++j)
+          columnGroups[oids[j]][index] = r.getIntField(j);
+      }
     }
     r.nextRow();
+    ++currentRowIndex;
   }
-
-  if (trace)
-    output(StatisticsType::PK_FK);
 }
 
-void StatisticsManager::output(StatisticsType statisticsType)
+void StatisticsManager::analyzeSample(bool traceOn)
 {
-  if (statisticsType == StatisticsType::PK_FK)
+  if (traceOn)
   {
-    std::cout << "Columns count: " << keyTypes.size() << std::endl;
-    for (const auto& p : keyTypes)
-      std::cout << p.first << " " << (int)p.second << std::endl;
+    std::cout << "Sample size: " << currentSampleSize << std::endl;
+    std::cout << "Processed row size: " << currentRowIndex << std::endl;
   }
+
+  for (const auto& [oid, sample] : columnGroups)
+    keyTypes[oid] = KeyType::PK;
+
+  for (const auto& [oid, sample] : columnGroups)
+  {
+    std::unordered_set<uint32_t> columnsCache;
+    for (uint32_t i = 0; i < currentSampleSize; ++i)
+    {
+      const auto value = sample[i];
+      if (columnsCache.count(value))
+      {
+        keyTypes[oid] = KeyType::FK;
+        break;
+      }
+      else
+      {
+        columnsCache.insert(value);
+      }
+    }
+  }
+
+  if (traceOn)
+    output();
+
+  // Clear sample.
+  columnGroups.clear();
+  currentSampleSize = 0;
+  currentRowIndex = 0;
+}
+
+void StatisticsManager::output()
+{
+  std::cout << "Statistics type [PK_FK]:  " << std::endl;
+  std::cout << "Columns count: " << keyTypes.size() << std::endl;
+  for (const auto& p : keyTypes)
+    std::cout << p.first << " " << (int)p.second << std::endl;
 }
 
 // Someday it will be a virtual method, based on statistics type we processing.
