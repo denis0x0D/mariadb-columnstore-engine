@@ -68,6 +68,7 @@ struct StatisticsFileHeader
 using ColumnsCache = std::unordered_map<uint32_t, std::unordered_set<uint64_t>>;
 using ColumnGroup = std::unordered_map<uint32_t, std::vector<uint64_t>>;
 using KeyTypes = std::map<uint32_t, KeyType>;
+using MCVList = std::unordered_map<uint32_t, std::unordered_map<uint64_t, uint32_t>>;
 
 // This class is responsible for processing and storing statistics.
 // On each `analyze table` iteration it increases an epoch and stores
@@ -114,6 +115,8 @@ class StatisticsManager
   ColumnGroup columnGroups;
   // Internal data for the PK/FK statistics [OID, bool value].
   KeyTypes keyTypes;
+  // Internal data for MCV list [OID, list[value, count]]
+  MCVList mcv;
 
   // TODO: Think about sample size.
   const uint32_t maxSampleSize = 64000;

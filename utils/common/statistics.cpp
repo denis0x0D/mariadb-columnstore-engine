@@ -93,30 +93,42 @@ void StatisticsManager::collectSample(const rowgroup::RowGroup& rowGroup)
 void StatisticsManager::analyzeSample(bool traceOn)
 {
   if (traceOn)
-  {
     std::cout << "Sample size: " << currentSampleSize << std::endl;
-    std::cout << "Processed row size: " << currentRowIndex << std::endl;
-  }
 
+  // PK_FK statistics.
   for (const auto& [oid, sample] : columnGroups)
     keyTypes[oid] = KeyType::PK;
 
   for (const auto& [oid, sample] : columnGroups)
   {
     std::unordered_set<uint32_t> columnsCache;
+    std::unordered_map<uint64_t, uint32_t> columnMCV;
     for (uint32_t i = 0; i < currentSampleSize; ++i)
     {
       const auto value = sample[i];
-      if (columnsCache.count(value))
-      {
+      // PK_FK statistics.
+      if (columnsCache.count(value) && keyTypes[oid] == KeyType::PK)
         keyTypes[oid] = KeyType::FK;
-        break;
-      }
       else
-      {
         columnsCache.insert(value);
-      }
+
+      // MCV statistics.
+      if (columnMCV.count(value))
+        columnMCV[value]++;
+      else
+        columnMCV.insert({value, 1});
     }
+
+    // MCV statistics.
+    std::vector<pair<uint64_t, uint32_t>> mcvList(columnMCV.begin(), columnMCV.end());
+    std::sort(mcvList.begin(), mcvList.end(),
+              [](const std::pair<uint64_t, uint32_t>& a, const std::pair<uint64_t, uint32_t>& b) {
+                return a.second > b.second;
+              });
+
+    // 200 buckets as Microsoft does.
+    const auto mcvSize = std::min(columnMCV.size(), static_cast<uint64_t>(200));
+    mcv[oid] = std::unordered_map<uint64_t, uint32_t>(mcvList.begin(), mcvList.begin() + mcvSize);
   }
 
   if (traceOn)
@@ -130,10 +142,20 @@ void StatisticsManager::analyzeSample(bool traceOn)
 
 void StatisticsManager::output()
 {
-  std::cout << "Statistics type [PK_FK]:  " << std::endl;
   std::cout << "Columns count: " << keyTypes.size() << std::endl;
+  std::cout << "Rows count: " << currentRowIndex << std::endl;
+
+  std::cout << "Statistics type [PK_FK]:  " << std::endl;
   for (const auto& p : keyTypes)
-    std::cout << p.first << " " << (int)p.second << std::endl;
+    std::cout << p.first << " " << static_cast<uint32_t>(p.second) << std::endl;
+
+  std::cout << "Statistics type [MCV]: " << std::endl;
+  for (const auto& [oid, columnMCV] : mcv)
+  {
+    std::cout << "OID: " << oid << std::endl;
+    for (const auto& [value, count] : columnMCV)
+      std::cout << value << ": " << count << std::endl;
+  }
 }
 
 // Someday it will be a virtual method, based on statistics type we processing.
