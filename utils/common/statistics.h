@@ -110,6 +110,7 @@ class StatisticsManager
     IDBPolicy::configIDBPolicy();
   }
   std::unique_ptr<char[]> convertStatsToDataStream(uint64_t& dataStreamSize);
+  void convertStatsFromDataStream(std::unique_ptr<char[]> dataStreamSmartPtr);
 
   // Internal data represents a sample [OID, vector of values].
   ColumnGroup columnGroups;

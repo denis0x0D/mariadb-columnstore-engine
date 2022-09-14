@@ -147,7 +147,13 @@ void StatisticsManager::output()
 
   std::cout << "Statistics type [PK_FK]:  " << std::endl;
   for (const auto& p : keyTypes)
-    std::cout << p.first << " " << static_cast<uint32_t>(p.second) << std::endl;
+  {
+    std::cout << "OID: " << p.first << " ";
+    if (static_cast<uint32_t>(p.second) == 0)
+      std::cout << "PK" << std::endl;
+    else
+      std::cout << "FK" << std::endl;
+  }
 
   std::cout << "Statistics type [MCV]: " << std::endl;
   for (const auto& [oid, columnMCV] : mcv)
@@ -166,6 +172,14 @@ std::unique_ptr<char[]> StatisticsManager::convertStatsToDataStream(uint64_t& da
   // count, [[uid, keyType], ... ]
   dataStreamSize = sizeof(uint64_t) + count * (sizeof(uint32_t) + sizeof(KeyType));
 
+  // Count the size of the MCV.
+  for (const auto& [oid, mcvColumn] : mcv)
+  {
+    // [oid, list size, list [value, count]]
+    dataStreamSize +=
+        (sizeof(uint32_t) + sizeof(uint32_t) + ((sizeof(uint64_t) + sizeof(uint32_t)) * mcvColumn.size()));
+  }
+
   // Allocate memory for data stream.
   std::unique_ptr<char[]> dataStreamSmartPtr(new char[dataStreamSize]);
   auto* dataStream = dataStreamSmartPtr.get();
@@ -180,13 +194,87 @@ std::unique_ptr<char[]> StatisticsManager::convertStatsToDataStream(uint64_t& da
     uint32_t oid = p.first;
     std::memcpy(&dataStream[offset], reinterpret_cast<char*>(&oid), sizeof(uint32_t));
     offset += sizeof(uint32_t);
-
     KeyType keyType = p.second;
     std::memcpy(&dataStream[offset], reinterpret_cast<char*>(&keyType), sizeof(KeyType));
     offset += sizeof(KeyType);
   }
 
+  // For each [oid, list size, list [value, count]].
+  for (const auto& p : mcv)
+  {
+    // [oid]
+    uint32_t oid = p.first;
+    std::memcpy(&dataStream[offset], reinterpret_cast<char*>(&oid), sizeof(uint32_t));
+    offset += sizeof(uint32_t);
+
+    // [list size]
+    const auto& mcvColumn = p.second;
+    uint32_t size = mcvColumn.size();
+    std::memcpy(&dataStream[offset], reinterpret_cast<char*>(&size), sizeof(uint32_t));
+    offset += sizeof(uint32_t);
+
+    // [list [value, count]]
+    for (const auto& mcvPair : mcvColumn)
+    {
+      uint64_t value = mcvPair.first;
+      std::memcpy(&dataStream[offset], reinterpret_cast<char*>(&value), sizeof(uint64_t));
+      offset += sizeof(uint64_t);
+
+      uint32_t count = mcvPair.second;
+      std::memcpy(&dataStream[offset], reinterpret_cast<char*>(&count), sizeof(uint32_t));
+      offset += sizeof(uint32_t);
+    }
+  }
+
   return dataStreamSmartPtr;
+}
+
+void StatisticsManager::convertStatsFromDataStream(std::unique_ptr<char[]> dataStreamSmartPtr)
+{
+  auto* dataStream = dataStreamSmartPtr.get();
+  uint64_t count = 0;
+  std::memcpy(reinterpret_cast<char*>(&count), dataStream, sizeof(uint64_t));
+  uint64_t offset = sizeof(uint64_t);
+
+  // For each pair.
+  for (uint64_t i = 0; i < count; ++i)
+  {
+    uint32_t oid;
+    KeyType keyType;
+    std::memcpy(reinterpret_cast<char*>(&oid), &dataStream[offset], sizeof(uint32_t));
+    offset += sizeof(uint32_t);
+    std::memcpy(reinterpret_cast<char*>(&keyType), &dataStream[offset], sizeof(KeyType));
+    offset += sizeof(KeyType);
+    // Insert pair.
+    keyTypes[oid] = keyType;
+  }
+
+  for (uint64_t i = 0; i < count; ++i)
+  {
+    uint32_t oid;
+    uint32_t mcvSize;
+    std::unordered_map<uint64_t, uint32_t> columnMCV;
+
+    std::memcpy(reinterpret_cast<char*>(&oid), &dataStream[offset], sizeof(uint32_t));
+    offset += sizeof(uint32_t);
+    std::memcpy(reinterpret_cast<char*>(&mcvSize), &dataStream[offset], sizeof(uint32_t));
+    offset += sizeof(uint32_t);
+
+    for (uint32_t j = 0; j < mcvSize; ++j)
+    {
+      uint64_t value;
+      std::memcpy(reinterpret_cast<char*>(&value), &dataStream[offset], sizeof(uint64_t));
+      offset += sizeof(uint64_t);
+
+      uint32_t count;
+      std::memcpy(reinterpret_cast<char*>(&count), &dataStream[offset], sizeof(uint32_t));
+      offset += sizeof(uint32_t);
+
+      columnMCV[value] = count;
+    }
+
+    mcv[oid] = std::move(columnMCV);
+  }
 }
 
 void StatisticsManager::saveToFile()
@@ -297,22 +385,7 @@ void StatisticsManager::loadFromFile()
   if (dataHash != computedDataHash)
     throw ios_base::failure("StatisticsManager::loadFromFile(): invalid file hash. ");
 
-  uint64_t count = 0;
-  std::memcpy(reinterpret_cast<char*>(&count), dataStream, sizeof(uint64_t));
-  uint64_t offset = sizeof(uint64_t);
-
-  // For each pair.
-  for (uint64_t i = 0; i < count; ++i)
-  {
-    uint32_t oid;
-    KeyType keyType;
-    std::memcpy(reinterpret_cast<char*>(&oid), &dataStream[offset], sizeof(uint32_t));
-    offset += sizeof(uint32_t);
-    std::memcpy(reinterpret_cast<char*>(&keyType), &dataStream[offset], sizeof(KeyType));
-    offset += sizeof(KeyType);
-    // Insert pair.
-    keyTypes[oid] = keyType;
-  }
+  convertStatsFromDataStream(std::move(dataStreamSmartPtr));
 }
 
 uint64_t StatisticsManager::computeHashFromStats()
@@ -330,10 +403,24 @@ void StatisticsManager::serialize(messageqcpp::ByteStream& bs)
   bs << epoch;
   bs << count;
 
+  // PK_FK
   for (const auto& keyType : keyTypes)
   {
     bs << keyType.first;
     bs << (uint32_t)keyType.second;
+  }
+
+  // MCV
+  for (const auto& p : mcv)
+  {
+    bs << p.first;
+    const auto& mcvColumn = p.second;
+    bs << static_cast<uint32_t>(mcvColumn.size());
+    for (const auto& mcvPair : mcvColumn)
+    {
+      bs << mcvPair.first;
+      bs << mcvPair.second;
+    }
   }
 }
 
@@ -344,12 +431,33 @@ void StatisticsManager::unserialize(messageqcpp::ByteStream& bs)
   bs >> epoch;
   bs >> count;
 
+  // PK_FK
   for (uint32_t i = 0; i < count; ++i)
   {
     uint32_t oid, keyType;
     bs >> oid;
     bs >> keyType;
     keyTypes[oid] = static_cast<KeyType>(keyType);
+  }
+
+  // MCV
+  for (uint32_t i = 0; i < count; ++i)
+  {
+    uint32_t oid, mcvSize;
+    bs >> oid;
+    bs >> mcvSize;
+    std::unordered_map<uint64_t, uint32_t> mcvColumn;
+
+    for (uint32_t j = 0; j < mcvSize; ++j)
+    {
+      uint64_t value;
+      uint32_t count;
+      bs >> value;
+      bs >> count;
+      mcvColumn[value] = count;
+    }
+
+    mcv[oid] = std::move(mcvColumn);
   }
 }
 
