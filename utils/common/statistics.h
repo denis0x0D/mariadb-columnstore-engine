@@ -67,7 +67,7 @@ struct StatisticsFileHeader
 
 using ColumnsCache = std::unordered_map<uint32_t, std::unordered_set<uint64_t>>;
 using ColumnGroup = std::unordered_map<uint32_t, std::vector<uint64_t>>;
-using KeyTypes = std::map<uint32_t, KeyType>;
+using KeyTypes = std::unordered_map<uint32_t, std::pair<KeyType, uint32_t>>;
 using MCVList = std::unordered_map<uint32_t, std::unordered_map<uint64_t, uint32_t>>;
 
 // This class is responsible for processing and storing statistics.

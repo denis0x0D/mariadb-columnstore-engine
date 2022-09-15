@@ -97,7 +97,7 @@ void StatisticsManager::analyzeSample(bool traceOn)
 
   // PK_FK statistics.
   for (const auto& [oid, sample] : columnGroups)
-    keyTypes[oid] = KeyType::PK;
+    keyTypes[oid] = std::make_pair(KeyType::PK, currentRowIndex);
 
   for (const auto& [oid, sample] : columnGroups)
   {
@@ -107,8 +107,8 @@ void StatisticsManager::analyzeSample(bool traceOn)
     {
       const auto value = sample[i];
       // PK_FK statistics.
-      if (columnsCache.count(value) && keyTypes[oid] == KeyType::PK)
-        keyTypes[oid] = KeyType::FK;
+      if (columnsCache.count(value) && keyTypes[oid].first == KeyType::PK)
+        keyTypes[oid].first = KeyType::FK;
       else
         columnsCache.insert(value);
 
@@ -143,16 +143,16 @@ void StatisticsManager::analyzeSample(bool traceOn)
 void StatisticsManager::output()
 {
   std::cout << "Columns count: " << keyTypes.size() << std::endl;
-  std::cout << "Rows count: " << currentRowIndex << std::endl;
 
   std::cout << "Statistics type [PK_FK]:  " << std::endl;
   for (const auto& p : keyTypes)
   {
     std::cout << "OID: " << p.first << " ";
-    if (static_cast<uint32_t>(p.second) == 0)
-      std::cout << "PK" << std::endl;
+    if (static_cast<uint32_t>(p.second.first) == 0)
+      std::cout << "PK ";
     else
-      std::cout << "FK" << std::endl;
+      std::cout << "FK ";
+    std::cout << "row count: " << p.second.second << std::endl;
   }
 
   std::cout << "Statistics type [MCV]: " << std::endl;
@@ -169,8 +169,8 @@ std::unique_ptr<char[]> StatisticsManager::convertStatsToDataStream(uint64_t& da
 {
   // Number of pairs.
   uint64_t count = keyTypes.size();
-  // count, [[uid, keyType], ... ]
-  dataStreamSize = sizeof(uint64_t) + count * (sizeof(uint32_t) + sizeof(KeyType));
+  // count, [[uid, keyType, rows count], ... ]
+  dataStreamSize = sizeof(uint64_t) + count * (sizeof(uint32_t) + sizeof(KeyType) + sizeof(uint32_t));
 
   // Count the size of the MCV.
   for (const auto& [oid, mcvColumn] : mcv)
@@ -188,15 +188,18 @@ std::unique_ptr<char[]> StatisticsManager::convertStatsToDataStream(uint64_t& da
   std::memcpy(dataStream, reinterpret_cast<char*>(&count), sizeof(uint64_t));
   offset += sizeof(uint64_t);
 
-  // For each pair [oid, key type].
+  // For each pair [oid, key type, rows count].
   for (const auto& p : keyTypes)
   {
     uint32_t oid = p.first;
     std::memcpy(&dataStream[offset], reinterpret_cast<char*>(&oid), sizeof(uint32_t));
     offset += sizeof(uint32_t);
-    KeyType keyType = p.second;
+    KeyType keyType = p.second.first;
     std::memcpy(&dataStream[offset], reinterpret_cast<char*>(&keyType), sizeof(KeyType));
     offset += sizeof(KeyType);
+    uint32_t rowCount = p.second.second;
+    std::memcpy(&dataStream[offset], reinterpret_cast<char*>(&rowCount), sizeof(uint32_t));
+    offset += sizeof(uint32_t);
   }
 
   // For each [oid, list size, list [value, count]].
@@ -219,13 +222,11 @@ std::unique_ptr<char[]> StatisticsManager::convertStatsToDataStream(uint64_t& da
       uint64_t value = mcvPair.first;
       std::memcpy(&dataStream[offset], reinterpret_cast<char*>(&value), sizeof(uint64_t));
       offset += sizeof(uint64_t);
-
       uint32_t count = mcvPair.second;
       std::memcpy(&dataStream[offset], reinterpret_cast<char*>(&count), sizeof(uint32_t));
       offset += sizeof(uint32_t);
     }
   }
-
   return dataStreamSmartPtr;
 }
 
@@ -239,40 +240,39 @@ void StatisticsManager::convertStatsFromDataStream(std::unique_ptr<char[]> dataS
   // For each pair.
   for (uint64_t i = 0; i < count; ++i)
   {
-    uint32_t oid;
+    uint32_t oid, rowCount;
     KeyType keyType;
     std::memcpy(reinterpret_cast<char*>(&oid), &dataStream[offset], sizeof(uint32_t));
     offset += sizeof(uint32_t);
     std::memcpy(reinterpret_cast<char*>(&keyType), &dataStream[offset], sizeof(KeyType));
     offset += sizeof(KeyType);
+    std::memcpy(reinterpret_cast<char*>(&rowCount), &dataStream[offset], sizeof(uint32_t));
+    offset += sizeof(uint32_t);
     // Insert pair.
-    keyTypes[oid] = keyType;
+    keyTypes[oid] = std::make_pair(keyType, rowCount);
   }
 
   for (uint64_t i = 0; i < count; ++i)
   {
     uint32_t oid;
-    uint32_t mcvSize;
-    std::unordered_map<uint64_t, uint32_t> columnMCV;
-
     std::memcpy(reinterpret_cast<char*>(&oid), &dataStream[offset], sizeof(uint32_t));
     offset += sizeof(uint32_t);
+
+    uint32_t mcvSize;
     std::memcpy(reinterpret_cast<char*>(&mcvSize), &dataStream[offset], sizeof(uint32_t));
     offset += sizeof(uint32_t);
 
+    std::unordered_map<uint64_t, uint32_t> columnMCV;
     for (uint32_t j = 0; j < mcvSize; ++j)
     {
       uint64_t value;
       std::memcpy(reinterpret_cast<char*>(&value), &dataStream[offset], sizeof(uint64_t));
       offset += sizeof(uint64_t);
-
       uint32_t count;
       std::memcpy(reinterpret_cast<char*>(&count), &dataStream[offset], sizeof(uint32_t));
       offset += sizeof(uint32_t);
-
       columnMCV[value] = count;
     }
-
     mcv[oid] = std::move(columnMCV);
   }
 }
@@ -407,7 +407,8 @@ void StatisticsManager::serialize(messageqcpp::ByteStream& bs)
   for (const auto& keyType : keyTypes)
   {
     bs << keyType.first;
-    bs << (uint32_t)keyType.second;
+    bs << (uint32_t)keyType.second.first;
+    bs << keyType.second.second;
   }
 
   // MCV
@@ -434,10 +435,11 @@ void StatisticsManager::unserialize(messageqcpp::ByteStream& bs)
   // PK_FK
   for (uint32_t i = 0; i < count; ++i)
   {
-    uint32_t oid, keyType;
+    uint32_t oid, keyType, rowCount;
     bs >> oid;
     bs >> keyType;
-    keyTypes[oid] = static_cast<KeyType>(keyType);
+    bs >> rowCount;
+    keyTypes[oid] = std::make_pair(static_cast<KeyType>(keyType), rowCount);
   }
 
   // MCV
@@ -468,7 +470,7 @@ bool StatisticsManager::hasKey(uint32_t oid)
 
 KeyType StatisticsManager::getKeyType(uint32_t oid)
 {
-  return keyTypes[oid];
+  return keyTypes[oid].first;
 }
 
 StatisticsDistributor* StatisticsDistributor::instance()
