@@ -206,7 +206,7 @@ uint8_t WE_DMLCommandProc::processSingleInsert(messageqcpp::ByteStream& bs, std:
 
         dctnryStruct.fCharsetNumber = colType.charsetNumber;
 
-	if (colStruct.tokenFlag)
+        if (colStruct.tokenFlag)
         {
           dctnryStruct.dctnryOid = colType.ddn.dictOID;
           dctnryStruct.columnOid = colStruct.dataOid;

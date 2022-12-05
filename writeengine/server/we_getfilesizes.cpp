@@ -163,6 +163,7 @@ struct ColumnThread
   }
   void operator()()
   {
+    cout << "ColumnThread " << endl;
     Config config;
     config.initConfigCache();
     std::vector<uint16_t> rootList;
@@ -208,7 +209,7 @@ struct ColumnThread
           }
           catch (std::exception& ex)
           {
-            cerr << ex.what();
+//            cerr << ex.what();
           }
         }
         else
@@ -296,6 +297,9 @@ int WE_GetFileSizes::processFileName(messageqcpp::ByteStream& bs, std::string& e
 //------------------------------------------------------------------------------
 int WE_GetFileSizes::processTable(messageqcpp::ByteStream& bs, std::string& errMsg, int key)
 {
+
+  std::cout << "int WE_GetFileSizes::processTable(messageqcpp::ByteStream& bs, std::string& errMsg, int key) " << std::endl;
+
   uint8_t rc = 0;
   errMsg.clear();
 

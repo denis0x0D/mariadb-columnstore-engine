@@ -1552,6 +1552,10 @@ void TupleBPS::sendError(uint16_t status)
   fBPP->setStatus(status);
   fBPP->runErrorBPP(*msgBpp);
 
+  if (fDec == nullptr)
+  {
+    cout << "Dec is null " << std::endl;
+  }
   try
   {
     fDec->write(uniqueID, msgBpp);
@@ -1570,6 +1574,8 @@ void TupleBPS::sendError(uint16_t status)
 
 uint32_t TupleBPS::nextBand(ByteStream& bs)
 {
+  std::cout << "uint32_t TupleBPS::nextBand(ByteStream& bs) " << std::endl;
+
   bool more = true;
   RowGroup& realOutputRG = (fe2 ? fe2Output : primRowGroup);
   RGData rgData;
@@ -2124,6 +2130,8 @@ void TupleBPS::makeJobs(vector<Job>* jobs)
 
 void TupleBPS::sendPrimitiveMessages()
 {
+  std::cout << "void TupleBPS::sendPrimitiveMessages() " << std::endl;
+
   vector<Job> jobs;
 
   idbassert(ffirstStepType == SCAN);

@@ -231,7 +231,7 @@ elseif (CMAKE_CXX_COMPILER_ID STREQUAL "GNU")
 endif()
 MY_CHECK_AND_SET_COMPILER_FLAG("-Wno-deprecated-copy" DEBUG RELEASE RELWITHDEBINFO MINSIZEREL)
 
-MY_CHECK_AND_SET_COMPILER_FLAG("-Werror -Wall")
+#MY_CHECK_AND_SET_COMPILER_FLAG("-Werror -Wall")
 SET (ENGINE_LDFLAGS    "-Wl,--no-as-needed -Wl,--add-needed")
 SET (ENGINE_DT_LIB datatypes)
 SET (ENGINE_COMMON_LIBS     messageqcpp loggingcpp configcpp idbboot boost_thread xml2 pthread rt libmysql_client ${ENGINE_DT_LIB})
@@ -241,6 +241,7 @@ SET (ENGINE_EXEC_LIBS       joblist execplan windowfunction joiner rowgroup func
 SET (ENGINE_WRITE_LIBS      ddlpackageproc ddlpackage dmlpackageproc dmlpackage writeengine writeengineclient idbdatafile cacheutils ${ENGINE_EXEC_LIBS})
 
 SET (ENGINE_COMMON_LDFLAGS  "")
+SET(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -O0 -Wno-error -fno-omit-frame-pointer")
 
 IF (SERVER_BUILD_INCLUDE_DIR)
   IF (NOT IS_ABSOLUTE ${SERVER_BUILD_INCLUDE_DIR})

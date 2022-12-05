@@ -223,6 +223,8 @@ DistributedEngineComm::~DistributedEngineComm()
 
 void DistributedEngineComm::Setup()
 {
+  std::cout << "void DistributedEngineComm::Setup() " << std::endl;
+
   // This is here to ensure that this function does not get invoked multiple times simultaneously.
   boost::mutex::scoped_lock setupLock(fSetupMutex);
 
@@ -261,6 +263,9 @@ void DistributedEngineComm::Setup()
   if (newPmCount == 0)
     writeToLog(__FILE__, __LINE__, "Got a config file with 0 PMs", LOG_TYPE_CRITICAL);
 
+  cout << "NEW PM COUNT " << newPmCount << endl;
+  cout << "Num connection " << numConnections << endl;
+
   auto* config = fRm->getConfig();
   std::vector<messageqcpp::AddrAndPortPair> pmsAddressesAndPorts;
   for (size_t i = 1; i <= newPmCount; ++i)
@@ -272,6 +277,7 @@ void DistributedEngineComm::Setup()
     pmsAddressesAndPorts.push_back(messageqcpp::getAddressAndPort(config, pmConfigNodeName));
   }
 
+  bool failedConnection = false;
   // numConnections must be calculated as number of PMs * number of connections per PM.
   // This happens earlier in getNumConnections().
   for (size_t i = 0; i < numConnections; ++i)
@@ -284,6 +290,7 @@ void DistributedEngineComm::Setup()
       cl->atTheSameHost(true);
     }
     boost::shared_ptr<boost::mutex> nl(new boost::mutex());
+    cout << "Setup 292 " << endl;
 
     try
     {
@@ -297,6 +304,7 @@ void DistributedEngineComm::Setup()
       }
       else
       {
+        cout << 306 << endl;
         throw runtime_error("Connection refused from PMS" + std::to_string(connectionId));
       }
     }
@@ -313,6 +321,8 @@ void DistributedEngineComm::Setup()
         writeToLog(__FILE__, __LINE__, "No more PMs to try to connect to", LOG_TYPE_ERROR);
         break;
       }
+      return;
+  //    failedConnection = true;
     }
     catch (...)
     {
@@ -326,18 +336,19 @@ void DistributedEngineComm::Setup()
         writeToLog(__FILE__, __LINE__, "No more PMs to try to connect to", LOG_TYPE_ERROR);
         break;
       }
+      return;
     }
   }
 
+  cout << 339 << endl;
   // for every entry in newClients up to newPmCount, scan for the same ip in the
   // first pmCount.  If there is no match, it's a new node,
   //    call the event listeners' newPMOnline() callbacks.
   boost::mutex::scoped_lock lock(eventListenerLock);
 
-  for (uint32_t i = 0; i < newPmCount; i++)
+  for (uint32_t i = 0; !failedConnection && i < newPmCount; i++)
   {
     uint32_t j;
-
     for (j = 0; j < pmCount; j++)
     {
       if (!fPmConnections.empty() && j < fPmConnections.size() &&
@@ -346,12 +357,15 @@ void DistributedEngineComm::Setup()
         break;
       }
     }
+    cout << 356 << endl;
+    cout << "j == pm count " << j << endl;
 
     if (j == pmCount)
       for (uint32_t k = 0; k < eventListeners.size(); k++)
         eventListeners[k]->newPMOnline(i);
   }
 
+  cout << 368 << endl;
   lock.unlock();
 
   fWlock.swap(newLocks);
@@ -362,6 +376,7 @@ void DistributedEngineComm::Setup()
 
   newLocks.clear();
   newClients.clear();
+  cout << "Setup finish " << endl;
 }
 
 int DistributedEngineComm::Close()
@@ -1090,9 +1105,10 @@ int DistributedEngineComm::writeToClient(size_t aPMIndex, const SBS& bs, uint32_
     lk.unlock();
   }
 
+  ClientList::value_type client;
   try
   {
-    ClientList::value_type client = fPmConnections[connectionId];
+    client = fPmConnections[connectionId];
 
     if (!client->isAvailable())
       return 0;
@@ -1107,7 +1123,7 @@ int DistributedEngineComm::writeToClient(size_t aPMIndex, const SBS& bs, uint32_
     // by pushing 0 size bytestream to messagequeue and throw exception
     SBS sbs;
     lk.lock();
-    // std::cout << "WARNING: DEC WRITE BROKEN PIPE. PMS index = " << index << std::endl;
+    std::cout << "WARNING: DEC WRITE BROKEN PIPE. PMS index = " << std::endl;  // << index << std::endl;a
     MessageQueueMap::iterator map_tok;
     sbs.reset(new ByteStream(0));
 
@@ -1119,38 +1135,62 @@ int DistributedEngineComm::writeToClient(size_t aPMIndex, const SBS& bs, uint32_
     }
 
     lk.unlock();
-    /*
-                    // reconfig the connection array
-                    ClientList tempConns;
-                    {
-                            //cout << "WARNING: DEC WRITE BROKEN PIPE " <<
-    fPmConnections[index]->otherEnd()<< endl; boost::mutex::scoped_lock onErrLock(fOnErrMutex); string
-    moduleName = fPmConnections[index]->moduleName();
-                            //cout << "module name = " << moduleName << endl;
-                            if (index >= fPmConnections.size()) return 0;
 
-                            for (uint32_t i = 0; i < fPmConnections.size(); i++)
-                            {
-                                    if (moduleName != fPmConnections[i]->moduleName())
-                                            tempConns.push_back(fPmConnections[i]);
-                            }
-                            if (tempConns.size() == fPmConnections.size()) return 0;
-                            fPmConnections.swap(tempConns);
-                            pmCount = (pmCount == 0 ? 0 : pmCount - 1);
-                    }
-    // send alarm
-    ALARMManager alarmMgr;
-    string alarmItem("UNKNOWN");
-
-    if (index < fPmConnections.size())
+//    if (fIsExeMgr)
     {
-        alarmItem = fPmConnections[index]->addr2String();
+      // Re-establish if a remote PM restarted.
+      std::this_thread::sleep_for(std::chrono::seconds(3));
+      std::cout << "Trying setup new connections " << std::endl;
+      int count = 0;
+      while (++count < 5)
+      {
+        std::this_thread::sleep_for(std::chrono::seconds(3));
+        Setup();
+      }
+      cout << "End setup " << endl;
+      /*
+      if (originalPMCount != pmCount)
+      {
+        ostringstream os;
+        os << "DEC: lost connection to " << client->addr2String();
+        writeToLog(__FILE__, __LINE__, os.str(), LOG_TYPE_ERROR);
+      }
+      */
+      return 0;
     }
 
-    alarmItem.append(" PrimProc");
-    alarmMgr.sendAlarmReport(alarmItem.c_str(), oam::CONN_FAILURE, SET);
-    */
-    throw runtime_error("DistributedEngineComm::write: Broken Pipe error");
+      /*
+                      // reconfig the connection array
+                      ClientList tempConns;
+                      {
+                              //cout << "WARNING: DEC WRITE BROKEN PIPE " <<
+      fPmConnections[index]->otherEnd()<< endl; boost::mutex::scoped_lock onErrLock(fOnErrMutex); string
+      moduleName = fPmConnections[index]->moduleName();
+                              //cout << "module name = " << moduleName << endl;
+                              if (index >= fPmConnections.size()) return 0;
+
+                              for (uint32_t i = 0; i < fPmConnections.size(); i++)
+                              {
+                                      if (moduleName != fPmConnections[i]->moduleName())
+                                              tempConns.push_back(fPmConnections[i]);
+                              }
+                              if (tempConns.size() == fPmConnections.size()) return 0;
+                              fPmConnections.swap(tempConns);
+                              pmCount = (pmCount == 0 ? 0 : pmCount - 1);
+                      }
+      // send alarm
+      ALARMManager alarmMgr;
+      string alarmItem("UNKNOWN");
+
+      if (index < fPmConnections.size())
+      {
+          alarmItem = fPmConnections[index]->addr2String();
+      }
+
+      alarmItem.append(" PrimProc");
+      alarmMgr.sendAlarmReport(alarmItem.c_str(), oam::CONN_FAILURE, SET);
+      */
+  //    throw runtime_error("DistributedEngineComm::write: Broken Pipe error");
   }
 }
 

@@ -206,6 +206,8 @@ void rollbackAll(DBRM* dbrm)
 {
   Oam oam;
 
+  std::cout << "rollbackAll " << std::endl;
+
   // Log a message in info.log
   logging::Message::Args args;
   logging::Message message(2);
@@ -258,11 +260,13 @@ void rollbackAll(DBRM* dbrm)
   OamCache::dbRootPMMap_t dbRootPMMap = oamcache->getDBRootToPMMap();
   int errorTxn = 0;
 
+  std::cout << "Before rollback transaction " << std::endl;
   for (i = 0; i < tableLocks.size(); i++)
   {
     if (tableLocks[i].ownerTxnID > 0)  // transaction rollback
     {
       ostringstream oss;
+      std::cout << "Rollback transaction " << std::endl;
       oss << "DMLProc is rolling back transaction " << tableLocks[i].ownerTxnID;
       // cout << oss.str() << endl;
       logging::Message::Args args1;

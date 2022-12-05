@@ -6180,6 +6180,8 @@ int WriteEngineWrapper::bulkRollback(OID tableOid, uint64_t lockID, const std::s
 
 int WriteEngineWrapper::rollbackCommon(const TxnID& txnid, int sessionId)
 {
+  std::cout << "int WriteEngineWrapper::rollbackCommon(const TxnID& txnid, int sessionId) " << std::endl;
+
   // Remove the unwanted tmp files and recover compressed chunks.
   string prefix;
 
@@ -6417,7 +6419,16 @@ int WriteEngineWrapper::rollbackBlocks(const TxnID& txnid, int sessionId)
   if (rollbackCommon(txnid, sessionId) != 0)
     return -1;
 
-  return BRMWrapper::getInstance()->rollBackBlocks(txnid, sessionId);
+  int rc = 0;
+  try
+  {
+    rc = BRMWrapper::getInstance()->rollBackBlocks(txnid, sessionId);
+  }
+  catch (...)
+  {
+    rc = -1;
+  }
+  return rc;
 }
 
 int WriteEngineWrapper::rollbackVersion(const TxnID& txnid, int sessionId)

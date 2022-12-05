@@ -1248,9 +1248,10 @@ uint8_t WE_DDLCommandProc::commitVersion(ByteStream& bs, std::string& err)
 
 uint8_t WE_DDLCommandProc::rollbackBlocks(ByteStream& bs, std::string& err)
 {
+  std::cout << "START: uint8_t WE_DDLCommandProc::rollbackBlocks(ByteStream& bs, std::string& err) " << std::endl;
+
   int rc = 0;
   uint32_t sessionID, tmp32;
-  ;
   int txnID;
   bs >> sessionID;
   bs >> tmp32;
@@ -1277,6 +1278,9 @@ uint8_t WE_DDLCommandProc::rollbackBlocks(ByteStream& bs, std::string& err)
   purgeFDCache();
   fWEWrapper.setIsInsert(false);
   fWEWrapper.setBulkFlag(false);
+  std::cout << "END: uint8_t WE_DDLCommandProc::rollbackBlocks(ByteStream& bs, std::string& err) " << std::endl;
+
+ 
   return rc;
 }
 

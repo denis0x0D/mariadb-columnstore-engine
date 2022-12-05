@@ -488,6 +488,7 @@ void WEClients::write(const messageqcpp::ByteStream& msg, uint32_t connection)
 
 void WEClients::write_to_all(const messageqcpp::ByteStream& msg)
 {
+  std::cout << "PM COUNT " << pmCount << std::endl;
   if (pmCount == 0)
   {
     ostringstream oss;
@@ -498,14 +499,22 @@ void WEClients::write_to_all(const messageqcpp::ByteStream& msg)
 
   ClientList::iterator itor = fPmConnections.begin();
 
-  while (itor != fPmConnections.end())
+  try
   {
-    if (itor->second != NULL)
+    while (itor != fPmConnections.end())
     {
-      itor->second->write(msg);
-    }
+      if (itor->second != NULL)
+      {
+        itor->second->write(msg);
+      }
 
-    itor++;
+      itor++;
+    }
+  }
+  catch (...)
+  {
+    cout << "catched erro in write engine " << endl;
+    throw;
   }
 }
 

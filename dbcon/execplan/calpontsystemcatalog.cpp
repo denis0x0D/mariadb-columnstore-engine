@@ -842,7 +842,7 @@ void CalpontSystemCatalog::getSysData(CalpontSelectExecutionPlan& csep, NJLSysDa
 void CalpontSystemCatalog::getSysData_EC(CalpontSelectExecutionPlan& csep, NJLSysDataList& sysDataList,
                                          const string& sysTableName)
 {
-  DEBUG << "Enter getSysData_EC " << fSessionID << endl;
+  cout << "Enter getSysData_EC " << fSessionID << endl;
 
   uint32_t tableOID = IDB_VTABLE_ID;
   ByteStream bs;
@@ -876,21 +876,29 @@ void CalpontSystemCatalog::getSysData_EC(CalpontSelectExecutionPlan& csep, NJLSy
     throw runtime_error("Error occured when calling system catalog (1). " + emsg);
   }
 
+  cout << "After make job list " << endl;
+
   if (jl->doQuery() != 0)
   {
     throw runtime_error(
         "Error occured when calling system catalog (2). Make sure all processes are running.");
   }
 
+  cout << "After do query " << endl;
+
   TupleJobList* tjlp = dynamic_cast<TupleJobList*>(jl.get());
+  std::cout << "   TupleJobList* tjlp = dynamic_cast<TupleJobList*>(jl.get()); " << endl;
+
   idbassert(tjlp);
   RowGroup rowGroup = tjlp->getOutputRowGroup();
   RGData rgData;
+  std::cout << "  RowGroup rowGroup = tjlp->getOutputRowGroup(); " << endl;
 
   while (true)
   {
     bs.restart();
     uint32_t rowCount = jl->projectTable(tableOID, bs);
+    cout << "After project table " << endl;
 
     // XXXST: take out the 'true' when all jobsteps have been made st-compatible.
     rgData.deserialize(bs, true);
@@ -915,7 +923,7 @@ void CalpontSystemCatalog::getSysData_EC(CalpontSelectExecutionPlan& csep, NJLSy
 void CalpontSystemCatalog::getSysData_FE(const CalpontSelectExecutionPlan& csep, NJLSysDataList& sysDataList,
                                          const string& sysTableName)
 {
-  DEBUG << "Enter getSysData_FE " << fSessionID << endl;
+  cout << "Enter getSysData_FE " << fSessionID << endl;
 
   ByteStream msg;
 

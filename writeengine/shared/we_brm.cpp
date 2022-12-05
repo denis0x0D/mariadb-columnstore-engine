@@ -1055,6 +1055,8 @@ cleanup:
 
 int BRMWrapper::rollBackBlocks(const VER_t transID, int sessionId)
 {
+  std::cout << "START: int BRMWrapper::rollBackBlocks(const VER_t transID, int sessionId) " << std::endl;
+
   if (idbdatafile::IDBPolicy::useHdfs())
     return 0;
 
@@ -1099,10 +1101,10 @@ int BRMWrapper::rollBackBlocks(const VER_t transID, int sessionId)
     return rc;
   }
 
-  // std::cout << "rollBackBlocks get uncommited lbid " << lbidList.size() << std::endl;
+  std::cout << "rollBackBlocks get uncommited lbid " << lbidList.size() << std::endl;
   // RETURN_ON_WE_ERROR(blockRsltnMgrPtr->getUncommittedLBIDs(transID, lbidList), ERR_BRM_GET_UNCOMM_LBID);
 
-  if (isDebug(DEBUG_3))
+  //if (isDebug(DEBUG_3))
   {
     printf("\nIn rollBack, the transID is %d", transID);
     printf(
@@ -1115,9 +1117,11 @@ int BRMWrapper::rollBackBlocks(const VER_t transID, int sessionId)
         lbidList.size());
   }
 
+  std::cout << "Before make sys cat " << std::endl;
   boost::shared_ptr<execplan::CalpontSystemCatalog> systemCatalogPtr =
       execplan::CalpontSystemCatalog::makeCalpontSystemCatalog(sessionId);
   systemCatalogPtr->identity(execplan::CalpontSystemCatalog::EC);
+  std::cout << "After make sys cat " << std::endl;
 
   DbFileOp fileOp;
   fileOp.setTransId(transID);
@@ -1134,12 +1138,14 @@ int BRMWrapper::rollBackBlocks(const VER_t transID, int sessionId)
 
   std::vector<BRM::FileInfo> files;
 
+  std::cout << "Start iteration lbid list " << std::endl;
   for (i = 0; i < lbidList.size(); i++)
   {
     verID = (VER_t)transID;
     // timer.start("vssLookup");
     // get version id
 
+    std::cout << "line 1148 " << std::endl;
     verID = blockRsltnMgrPtr->getHighestVerInVB(lbidList[i], transID);
 
     if (verID < 0)
@@ -1151,6 +1157,7 @@ int BRMWrapper::rollBackBlocks(const VER_t transID, int sessionId)
       throw std::runtime_error(oss.str());
     }
 
+    std::cout << "line 1160 " << endl;
     // timer.stop("vssLookup");
     // copy buffer back
     // look for the block in extentmap
@@ -1158,6 +1165,8 @@ int BRMWrapper::rollBackBlocks(const VER_t transID, int sessionId)
     rc = blockRsltnMgrPtr->lookupLocal(lbidList[i], /*transID*/ verID, false, weOid, weDbRoot, wePartitionNum,
                                        weSegmentNum, weFbo);
 
+
+    cout << "line 1169 " << endl;
     if (rc != 0)
     {
       std::ostringstream oss;
@@ -1173,9 +1182,19 @@ int BRMWrapper::rollBackBlocks(const VER_t transID, int sessionId)
     if (dbrootPmMapItor == dbrootPmMap.end())
       continue;
 
+    cout << "line 1185 " << endl;
     // timer.stop("lookupLocalEX");
     Column column;
-    execplan::CalpontSystemCatalog::ColType colType = systemCatalogPtr->colType(weOid);
+    execplan::CalpontSystemCatalog::ColType colType;
+    try
+    {
+      colType = systemCatalogPtr->colType(weOid);
+    }
+    catch (...)
+    {
+      return 1;
+    }
+
     columnOids[weOid] = weOid;
 
     // This must be a dict oid
@@ -1187,6 +1206,7 @@ int BRMWrapper::rollBackBlocks(const VER_t transID, int sessionId)
       idbassert(colType.ddn.dictOID == weOid);
     }
 
+    cout << "line 1200 " << endl;
     CalpontSystemCatalog::ColDataType colDataType = colType.colDataType;
     ColType weColType;
     Convertor::convertColType(colDataType, colType.colWidth, weColType);
@@ -1212,7 +1232,8 @@ int BRMWrapper::rollBackBlocks(const VER_t transID, int sessionId)
     else
       fileOp.chunkManager(&chunkManager);
 
-    if (isDebug(DEBUG_3))
+    cout << "line 1226 " << endl;
+//    if (isDebug(DEBUG_3))
 #ifndef __LP64__
       printf("\n\tuncommitted lbid - lbidList[i]=%lld weOid =%d weFbo=%d verID=%d, weDbRoot=%d", lbidList[i],
              weOid, weFbo, verID, weDbRoot);
@@ -1226,6 +1247,7 @@ int BRMWrapper::rollBackBlocks(const VER_t transID, int sessionId)
     rc = blockRsltnMgrPtr->lookupLocal(lbidList[i], verID, true, vbOid, vbDbRoot, vbPartitionNum,
                                        vbSegmentNum, vbFbo);
 
+    cout << "line 1241 " << endl;
     if (rc != 0)
     {
       std::ostringstream oss;
@@ -1234,6 +1256,8 @@ int BRMWrapper::rollBackBlocks(const VER_t transID, int sessionId)
           << ":" << (uint32_t)verID << " and error code is " << rc << " with message " << errorMsg;
       throw std::runtime_error(oss.str());
     }
+
+    std::cout << "Before open file " << std::endl;
 
     if (pSourceFile == 0)  //@Bug 2314. Optimize the version buffer open times.
     {
@@ -1256,7 +1280,7 @@ int BRMWrapper::rollBackBlocks(const VER_t transID, int sessionId)
     }
 
     // timer.stop("lookupLocalVB");
-    if (isDebug(DEBUG_3))
+ //   if (isDebug(DEBUG_3))
 #ifndef __LP64__
       printf("\n\tuncommitted lbid - lbidList[i]=%lld vbOid =%d vbFbo=%d\n", lbidList[i], vbOid, vbFbo);
 
@@ -1291,10 +1315,8 @@ int BRMWrapper::rollBackBlocks(const VER_t transID, int sessionId)
     targetFileInfo.fPartition = wePartitionNum;
     targetFileInfo.fSegment = weSegmentNum;
     targetFileInfo.fDbRoot = weDbRoot;
-    //      printf("\n\tsource file info - oid =%d fPartition=%d fSegment=%d, fDbRoot=%d", sourceFileInfo.oid,
-    //      sourceFileInfo.fPartition, sourceFileInfo.fSegment, sourceFileInfo.fDbRoot); printf("\n\ttarget
-    //      file info - oid =%d fPartition=%d fSegment=%d, fDbRoot=%d", weOid, wePartitionNum, weSegmentNum,
-    //      weDbRoot);
+    std::cout << "Line 1301 " << std::endl;
+
     // Check whether the file is on this pm.
 
     if (column.compressionType != 0)
@@ -1323,6 +1345,8 @@ int BRMWrapper::rollBackBlocks(const VER_t transID, int sessionId)
       goto cleanup;
     }
 
+    std::cout << "After open files " << std::endl;
+
     // timer.start("copyVBBlock");
     std::vector<BRM::LBIDRange> lbidRangeList;
     BRM::LBIDRange range;
@@ -1339,7 +1363,7 @@ int BRMWrapper::rollBackBlocks(const VER_t transID, int sessionId)
 
     rc = copyVBBlock(pSourceFile, pTargetFile, vbFbo, weFbo, &fileOp, column);
 
-    // cout << "WES rolled block " << lbidList[i] << endl;
+    cout << "WES rolled block " << lbidList[i] << endl;
     if (rc != 0)
     {
       std::ostringstream oss;
@@ -1359,6 +1383,7 @@ int BRMWrapper::rollBackBlocks(const VER_t transID, int sessionId)
       goto cleanup;
     }
 
+    std::cout << "line 1369 " << std::endl;
     // timer.stop("copyVBBlock");
     if (rc != NO_ERROR)
       goto cleanup;
@@ -1381,6 +1406,7 @@ int BRMWrapper::rollBackBlocks(const VER_t transID, int sessionId)
 
 cleanup:
 
+  std::cout << "clean up " << std::endl;
   if (pSourceFile)
   {
     delete pSourceFile;
@@ -1411,6 +1437,8 @@ cleanup:
 
   if (rc != 0)
     throw std::runtime_error(errorMsg);
+
+  std::cout << "END: int BRMWrapper::rollBackBlocks(const VER_t transID, int sessionId) " << std::endl;
 
   return rc;
 }

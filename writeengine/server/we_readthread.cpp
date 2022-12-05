@@ -117,6 +117,7 @@ void DmlReadThread::operator()()
         case WE_SVR_ROLLBACK_BLOCKS:
         {
           rc = fWeDMLprocessor->rollbackBlocks(ibs, errMsg);
+          cout << "WE Return code: " << rc << endl;
           break;
         }
 
@@ -464,8 +465,9 @@ void DmlReadThread::operator()()
       try
       {
         fIos.write(obs);
-        // cout << "dmlthread sent back response for msgid " << (uint32_t)msgId << " with uniqueID:rc= "
-        //<< (uint32_t)uniqueID<<":"<< (uint32_t)rc<<" and error message is " << errMsg <<endl;
+        cout << "dmlthread sent back response for msgid " << (uint32_t)msgId
+             << " with uniqueID:rc= " << (uint32_t)uniqueID << ":" << (uint32_t)rc << " and error message is "
+             << errMsg << endl;
         // get next message
         ibs = fIos.read();
       }

@@ -568,6 +568,7 @@ DMLPackageProcessor::DMLResult CommandPackageProcessor::processPackage(
       TablelockData::removeTablelockData(cpackage.get_SessionID());
     }
   }
+  cout << "Finished processing Command DML Package" << endl;
 
   VERBOSE_INFO("Finished processing Command DML Package");
   // LoggingID logid( DMLLoggingId, fSessionID, txnid.id);
