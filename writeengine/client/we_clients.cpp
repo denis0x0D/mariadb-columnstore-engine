@@ -513,7 +513,7 @@ void WEClients::write_to_all(const messageqcpp::ByteStream& msg)
   }
   catch (...)
   {
-    cout << "catched erro in write engine " << endl;
+    cout << "!!!catched erro in write engine " << endl;
     throw;
   }
 }

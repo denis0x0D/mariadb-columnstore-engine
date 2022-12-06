@@ -221,7 +221,7 @@ DistributedEngineComm::~DistributedEngineComm()
   fInstance = 0;
 }
 
-void DistributedEngineComm::Setup()
+int DistributedEngineComm::Setup()
 {
   std::cout << "void DistributedEngineComm::Setup() " << std::endl;
 
@@ -230,6 +230,7 @@ void DistributedEngineComm::Setup()
 
   makeBusy(true);
 
+  cout << 233 << endl;
   // This needs to be here to ensure that whenever Setup function is called, the lists are
   // empty. It's possible junk was left behind if exception.
   ClientList::iterator iter;
@@ -242,6 +243,7 @@ void DistributedEngineComm::Setup()
   newClients.clear();
   newLocks.clear();
 
+  cout << 246 << endl;
   uint32_t newPmCount = fRm->getPsCount();
   throttleThreshold = fRm->getDECThrottleThreshold();
   tbpsThreadCount = fRm->getJlNumScanReceiveThreads();
@@ -259,6 +261,7 @@ void DistributedEngineComm::Setup()
     writeToLog(__FILE__, __LINE__, "oam.getSystemConfig error, unknown exception", LOG_TYPE_ERROR);
     throw runtime_error("Setup failed");
   }
+  cout << 264 << endl;
 
   if (newPmCount == 0)
     writeToLog(__FILE__, __LINE__, "Got a config file with 0 PMs", LOG_TYPE_CRITICAL);
@@ -277,7 +280,6 @@ void DistributedEngineComm::Setup()
     pmsAddressesAndPorts.push_back(messageqcpp::getAddressAndPort(config, pmConfigNodeName));
   }
 
-  bool failedConnection = false;
   // numConnections must be calculated as number of PMs * number of connections per PM.
   // This happens earlier in getNumConnections().
   for (size_t i = 0; i < numConnections; ++i)
@@ -321,7 +323,7 @@ void DistributedEngineComm::Setup()
         writeToLog(__FILE__, __LINE__, "No more PMs to try to connect to", LOG_TYPE_ERROR);
         break;
       }
-      return;
+      return 1;
   //    failedConnection = true;
     }
     catch (...)
@@ -336,7 +338,7 @@ void DistributedEngineComm::Setup()
         writeToLog(__FILE__, __LINE__, "No more PMs to try to connect to", LOG_TYPE_ERROR);
         break;
       }
-      return;
+      return 1;
     }
   }
 
@@ -346,7 +348,7 @@ void DistributedEngineComm::Setup()
   //    call the event listeners' newPMOnline() callbacks.
   boost::mutex::scoped_lock lock(eventListenerLock);
 
-  for (uint32_t i = 0; !failedConnection && i < newPmCount; i++)
+  for (uint32_t i = 0; i < newPmCount; i++)
   {
     uint32_t j;
     for (j = 0; j < pmCount; j++)
@@ -377,6 +379,7 @@ void DistributedEngineComm::Setup()
   newLocks.clear();
   newClients.clear();
   cout << "Setup finish " << endl;
+  return 0;
 }
 
 int DistributedEngineComm::Close()
@@ -1134,21 +1137,20 @@ int DistributedEngineComm::writeToClient(size_t aPMIndex, const SBS& bs, uint32_
       map_tok->second->queue.push(sbs);
     }
 
-    lk.unlock();
-
-//    if (fIsExeMgr)
-    {
       // Re-establish if a remote PM restarted.
       std::this_thread::sleep_for(std::chrono::seconds(3));
       std::cout << "Trying setup new connections " << std::endl;
       int count = 0;
-      while (++count < 5)
+      while (++count < 5 && Setup())
       {
         std::this_thread::sleep_for(std::chrono::seconds(3));
-        Setup();
       }
       cout << "End setup " << endl;
+      lk.unlock();
       /*
+      abort();
+
+
       if (originalPMCount != pmCount)
       {
         ostringstream os;
@@ -1157,7 +1159,6 @@ int DistributedEngineComm::writeToClient(size_t aPMIndex, const SBS& bs, uint32_
       }
       */
       return 0;
-    }
 
       /*
                       // reconfig the connection array
@@ -1192,6 +1193,7 @@ int DistributedEngineComm::writeToClient(size_t aPMIndex, const SBS& bs, uint32_
       */
   //    throw runtime_error("DistributedEngineComm::write: Broken Pipe error");
   }
+  return 0;
 }
 
 uint32_t DistributedEngineComm::size(uint32_t key)

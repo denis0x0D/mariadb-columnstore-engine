@@ -4457,6 +4457,8 @@ void DBRM::deleteAISequence(uint32_t OID)
 
 void DBRM::addToLBIDList(uint32_t sessionID, vector<LBID_t>& lbidList)
 {
+  std::cout << "void DBRM::addToLBIDList(uint32_t sessionID, vector<LBID_t>& lbidList) " << std::endl;
+
   boost::shared_ptr<execplan::CalpontSystemCatalog> systemCatalogPtr =
     execplan::CalpontSystemCatalog::makeCalpontSystemCatalog(sessionID);
 

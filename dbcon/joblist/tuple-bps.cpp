@@ -1674,6 +1674,7 @@ void TupleBPS::interleaveJobs(vector<Job>* jobs) const
 
 void TupleBPS::sendJobs(const vector<Job>& jobs)
 {
+  cout << "Send jobs " << std::endl;
   uint32_t i;
   boost::unique_lock<boost::mutex> tplLock(tplMutex, boost::defer_lock);
 
@@ -2147,6 +2148,8 @@ void TupleBPS::sendPrimitiveMessages()
   }
   catch (...)
   {
+    cout << "CATCHED EXEPTION: void TupleBPS::sendPrimitiveMessages() " << endl;
+
     sendError(logging::ERR_TUPLE_BPS);
     handleException(std::current_exception(), logging::ERR_TUPLE_BPS, logging::ERR_ALWAYS_CRITICAL,
                     "st: " + std::to_string(fStepId) + " TupleBPS::sendPrimitiveMessages()");

@@ -58,6 +58,7 @@ DMLPackageProcessor::DMLResult CommandPackageProcessor::processPackage(
 
   DMLResult result;
   result.result = NO_ERROR;
+  cout << "Processing Command DML Package..." << endl;
 
   VERBOSE_INFO("Processing Command DML Package...");
   std::string stmt = cpackage.get_DMLStatement();
@@ -367,6 +368,8 @@ DMLPackageProcessor::DMLResult CommandPackageProcessor::processPackage(
         }
         else if ((stmt == "ROLLBACK") && (cpackage.get_isBatchInsert()))
         {
+          cout << "else if ((stmt ==  ROLLBACK ) && (cpackage.get_isBatchInsert())) " << endl;
+
           int weRc = 0;
 
           // version rollback, Bulkrollback
@@ -385,6 +388,7 @@ DMLPackageProcessor::DMLResult CommandPackageProcessor::processPackage(
           }
           else
           {
+            cout << "weRC != 0 error is " << weRc << endl;
             throw std::runtime_error(errorMsg);
           }
 
@@ -411,10 +415,18 @@ DMLPackageProcessor::DMLResult CommandPackageProcessor::processPackage(
         }
         else if (stmt == "ROLLBACK")
         {
+          std::cout << "        else if (stmt == ROLLBACK) " << endl;
+
           std::string errorMsg("");
           logging::logCommand(cpackage.get_SessionID(), txnid.id, "ROLLBACK;");
           int weRc = rollBackTransaction(uniqueId, txnid, fSessionID, errorMsg);
+          if (weRc == 1)
+          {
+            cout << "Trying rollback again " << endl;
+            weRc = rollBackTransaction(uniqueId, txnid, fSessionID, errorMsg);
+          }
 
+          cout << "weRc " << weRc << endl;
           if (weRc != 0)
           {
             // cout << "Rollback failed" << endl;
@@ -427,8 +439,10 @@ DMLPackageProcessor::DMLResult CommandPackageProcessor::processPackage(
             args2.add(oss.str());
             message2.format(args2);
             ml.logErrorMessage(message2);
+            cout << "THROW EXCEPTION " << endl;
             throw std::runtime_error(oss.str());
           }
+          cout << "ROLLBACK FINISHED " << std::endl;
 
           fSessionManager.rolledback(txnid);
           // cout << "Rollback releasing  transaction id " <<  txnid.id << endl;
@@ -439,9 +453,11 @@ DMLPackageProcessor::DMLResult CommandPackageProcessor::processPackage(
           // MCOL-5021
           if (stmt == "ROLLBACK")
           {
+            cout << "DML line 457 " << endl;
             fDbrm->addToLBIDList(fSessionID, lbidList);
           }
 
+          cout << "DML line 461 " << endl;
           fDbrm->invalidateUncommittedExtentLBIDs(0, stmt == "ROLLBACK", &lbidList);
         }
       }
@@ -476,14 +492,16 @@ DMLPackageProcessor::DMLResult CommandPackageProcessor::processPackage(
   }
   catch (logging::IDBExcept& noTable)  //@Bug 2606 catch no table found exception
   {
-    cerr << "CommandPackageProcessor::processPackage: " << noTable.what() << endl;
+    cerr << "!!CommandPackageProcessor::processPackage: " << noTable.what() << endl;
 
+    /*
     result.result = COMMAND_ERROR;
     result.message = Message(noTable.what());
+    */
   }
   catch (std::exception& ex)
   {
-    cerr << "CommandPackageProcessor::processPackage: " << ex.what() << endl;
+    cerr << "!CommandPackageProcessor::processPackage: " << ex.what() << endl;
 
     logging::Message::Args args;
     logging::Message message(1);

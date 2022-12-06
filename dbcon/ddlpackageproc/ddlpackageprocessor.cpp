@@ -1410,6 +1410,8 @@ void DDLPackageProcessor::convertRidToColumn(uint64_t& rid, unsigned& dbRoot, un
 
 int DDLPackageProcessor::rollBackTransaction(uint64_t uniqueId, BRM::TxnID txnID, uint32_t sessionID)
 {
+  std::cout << "int DDLPackageProcessor::rollBackTransaction(uint64_t uniqueId, BRM::TxnID txnID, uint32_t sessionID) " << std::endl;
+
   ByteStream bytestream;
   bytestream << (ByteStream::byte)WE_SVR_ROLLBACK_BLOCKS;
   bytestream << uniqueId;
@@ -1432,6 +1434,7 @@ int DDLPackageProcessor::rollBackTransaction(uint64_t uniqueId, BRM::TxnID txnID
 
     if (bsIn->length() == 0)  // read error
     {
+      cout << "!!! Network error 1437 " << endl;
       rc = NETWORK_ERROR;
       fWEClient->removeQueue(uniqueId);
       break;
@@ -1440,6 +1443,7 @@ int DDLPackageProcessor::rollBackTransaction(uint64_t uniqueId, BRM::TxnID txnID
     {
       *bsIn >> tmp8;
       rc = tmp8;
+      cout << "!!! RC != 0, RC is " << rc << endl;
 
       if (rc != 0)
       {
@@ -1491,6 +1495,11 @@ int DDLPackageProcessor::rollBackTransaction(uint64_t uniqueId, BRM::TxnID txnID
       }
     }
   }
+  cout << "ERR CODE " << rc << endl;
+  std::cout << "END int DDLPackageProcessor::rollBackTransaction(uint64_t uniqueId, BRM::TxnID txnID, uint32_t "
+               "sessionID) "
+
+            << std::endl;
 
   return rc;
 }

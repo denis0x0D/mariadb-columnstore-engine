@@ -302,6 +302,7 @@ void MessageQueueClient::write(const ByteStream& msg, const struct timespec* tim
 {
   if (!fClientSock.isOpen())
   {
+    std::cout << "Client sock is not open " << std::endl;
     fClientSock.open();
 
     try

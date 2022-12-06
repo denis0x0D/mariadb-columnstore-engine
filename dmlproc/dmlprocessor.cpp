@@ -554,6 +554,7 @@ void PackageHandler::run()
 
   try
   {
+    cout << "PACKAGE TYPE: " << (int) fPackageType << endl;
     switch (fPackageType)
     {
       case dmlpackage::DML_INSERT:
@@ -1082,12 +1083,13 @@ void PackageHandler::run()
       case dmlpackage::DML_COMMAND:
       {
         // build a CommandDMLPackage from the bytestream
-        // cout << "a COMMAND package" << endl;
+        cout << "a COMMAND package" << endl;
         dmlpackage::CommandDMLPackage commandPkg;
         commandPkg.read(*(fByteStream.get()));
         stmt = commandPkg.get_DMLStatement();
         boost::algorithm::to_upper(stmt);
         trim(stmt);
+        cout << "STATEMENT " << stmt << endl;
 
         if (stmt == "CLEANUP")
         {
@@ -1101,7 +1103,7 @@ void PackageHandler::run()
           fProcessor.reset(
               new dmlpackageprocessor::CommandPackageProcessor(fDbrm, commandPkg.get_SessionID()));
 
-          // cout << "got command " << stmt << " for session " << commandPkg.get_SessionID() << endl;
+          cout << "got command " << stmt << " for session " << commandPkg.get_SessionID() << endl;
           result = fProcessor->processPackage(commandPkg);
         }
       }

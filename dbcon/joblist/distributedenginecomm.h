@@ -187,7 +187,7 @@ class DistributedEngineComm
    */
   EXPORT uint32_t size(uint32_t key);
 
-  EXPORT void Setup();
+  EXPORT int Setup();
 
   EXPORT void addDECEventListener(DECEventListener*);
   EXPORT void removeDECEventListener(DECEventListener*);

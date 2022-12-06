@@ -784,17 +784,19 @@ void CalpontSystemCatalog::getSysData(CalpontSelectExecutionPlan& csep, NJLSysDa
 
   if (fIdentity == EC)
   {
-    try
     {
-      getSysData_EC(csep, sysDataList, sysTableName);
-    }
-    catch (IDBExcept&)
-    {
-      throw;
-    }
-    catch (runtime_error& e)
-    {
-      throw runtime_error(e.what());
+      try
+      {
+        getSysData_EC(csep, sysDataList, sysTableName);
+      }
+      catch (IDBExcept&)
+      {
+        throw;
+      }
+      catch (runtime_error& e)
+      {
+        throw runtime_error(e.what());
+      }
     }
   }
   else
@@ -850,6 +852,7 @@ void CalpontSystemCatalog::getSysData_EC(CalpontSelectExecutionPlan& csep, NJLSy
 
   ResourceManager* rm = ResourceManager::instance(true);
   DistributedEngineComm* fEc = DistributedEngineComm::instance(rm);
+  fEc->Setup();
   PrimitiveServerThreadPools dummyPrimitiveServerThreadPools;
 
   SJLP jl = JobListFactory::makeJobList(&csep, rm, dummyPrimitiveServerThreadPools, true);
@@ -907,6 +910,7 @@ void CalpontSystemCatalog::getSysData_EC(CalpontSelectExecutionPlan& csep, NJLSy
     // rowGroup.setData(const_cast<uint8_t*>(bs.buf()));
     if ((status = rowGroup.getStatus()) != 0)
     {
+      cout << "Error " << status << endl;
       if (status >= 1000)  // new error system
         throw IDBExcept(status);
       else
