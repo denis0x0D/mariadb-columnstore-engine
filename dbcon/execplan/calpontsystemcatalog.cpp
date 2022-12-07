@@ -852,7 +852,6 @@ void CalpontSystemCatalog::getSysData_EC(CalpontSelectExecutionPlan& csep, NJLSy
 
   ResourceManager* rm = ResourceManager::instance(true);
   DistributedEngineComm* fEc = DistributedEngineComm::instance(rm);
-  fEc->Setup();
   PrimitiveServerThreadPools dummyPrimitiveServerThreadPools;
 
   SJLP jl = JobListFactory::makeJobList(&csep, rm, dummyPrimitiveServerThreadPools, true);

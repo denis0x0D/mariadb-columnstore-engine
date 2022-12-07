@@ -37,6 +37,8 @@
 #include "we_ddlcommandclient.h"
 #include "oamcache.h"
 #include "liboamcpp.h"
+#include "resourcemanager.h"
+
 using namespace std;
 using namespace WriteEngine;
 using namespace dmlpackage;
@@ -447,6 +449,10 @@ DMLPackageProcessor::DMLResult CommandPackageProcessor::processPackage(
           fSessionManager.rolledback(txnid);
           // cout << "Rollback releasing  transaction id " <<  txnid.id << endl;
         }
+
+        joblist::ResourceManager* rm = joblist::ResourceManager::instance(true);
+        joblist::DistributedEngineComm* fEc = joblist::DistributedEngineComm::instance(rm);
+        fEc->Setup();
 
         if (!cpInvalidated)
         {
