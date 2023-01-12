@@ -29,6 +29,7 @@
 //
 //
 
+#include <bitset>
 #include <mutex>
 #include <stdexcept>
 #include <unistd.h>
@@ -1201,6 +1202,9 @@ uint32_t BatchPrimitiveProcessor::executeTupleJoin(uint32_t startRid)
     {
       bool found;
 
+      if (joinTypes[j] & CARTESIAN)
+        cout << "CARTESIAN JOIN " << endl;
+
       if (UNLIKELY(joinTypes[j] & ANTI))
       {
         if (joinTypes[j] & WITHFCNEXP)
@@ -1231,7 +1235,7 @@ uint32_t BatchPrimitiveProcessor::executeTupleJoin(uint32_t startRid)
          *    - if it's an anti-join and the key is either in the small side or it's NULL
          */
 
-        if (((!found || isNull) && !(joinTypes[j] & (LARGEOUTER | ANTI))) ||
+        if (((!found || isNull) && !(joinTypes[j] & (LARGEOUTER | ANTI | CARTESIAN))) ||
             ((joinTypes[j] & ANTI) && !joinerIsEmpty &&
              ((isNull && (joinTypes[j] & MATCHNULLS)) || (found && !isNull))))
         {
@@ -2773,6 +2777,18 @@ inline void BatchPrimitiveProcessor::getJoinResults(const Row& r, uint32_t jInde
       }
       else
         return;
+    }
+
+    if (joinTypes[jIndex] & CARTESIAN)
+    {
+      cout << "match on cartesian " << endl;
+      TJoiner::iterator it;
+      for (uint i = 0; i < processorThreads; ++i)
+        for (it = tJoiners[jIndex][i]->begin(); it != tJoiners[jIndex][i]->end(); ++it)
+          v.push_back(it->second);
+
+      cout << "v size " << v.size() << endl;
+      return;
     }
 
     uint64_t largeKey;

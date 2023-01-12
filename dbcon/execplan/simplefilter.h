@@ -62,7 +62,8 @@ class SimpleFilter : public Filter
   {
     EQUA = 0,
     ANTI,
-    SEMI
+    SEMI,
+    CART
   };
 
   struct ForTestPurposesWithoutColumnsOIDS{};

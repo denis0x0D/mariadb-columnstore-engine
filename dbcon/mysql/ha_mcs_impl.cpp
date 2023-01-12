@@ -3989,6 +3989,8 @@ int ha_mcs_impl_rnd_pos(uchar* buf, uchar* pos)
  ***********************************************************/
 int ha_mcs_impl_group_by_init(mcs_handler_info* handler_info, TABLE* table)
 {
+  cout << "int ha_mcs_impl_group_by_init(mcs_handler_info* handler_info, TABLE* table) " << endl;
+
   ha_mcs_group_by_handler* group_hand = reinterpret_cast<ha_mcs_group_by_handler*>(handler_info->hndl_ptr);
   string tableName = group_hand->table_list->table->s->table_name.str;
   IDEBUG(cout << "group_by_init for table " << tableName << endl);
