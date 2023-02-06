@@ -6659,6 +6659,87 @@ void setExecutionParams(gp_walk_info& gwi, SCSEP& csep)
     csep->umMemLimit(get_um_mem_limit(gwi.thd) * 1024ULL * 1024);
 }
 
+int makeDependencyForEachTable(THD* thd, TABLE_LIST* table_ptr)
+{
+  std::vector<
+      std::pair<TABLE*, std::unordered_map<execplan::CalpontSystemCatalog::ColDataType, uint32_t>>>
+      tableTypeMap;
+
+  uint32_t sessionID = execplan::CalpontSystemCatalog::idb_tid2sid(thd->thread_id);
+  boost::shared_ptr<execplan::CalpontSystemCatalog> csc =
+      execplan::CalpontSystemCatalog::makeCalpontSystemCatalog(sessionID);
+  csc->identity(execplan::CalpontSystemCatalog::FE);
+
+  for (; table_ptr; table_ptr = table_ptr->next_local)
+  {
+    auto* table = table_ptr->table;
+    auto tableName =
+        execplan::make_table(table->s->db.str, table->s->table_name.str, lower_case_table_names);
+    if (table->s->db.length && strcmp(table->s->db.str, "information_schema") == 0)
+      return 1;
+
+    bool columnStore = (table ? isMCSTable(table) : true);
+    if (!columnStore)
+      return 1;
+
+    auto oidlist = csc->columnRIDs(tableName, true);
+    std::unordered_map<execplan::CalpontSystemCatalog::ColDataType, uint32_t> colTypeMap;
+
+    for (uint32_t i = 0, e = oidlist.size(); i < e; ++i)
+    {
+      const auto colOid = oidlist[i].objnum;
+      auto colDataType = csc->colType(colOid).colDataType;
+      // Take the first one.
+      if (!colTypeMap.count(colDataType))
+        colTypeMap.insert({colDataType, colOid});
+    }
+
+    tableTypeMap.push_back({table, colTypeMap});
+  }
+
+  const uint32_t tableTypeMapSize = tableTypeMap.size();
+  if (!tableTypeMapSize)
+    return 1;
+
+  const auto& colDataTypes = tableTypeMap.front().second;
+  std::vector<std::pair<execplan::CalpontSystemCatalog::ColDataType, uint32_t>> typeEquivalence;
+  for (const auto& [colDataType, colOid] : colDataTypes)
+  {
+    uint32_t index = 1;
+    typeEquivalence.clear();
+
+    while (index < tableTypeMapSize)
+    {
+      auto& currentColTypeMap = tableTypeMap[index].second;
+      if (!currentColTypeMap.count(colDataType))
+        break;
+
+      typeEquivalence.push_back({colDataType, currentColTypeMap[colDataType]});
+      ++index;
+    }
+
+    if (index == tableTypeMapSize)
+    {
+      typeEquivalence.push_back({colDataType, colOid});
+      break;
+    }
+  }
+
+  if (typeEquivalence.size() != tableTypeMapSize)
+    return 1;
+
+  /*
+  cout << "MAKE DEPS START" << endl;
+  for (const auto& [type, oid] : typeEquivalence)
+  {
+    cout << "{ " << (int)type << " " << oid << " }";
+  }
+  cout << "MAKE DEPS END " << endl;
+  */
+
+  return 0;
+}
+
 /*@brief  Process FROM part of the query or sub-query      */
 /***********************************************************
  * DESCRIPTION:
@@ -6674,6 +6755,7 @@ int processFrom(bool& isUnion, SELECT_LEX& select_lex, gp_walk_info& gwi, SCSEP&
   // populate table map and trigger syscolumn cache for all the tables (@bug 1637).
   // all tables on FROM list must have at least one col in colmap
   TABLE_LIST* table_ptr = select_lex.get_table_list();
+
 
 #ifdef DEBUG_WALK_COND
   List_iterator<TABLE_LIST> sj_list_it(select_lex.sj_nests);
@@ -6861,6 +6943,7 @@ int processWhere(SELECT_LEX& select_lex, gp_walk_info& gwi, SCSEP& csep, const s
   JOIN* join = select_lex.join;
   Item* icp = 0;
   bool isUpdateDelete = false;
+
 
   // Flag to indicate if this is a prepared statement
   bool isPS = gwi.thd->stmt_arena && gwi.thd->stmt_arena->is_stmt_execute();
@@ -7111,6 +7194,8 @@ int processWhere(SELECT_LEX& select_lex, gp_walk_info& gwi, SCSEP& csep, const s
     aTmpDir = aTmpDir + "/filter1.dot";
     filters->drawTree(aTmpDir);
   }
+
+  makeDependencyForEachTable(gwi.thd, select_lex.get_table_list());
 
   return 0;
 }
