@@ -2376,8 +2376,12 @@ bool buildConstPredicate(Item_func* ifp, ReturnedColumn* rhs, gp_walk_info* gwip
   return true;
 }
 
+// From subquery
 SimpleColumn* buildSimpleColFromDerivedTable(gp_walk_info& gwi, Item_field* ifp)
 {
+  std::cout << "SimpleColumn* buildSimpleColFromDerivedTable(gp_walk_info& gwi, Item_field* ifp) "
+            << endl;
+
   SimpleColumn* sc = NULL;
 
   // view name
@@ -2389,11 +2393,17 @@ SimpleColumn* buildSimpleColFromDerivedTable(gp_walk_info& gwi, Item_field* ifp)
     if (sc)
       break;
 
+    /*
+    cout << "ifp table name str " << ifp->table_name.str << endl;
+    cout << "gwi table list name " << gwi.tbList[i].alias.c_str() << endl;
+    */
+
     if (!gwi.tbList[i].schema.empty() && !gwi.tbList[i].table.empty() &&
         (!ifp->table_name.str || strcasecmp(ifp->table_name.str, gwi.tbList[i].alias.c_str()) == 0))
     {
       CalpontSystemCatalog::TableName tn(gwi.tbList[i].schema, gwi.tbList[i].table);
       CalpontSystemCatalog::RIDList oidlist = gwi.csc->columnRIDs(tn, true);
+      cout << "TABLE NAME: " << tn << endl;
 
       for (unsigned int j = 0; j < oidlist.size(); j++)
       {
@@ -2407,6 +2417,7 @@ SimpleColumn* buildSimpleColFromDerivedTable(gp_walk_info& gwi, Item_field* ifp)
           // as long as it matches the next step in predicate parsing will tell the scope
           // of the column.
           /*if (sc)
+          :W
           {
               gwi.fatalParseError = true;
               Message::Args args;
@@ -2446,6 +2457,7 @@ SimpleColumn* buildSimpleColFromDerivedTable(gp_walk_info& gwi, Item_field* ifp)
     CalpontSelectExecutionPlan* csep = dynamic_cast<CalpontSelectExecutionPlan*>(gwi.derivedTbList[i].get());
     string derivedName = csep->derivedTbAlias();
 
+    cout << "Derived table alias: " << derivedName << endl;
     if (!ifp->table_name.str || strcasecmp(ifp->table_name.str, derivedName.c_str()) == 0)
     {
       CalpontSelectExecutionPlan::ReturnedColumnList cols = csep->returnedCols();
@@ -2455,6 +2467,7 @@ SimpleColumn* buildSimpleColFromDerivedTable(gp_walk_info& gwi, Item_field* ifp)
         // @bug 3167 duplicate column alias is full name
         SimpleColumn* col = dynamic_cast<SimpleColumn*>(cols[j].get());
         string alias = cols[j]->alias();
+        auto resultType = col->resultType();
 
         if (strcasecmp(ifp->field_name.str, alias.c_str()) == 0 ||
             (col && alias.find(".") != string::npos &&
@@ -6659,8 +6672,11 @@ void setExecutionParams(gp_walk_info& gwi, SCSEP& csep)
     csep->umMemLimit(get_um_mem_limit(gwi.thd) * 1024ULL * 1024);
 }
 
-int makeDependencyForEachTable(THD* thd, TABLE_LIST* table_ptr)
+int makeDependencyForEachTable(gp_walk_info& gwi, THD* thd, TABLE_LIST* table_ptr)
 {
+  cout << "int makeDependencyForEachTable(THD* thd, TABLE_LIST* table_ptr) " << endl;
+
+
   std::vector<
       std::pair<TABLE*, std::unordered_map<execplan::CalpontSystemCatalog::ColDataType, uint32_t>>>
       tableTypeMap;
@@ -6673,25 +6689,59 @@ int makeDependencyForEachTable(THD* thd, TABLE_LIST* table_ptr)
   for (; table_ptr; table_ptr = table_ptr->next_local)
   {
     auto* table = table_ptr->table;
-    auto tableName =
-        execplan::make_table(table->s->db.str, table->s->table_name.str, lower_case_table_names);
-    if (table->s->db.length && strcmp(table->s->db.str, "information_schema") == 0)
-      return 1;
-
-    bool columnStore = (table ? isMCSTable(table) : true);
-    if (!columnStore)
-      return 1;
-
-    auto oidlist = csc->columnRIDs(tableName, true);
+    /*
+    cout << "DB STR " << table->s->db.str << endl;
+    cout << "table name str " << table->s->table_name.str << endl;
+    */
     std::unordered_map<execplan::CalpontSystemCatalog::ColDataType, uint32_t> colTypeMap;
-
-    for (uint32_t i = 0, e = oidlist.size(); i < e; ++i)
+    if (table_ptr->derived)
     {
-      const auto colOid = oidlist[i].objnum;
-      auto colDataType = csc->colType(colOid).colDataType;
-      // Take the first one.
-      if (!colTypeMap.count(colDataType))
-        colTypeMap.insert({colDataType, colOid});
+      cout << "Derived table " << endl;
+      for (int32_t i = gwi.derivedTbList.size() - 1; i >= 0; i--)
+      {
+        CalpontSelectExecutionPlan* csep =
+            dynamic_cast<CalpontSelectExecutionPlan*>(gwi.derivedTbList[i].get());
+        string derivedName = csep->derivedTbAlias();
+
+        cout << "Derived table alias: " << derivedName << endl;
+        if (strcasecmp(table_ptr->alias.str, derivedName.c_str()) == 0)
+        {
+          CalpontSelectExecutionPlan::ReturnedColumnList cols = csep->returnedCols();
+
+          for (uint32_t j = 0; j < cols.size(); j++)
+          {
+            // @bug 3167 duplicate column alias is full name
+            SimpleColumn* col = dynamic_cast<SimpleColumn*>(cols[j].get());
+            auto colDataType = col->resultType().colDataType;
+            auto colOid = col->oid();
+            if (!colTypeMap.count(colDataType))
+              colTypeMap.insert({colDataType, colOid});
+          }
+        }
+      }
+    }
+    else
+    {
+      auto tableName =
+          execplan::make_table(table->s->db.str, table->s->table_name.str, lower_case_table_names);
+
+      if (table->s->db.length && strcmp(table->s->db.str, "information_schema") == 0)
+        return 1;
+
+      bool columnStore = (table ? isMCSTable(table) : true);
+      if (!columnStore)
+        return 1;
+
+      auto oidlist = csc->columnRIDs(tableName, true);
+
+      for (uint32_t i = 0, e = oidlist.size(); i < e; ++i)
+      {
+        const auto colOid = oidlist[i].objnum;
+        auto colDataType = csc->colType(colOid).colDataType;
+        // Take the first one.
+        if (!colTypeMap.count(colDataType))
+          colTypeMap.insert({colDataType, colOid});
+      }
     }
 
     tableTypeMap.push_back({table, colTypeMap});
@@ -6728,14 +6778,12 @@ int makeDependencyForEachTable(THD* thd, TABLE_LIST* table_ptr)
   if (typeEquivalence.size() != tableTypeMapSize)
     return 1;
 
-  /*
   cout << "MAKE DEPS START" << endl;
   for (const auto& [type, oid] : typeEquivalence)
   {
     cout << "{ " << (int)type << " " << oid << " }";
   }
   cout << "MAKE DEPS END " << endl;
-  */
 
   return 0;
 }
@@ -6755,7 +6803,6 @@ int processFrom(bool& isUnion, SELECT_LEX& select_lex, gp_walk_info& gwi, SCSEP&
   // populate table map and trigger syscolumn cache for all the tables (@bug 1637).
   // all tables on FROM list must have at least one col in colmap
   TABLE_LIST* table_ptr = select_lex.get_table_list();
-
 
 #ifdef DEBUG_WALK_COND
   List_iterator<TABLE_LIST> sj_list_it(select_lex.sj_nests);
@@ -6944,6 +6991,7 @@ int processWhere(SELECT_LEX& select_lex, gp_walk_info& gwi, SCSEP& csep, const s
   Item* icp = 0;
   bool isUpdateDelete = false;
 
+  makeDependencyForEachTable(gwi, gwi.thd, select_lex.get_table_list());
 
   // Flag to indicate if this is a prepared statement
   bool isPS = gwi.thd->stmt_arena && gwi.thd->stmt_arena->is_stmt_execute();
@@ -7195,7 +7243,6 @@ int processWhere(SELECT_LEX& select_lex, gp_walk_info& gwi, SCSEP& csep, const s
     filters->drawTree(aTmpDir);
   }
 
-  makeDependencyForEachTable(gwi.thd, select_lex.get_table_list());
 
   return 0;
 }
