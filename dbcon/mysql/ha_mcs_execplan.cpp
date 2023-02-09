@@ -6678,7 +6678,6 @@ int makeDependencyForEachTable(
 {
   cout << "int makeDependencyForEachTable(THD* thd, TABLE_LIST* table_ptr) " << endl;
 
-
   std::vector<
       std::pair<TABLE*, std::unordered_map<execplan::CalpontSystemCatalog::ColDataType, uint32_t>>>
       tableTypeMap;
@@ -7232,18 +7231,10 @@ int processWhere(SELECT_LEX& select_lex, gp_walk_info& gwi, SCSEP& csep, const s
     filters = outerJoinFilters;
   }
 
-  if (filters)
-  {
-    csep->filters(filters);
-    std::string aTmpDir(startup::StartUp::tmpDir());
-    filters->walk([](ParseTree* node) { cout << node->data()->toString() << endl; });
-    aTmpDir = aTmpDir + "/filter1.dot";
-    filters->drawTree(aTmpDir);
-  }
-
   if (typeEquivalence.size() < 2)
     return 0;
 
+//  auto* table_ptr = typeEquivalence[0].first;
   auto colOid = typeEquivalence[0].second;
   auto tableColName = gwi.csc->colName(colOid);
   auto colType = gwi.csc->colType(colOid);
@@ -7251,13 +7242,16 @@ int processWhere(SELECT_LEX& select_lex, gp_walk_info& gwi, SCSEP& csep, const s
   execplan::SimpleColumn* prevSimpleColumn = new execplan::SimpleColumn();
   prevSimpleColumn->columnName(tableColName.column);
   prevSimpleColumn->tableName(tableColName.table, lower_case_table_names);
+  prevSimpleColumn->tableAlias(tableColName.table);  // table_ptr->alias.str);
   prevSimpleColumn->schemaName(tableColName.schema, lower_case_table_names);
   prevSimpleColumn->oid(colOid);
-  prevSimpleColumn->alias(tableColName.column);
+ // prevSimpleColumn->alias(tableColName.column);
   prevSimpleColumn->resultType(colType);
 
+  std::stack<ParseTree*> typeEqFilters;
   for (uint32_t i = 1; i < typeEquivalence.size(); ++i)
   {
+ //   auto* table_ptr = typeEquivalence[i].first;
     auto colOid = typeEquivalence[i].second;
     auto tableColName = gwi.csc->colName(colOid);
     auto colType = gwi.csc->colType(colOid);
@@ -7265,12 +7259,51 @@ int processWhere(SELECT_LEX& select_lex, gp_walk_info& gwi, SCSEP& csep, const s
     execplan::SimpleColumn* simpleColumn = new execplan::SimpleColumn();
     simpleColumn->columnName(tableColName.column);
     simpleColumn->tableName(tableColName.table, lower_case_table_names);
+    simpleColumn->tableAlias(tableColName.table);
     simpleColumn->schemaName(tableColName.schema, lower_case_table_names);
     simpleColumn->oid(colOid);
-    simpleColumn->alias(tableColName.column);
+//    simpleColumn->alias(tableColName.column);
     simpleColumn->resultType(colType);
 
+    SOP eqPredicateOperator(new PredicateOperator("="));
+    eqPredicateOperator->setOpType(prevSimpleColumn->resultType(), simpleColumn->resultType());
+    SimpleFilter* simpleFilter =
+        new SimpleFilter(eqPredicateOperator, prevSimpleColumn, simpleColumn);
+    simpleFilter->timeZone(gwi.timeZone);
+
+    typeEqFilters.push(new ParseTree(simpleFilter));
     prevSimpleColumn = simpleColumn;
+  }
+
+  if (!filters && !typeEqFilters.empty())
+  {
+    filters = typeEqFilters.top();
+    typeEqFilters.pop();
+    typeEqFilters.push(filters);
+  }
+
+  while (!typeEqFilters.empty())
+  {
+    filters = typeEqFilters.top();
+    typeEqFilters.pop();
+
+    if (typeEqFilters.empty())
+      break;
+
+    ptp = new ParseTree(new LogicOperator("and"));
+    auto* right = typeEqFilters.top();
+    typeEqFilters.pop();
+    ptp->right(right);
+    typeEqFilters.push(ptp);
+  }
+
+  if (filters)
+  {
+    csep->filters(filters);
+    std::string aTmpDir(startup::StartUp::tmpDir());
+    filters->walk([](ParseTree* node) { cout << node->data()->toString() << endl; });
+    aTmpDir = aTmpDir + "/filter1.dot";
+    filters->drawTree(aTmpDir);
   }
 
   return 0;
