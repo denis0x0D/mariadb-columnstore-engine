@@ -6672,7 +6672,9 @@ void setExecutionParams(gp_walk_info& gwi, SCSEP& csep)
     csep->umMemLimit(get_um_mem_limit(gwi.thd) * 1024ULL * 1024);
 }
 
-int makeDependencyForEachTable(gp_walk_info& gwi, THD* thd, TABLE_LIST* table_ptr)
+int makeDependencyForEachTable(
+    gp_walk_info& gwi, THD* thd, TABLE_LIST* table_ptr,
+    std::vector<std::pair<execplan::CalpontSystemCatalog::ColDataType, uint32_t>>& typeEquivalence)
 {
   cout << "int makeDependencyForEachTable(THD* thd, TABLE_LIST* table_ptr) " << endl;
 
@@ -6680,11 +6682,6 @@ int makeDependencyForEachTable(gp_walk_info& gwi, THD* thd, TABLE_LIST* table_pt
   std::vector<
       std::pair<TABLE*, std::unordered_map<execplan::CalpontSystemCatalog::ColDataType, uint32_t>>>
       tableTypeMap;
-
-  uint32_t sessionID = execplan::CalpontSystemCatalog::idb_tid2sid(thd->thread_id);
-  boost::shared_ptr<execplan::CalpontSystemCatalog> csc =
-      execplan::CalpontSystemCatalog::makeCalpontSystemCatalog(sessionID);
-  csc->identity(execplan::CalpontSystemCatalog::FE);
 
   for (; table_ptr; table_ptr = table_ptr->next_local)
   {
@@ -6732,12 +6729,12 @@ int makeDependencyForEachTable(gp_walk_info& gwi, THD* thd, TABLE_LIST* table_pt
       if (!columnStore)
         return 1;
 
-      auto oidlist = csc->columnRIDs(tableName, true);
+      auto oidlist = gwi.csc->columnRIDs(tableName, true);
 
       for (uint32_t i = 0, e = oidlist.size(); i < e; ++i)
       {
         const auto colOid = oidlist[i].objnum;
-        auto colDataType = csc->colType(colOid).colDataType;
+        auto colDataType = gwi.csc->colType(colOid).colDataType;
         // Take the first one.
         if (!colTypeMap.count(colDataType))
           colTypeMap.insert({colDataType, colOid});
@@ -6752,7 +6749,6 @@ int makeDependencyForEachTable(gp_walk_info& gwi, THD* thd, TABLE_LIST* table_pt
     return 1;
 
   const auto& colDataTypes = tableTypeMap.front().second;
-  std::vector<std::pair<execplan::CalpontSystemCatalog::ColDataType, uint32_t>> typeEquivalence;
   for (const auto& [colDataType, colOid] : colDataTypes)
   {
     uint32_t index = 1;
@@ -6990,8 +6986,9 @@ int processWhere(SELECT_LEX& select_lex, gp_walk_info& gwi, SCSEP& csep, const s
   JOIN* join = select_lex.join;
   Item* icp = 0;
   bool isUpdateDelete = false;
+  std::vector<std::pair<execplan::CalpontSystemCatalog::ColDataType, uint32_t>> typeEquivalence;
 
-  makeDependencyForEachTable(gwi, gwi.thd, select_lex.get_table_list());
+  makeDependencyForEachTable(gwi, gwi.thd, select_lex.get_table_list(), typeEquivalence);
 
   // Flag to indicate if this is a prepared statement
   bool isPS = gwi.thd->stmt_arena && gwi.thd->stmt_arena->is_stmt_execute();
@@ -7239,10 +7236,42 @@ int processWhere(SELECT_LEX& select_lex, gp_walk_info& gwi, SCSEP& csep, const s
   {
     csep->filters(filters);
     std::string aTmpDir(startup::StartUp::tmpDir());
+    filters->walk([](ParseTree* node) { cout << node->data()->toString() << endl; });
     aTmpDir = aTmpDir + "/filter1.dot";
     filters->drawTree(aTmpDir);
   }
 
+  if (typeEquivalence.size() < 2)
+    return 0;
+
+  auto colOid = typeEquivalence[0].second;
+  auto tableColName = gwi.csc->colName(colOid);
+  auto colType = gwi.csc->colType(colOid);
+
+  execplan::SimpleColumn* prevSimpleColumn = new execplan::SimpleColumn();
+  prevSimpleColumn->columnName(tableColName.column);
+  prevSimpleColumn->tableName(tableColName.table, lower_case_table_names);
+  prevSimpleColumn->schemaName(tableColName.schema, lower_case_table_names);
+  prevSimpleColumn->oid(colOid);
+  prevSimpleColumn->alias(tableColName.column);
+  prevSimpleColumn->resultType(colType);
+
+  for (uint32_t i = 1; i < typeEquivalence.size(); ++i)
+  {
+    auto colOid = typeEquivalence[i].second;
+    auto tableColName = gwi.csc->colName(colOid);
+    auto colType = gwi.csc->colType(colOid);
+
+    execplan::SimpleColumn* simpleColumn = new execplan::SimpleColumn();
+    simpleColumn->columnName(tableColName.column);
+    simpleColumn->tableName(tableColName.table, lower_case_table_names);
+    simpleColumn->schemaName(tableColName.schema, lower_case_table_names);
+    simpleColumn->oid(colOid);
+    simpleColumn->alias(tableColName.column);
+    simpleColumn->resultType(colType);
+
+    prevSimpleColumn = simpleColumn;
+  }
 
   return 0;
 }
