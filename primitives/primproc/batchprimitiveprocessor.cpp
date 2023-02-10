@@ -1235,7 +1235,7 @@ uint32_t BatchPrimitiveProcessor::executeTupleJoin(uint32_t startRid)
          *    - if it's an anti-join and the key is either in the small side or it's NULL
          */
 
-        if (((!found || isNull) && !(joinTypes[j] & (LARGEOUTER | ANTI))) ||
+        if (((!found || isNull) && !(joinTypes[j] & (LARGEOUTER | ANTI | CARTESIAN))) ||
             ((joinTypes[j] & ANTI) && !joinerIsEmpty &&
              ((isNull && (joinTypes[j] & MATCHNULLS)) || (found && !isNull))))
         {
@@ -2787,6 +2787,7 @@ inline void BatchPrimitiveProcessor::getJoinResults(const Row& r, uint32_t jInde
         for (it = tJoiners[jIndex][i]->begin(); it != tJoiners[jIndex][i]->end(); ++it)
           v.push_back(it->second);
 
+      cout << "v size " << v.size() << endl;
       return;
     }
 

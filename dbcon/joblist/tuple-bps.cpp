@@ -2039,11 +2039,13 @@ void TupleBPS::makeJobs(vector<Job>* jobs)
       continue;
     }
 
+    /*
     if (!scanFlags[i])
     {
       fNumBlksSkipped += lbidsToScan;
       continue;
     }
+    */
 
     if (!processPseudoColFilters(i, dbRootPMMap))
     {
