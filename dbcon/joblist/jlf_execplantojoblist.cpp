@@ -1110,6 +1110,15 @@ const JobStepVector doJoin(SimpleColumn* sc1, SimpleColumn* sc2, JobInfo& jobInf
     jt = RIGHTOUTER;
   }
 
+  cout << "JOIN flag " << sf->joinFlag() << endl;
+  if (sf->joinFlag() == 3)
+  {
+    jt = CARTESIAN;
+  }
+
+  if (jt & CARTESIAN)
+    cout << "JT & CARTESIAN " << endl;
+
   // Associate the steps
   JobStepVector jsv;
   SJSTEP step;

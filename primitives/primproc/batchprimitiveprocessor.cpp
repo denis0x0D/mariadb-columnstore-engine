@@ -29,6 +29,7 @@
 //
 //
 
+#include <bitset>
 #include <mutex>
 #include <stdexcept>
 #include <unistd.h>
@@ -1200,6 +1201,9 @@ uint32_t BatchPrimitiveProcessor::executeTupleJoin(uint32_t startRid)
     for (j = 0; j < joinerCount; j++)
     {
       bool found;
+
+      if (joinTypes[j] & CARTESIAN)
+        cout << "CARTESIAN JOIN " << endl;
 
       if (UNLIKELY(joinTypes[j] & ANTI))
       {
@@ -2773,6 +2777,17 @@ inline void BatchPrimitiveProcessor::getJoinResults(const Row& r, uint32_t jInde
       }
       else
         return;
+    }
+
+    if (joinTypes[jIndex] & CARTESIAN)
+    {
+      cout << "match on cartesian " << endl;
+      TJoiner::iterator it;
+      for (uint i = 0; i < processorThreads; ++i)
+        for (it = tJoiners[jIndex][i]->begin(); it != tJoiners[jIndex][i]->end(); ++it)
+          v.push_back(it->second);
+
+      return;
     }
 
     uint64_t largeKey;

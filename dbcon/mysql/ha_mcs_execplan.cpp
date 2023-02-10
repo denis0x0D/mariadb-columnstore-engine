@@ -7270,6 +7270,7 @@ int processWhere(SELECT_LEX& select_lex, gp_walk_info& gwi, SCSEP& csep, const s
     SimpleFilter* simpleFilter =
         new SimpleFilter(eqPredicateOperator, prevSimpleColumn, simpleColumn);
     simpleFilter->timeZone(gwi.timeZone);
+    simpleFilter->joinFlag(3);
 
     typeEqFilters.push(new ParseTree(simpleFilter));
     prevSimpleColumn = simpleColumn;
