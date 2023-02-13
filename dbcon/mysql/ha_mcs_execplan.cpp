@@ -7276,12 +7276,10 @@ int processWhere(SELECT_LEX& select_lex, gp_walk_info& gwi, SCSEP& csep, const s
     prevSimpleColumn = simpleColumn;
   }
 
-  if (!filters && !typeEqFilters.empty())
-  {
-    filters = typeEqFilters.top();
-    typeEqFilters.pop();
+  cout << "type filters size: " << typeEqFilters.size() << endl;
+
+  if (filters)
     typeEqFilters.push(filters);
-  }
 
   while (!typeEqFilters.empty())
   {
@@ -7294,7 +7292,10 @@ int processWhere(SELECT_LEX& select_lex, gp_walk_info& gwi, SCSEP& csep, const s
     ptp = new ParseTree(new LogicOperator("and"));
     auto* right = typeEqFilters.top();
     typeEqFilters.pop();
+
+    ptp->left(filters);
     ptp->right(right);
+
     typeEqFilters.push(ptp);
   }
 
