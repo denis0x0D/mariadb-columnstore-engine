@@ -7235,6 +7235,7 @@ int processWhere(SELECT_LEX& select_lex, gp_walk_info& gwi, SCSEP& csep, const s
     return 0;
 
 //  auto* table_ptr = typeEquivalence[0].first;
+  /*
   auto colOid = typeEquivalence[0].second;
   auto tableColName = gwi.csc->colName(colOid);
   auto colType = gwi.csc->colType(colOid);
@@ -7247,12 +7248,13 @@ int processWhere(SELECT_LEX& select_lex, gp_walk_info& gwi, SCSEP& csep, const s
   prevSimpleColumn->oid(colOid);
  // prevSimpleColumn->alias(tableColName.column);
   prevSimpleColumn->resultType(colType);
+  */
 
   std::stack<ParseTree*> typeEqFilters;
   for (uint32_t i = 1; i < typeEquivalence.size(); ++i)
   {
- //   auto* table_ptr = typeEquivalence[i].first;
-    auto colOid = typeEquivalence[i].second;
+    // auto* table_ptr = typeEquivalence[i].first;
+    auto colOid = typeEquivalence[i - 1].second;
     auto tableColName = gwi.csc->colName(colOid);
     auto colType = gwi.csc->colType(colOid);
 
@@ -7262,18 +7264,29 @@ int processWhere(SELECT_LEX& select_lex, gp_walk_info& gwi, SCSEP& csep, const s
     simpleColumn->tableAlias(tableColName.table);
     simpleColumn->schemaName(tableColName.schema, lower_case_table_names);
     simpleColumn->oid(colOid);
-//    simpleColumn->alias(tableColName.column);
+    // simpleColumn->alias(tableColName.column);
     simpleColumn->resultType(colType);
 
+    auto colOid_ = typeEquivalence[i].second;
+    auto tableColName_ = gwi.csc->colName(colOid_);
+    auto colType_ = gwi.csc->colType(colOid_);
+
+    execplan::SimpleColumn* simpleColumn_ = new execplan::SimpleColumn();
+    simpleColumn_->columnName(tableColName_.column);
+    simpleColumn_->tableName(tableColName_.table, lower_case_table_names);
+    simpleColumn_->tableAlias(tableColName_.table);
+    simpleColumn_->schemaName(tableColName_.schema, lower_case_table_names);
+    simpleColumn_->oid(colOid_);
+    // simpleColumn->alias(tableColName.column);
+    simpleColumn_->resultType(colType_);
+
     SOP eqPredicateOperator(new PredicateOperator("="));
-    eqPredicateOperator->setOpType(prevSimpleColumn->resultType(), simpleColumn->resultType());
-    SimpleFilter* simpleFilter =
-        new SimpleFilter(eqPredicateOperator, prevSimpleColumn, simpleColumn);
+    eqPredicateOperator->setOpType(simpleColumn_->resultType(), simpleColumn->resultType());
+    SimpleFilter* simpleFilter = new SimpleFilter(eqPredicateOperator, simpleColumn_, simpleColumn);
     simpleFilter->timeZone(gwi.timeZone);
     simpleFilter->joinFlag(3);
 
     typeEqFilters.push(new ParseTree(simpleFilter));
-    prevSimpleColumn = simpleColumn;
   }
 
   cout << "type filters size: " << typeEqFilters.size() << endl;
