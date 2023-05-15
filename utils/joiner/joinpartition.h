@@ -52,6 +52,8 @@ class JoinPartition
   /* Returns true if there are more partitions to fetch, false otherwise */
   bool getNextPartition(std::vector<rowgroup::RGData>* smallData, uint64_t* partitionID, JoinPartition** jp);
 
+  void collectJoinPartitions(std::vector<JoinPartition*>& joinPartitions);
+
   boost::shared_ptr<rowgroup::RGData> getNextLargeRGData();
 
   /* It's important to follow the sequence of operations to maintain the correct
@@ -100,6 +102,9 @@ class JoinPartition
   {
     return maxSmallSize;
   }
+  uint64_t uniqueID;
+  void readByteStream(int which, messageqcpp::ByteStream* bs);
+  size_t nextSmallOffset;
 
  protected:
  private:
@@ -132,7 +137,6 @@ class JoinPartition
   uint32_t nextPartitionToReturn;
   uint64_t htSizeEstimate;
   uint64_t htTargetSize;
-  uint64_t uniqueID;
   uint64_t smallSizeOnDisk;
   uint64_t largeSizeOnDisk;
   utils::Hasher_r hasher;
@@ -148,7 +152,6 @@ class JoinPartition
   bool hasNullJoinColumn(rowgroup::Row&);
 
   // which = 0 -> smallFile, which = 1 -> largeFile
-  void readByteStream(int which, messageqcpp::ByteStream* bs);
   uint64_t writeByteStream(int which, messageqcpp::ByteStream& bs);
 
   /* Compression support */
@@ -161,7 +164,6 @@ class JoinPartition
   uint64_t maxLargeSize, maxSmallSize;
 
   /* file descriptor reduction */
-  size_t nextSmallOffset;
   size_t nextLargeOffset;
 };
 

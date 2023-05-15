@@ -436,11 +436,12 @@ int64_t JoinPartition::processSmallBuffer(RGData& rgData)
     the amount stored in RowGroups in mem + the size of the hash table.  The RowGroups
     in that case use 600MB, so 3.4GB is used by the hash table.  3.4GB/100M rows = 34 bytes/row
     */
+    /*
     htSizeEstimate += rg.getDataSize() + (34 * rg.getRowCount());
 
     if (htSizeEstimate > htTargetSize)
       ret += convertToSplitMode();
-
+      */
     // cout << "wrote some data, returning " << ret << endl;
   }
   else
@@ -569,6 +570,21 @@ int64_t JoinPartition::processLargeBuffer(RGData& rgData)
   return ret;
 }
 
+void JoinPartition::collectJoinPartitions(std::vector<JoinPartition*>& joinPartitions)
+{
+  if (fileMode)
+  {
+    joinPartitions.push_back(this);
+    return;
+  }
+
+  for (uint32_t currentBucket = 0; currentBucket < bucketCount; ++currentBucket)
+  {
+    buckets[currentBucket]->collectJoinPartitions(joinPartitions);
+  }
+}
+
+
 bool JoinPartition::getNextPartition(vector<RGData>* smallData, uint64_t* partitionID, JoinPartition** jp)
 {
   if (fileMode)
@@ -589,6 +605,7 @@ bool JoinPartition::getNextPartition(vector<RGData>* smallData, uint64_t* partit
       if (bs.length() == 0)
         break;
 
+      cout << "partiion id " << uniqueID << " bs length " << bs.length() << endl;
       rgData.deserialize(bs);
       // smallRG.setData(&rgData);
       // cout << "read a smallRG with " << smallRG.getRowCount() << " rows" << endl;
@@ -806,7 +823,7 @@ uint64_t JoinPartition::writeByteStream(int which, ByteStream& bs)
 
   if (!useCompression)
   {
-    ret = len + 4;
+    ret = len + sizeof(len);
     fs.write((char*)&len, sizeof(len));
     fs.write((char*)bs.buf(), len);
     saveErrno = errno;
@@ -828,7 +845,7 @@ uint64_t JoinPartition::writeByteStream(int which, ByteStream& bs)
     boost::scoped_array<uint8_t> compressed(new uint8_t[maxSize]);
 
     compressor->compress((char*)bs.buf(), len, (char*)compressed.get(), &actualSize);
-    ret = actualSize + 4 + 8;  // sizeof (size_t) == 8. Why 4?
+    ret = actualSize + sizeof(len);  // sizeof (size_t) == 8. Why 4?
     fs.write((char*)&actualSize, sizeof(actualSize));
     // Save uncompressed len.
     fs.write((char*)&len, sizeof(len));
@@ -843,7 +860,7 @@ uint64_t JoinPartition::writeByteStream(int which, ByteStream& bs)
       throw IDBExcept(os.str().c_str(), ERR_DBJ_FILE_IO_ERROR);
     }
 
-    totalBytesWritten += sizeof(actualSize) + actualSize;
+    totalBytesWritten += sizeof(len) + actualSize;
   }
 
   bs.advance(len);

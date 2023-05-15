@@ -269,21 +269,38 @@ void DiskJoinStep::loadFcn()
 {
   boost::shared_ptr<LoaderOutput> out;
   bool ret;
+  std::vector<JoinPartition*> joinPartitions;
+  // Collect all leaf buckets.
+  jp->collectJoinPartitions(joinPartitions);
 
   try
   {
-    do
+    for (uint32_t i = 0, e = joinPartitions.size(); i < e && !cancelled(); ++i)
     {
+      auto* joinPartition = joinPartitions[i];
       out.reset(new LoaderOutput());
-      ret = jp->getNextPartition(&out->smallData, &out->partitionID, &out->jp);
+      joinPartition->nextSmallOffset = 0;
 
-      if (ret)
+      while (true)
       {
-        // cout << "loaded partition " << out->partitionID << " smallData = " << out->smallData.size() <<
-        // endl;
-        loadFIFO->insert(out);
+        messageqcpp::ByteStream bs;
+        RGData rgData;
+        joinPartition->readByteStream(0, &bs);
+
+        if (!bs.length())
+          break;
+
+        rgData.deserialize(bs);
+        out->smallData.push_back(rgData);
       }
-    } while (ret && !cancelled());
+
+      if (!out->smallData.size())
+        continue;
+
+      out->partitionID = joinPartition->uniqueID;
+      out->jp = joinPartition;
+      loadFIFO->insert(out);
+    }
   }
   catch (...)
   {
