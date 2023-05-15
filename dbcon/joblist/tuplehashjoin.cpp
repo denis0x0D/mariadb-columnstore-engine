@@ -116,6 +116,12 @@ TupleHashJoinStep::TupleHashJoinStep(const JobInfo& jobInfo)
   else
     allowDJS = false;
 
+  string forceDiskBasedJoinStr = config->getConfig("HashJoin", "ForceDiskBasedJoin");
+  if (allowDJS && (forceDiskBasedJoinStr == "y" || forceDiskBasedJoinStr == "Y"))
+    forceDiskBasedJoin = true;
+  else
+    forceDiskBasedJoin = false;
+
   numCores = resourceManager->numCores();
   if (numCores <= 0)
     numCores = 8;
@@ -1971,53 +1977,69 @@ void TupleHashJoinStep::segregateJoiners()
     return;
   }
 
-  /* If they are all inner joins they can be segregated w/o respect to
-  ordering; if they're not, the ordering has to stay consistent therefore
-  the first joiner that isn't finished and everything after has to be
-  done by DJS. */
-
-  if (allInnerJoins)
+  // Force all joins into disk based.
+  if (forceDiskBasedJoin)
   {
-    for (i = 0; i < smallSideCount; i++)
+    for (i = 0; i < smallSideCount; ++i)
     {
-      // if (joiners[i]->isFinished() && (rand() % 2)) {    // for debugging
-      if (joiners[i]->isFinished())
-      {
-        // cout << "1joiner " << i << "  " << hex << (uint64_t) joiners[i].get() << dec << " -> TBPS" << endl;
-        tbpsJoiners.push_back(joiners[i]);
-      }
-      else
-      {
-        joinIsTooBig = true;
-        joiners[i]->setConvertToDiskJoin();
-        // cout << "1joiner " << i << "  " << hex << (uint64_t) joiners[i].get() << dec << " -> DJS" << endl;
-        djsJoiners.push_back(joiners[i]);
-        djsJoinerMap.push_back(i);
-      }
+      joinIsTooBig = true;
+      joiners[i]->setConvertToDiskJoin();
+      djsJoiners.push_back(joiners[i]);
+      djsJoinerMap.push_back(i);
     }
   }
   else
   {
-    // uint limit = rand() % smallSideCount;
-    for (i = 0; i < smallSideCount; i++)
+    /* If they are all inner joins they can be segregated w/o respect to
+    ordering; if they're not, the ordering has to stay consistent therefore
+    the first joiner that isn't finished and everything after has to be
+    done by DJS. */
+    if (allInnerJoins)
     {
-      // if (joiners[i]->isFinished() && i < limit) {  // debugging
-      if (joiners[i]->isFinished())
+      for (i = 0; i < smallSideCount; i++)
       {
-        // cout << "2joiner " << i << "  " << hex << (uint64_t) joiners[i].get() << dec << " -> TBPS" << endl;
-        tbpsJoiners.push_back(joiners[i]);
+        // if (joiners[i]->isFinished() && (rand() % 2)) {    // for debugging
+        if (joiners[i]->isFinished())
+        {
+          // cout << "1joiner " << i << "  " << hex << (uint64_t) joiners[i].get() << dec << " -> TBPS" <<
+          // endl;
+          tbpsJoiners.push_back(joiners[i]);
+        }
+        else
+        {
+          joinIsTooBig = true;
+          joiners[i]->setConvertToDiskJoin();
+          // cout << "1joiner " << i << "  " << hex << (uint64_t) joiners[i].get() << dec << " -> DJS" <<
+          // endl;
+          djsJoiners.push_back(joiners[i]);
+          djsJoinerMap.push_back(i);
+        }
       }
-      else
-        break;
     }
-
-    for (; i < smallSideCount; i++)
+    else
     {
-      joinIsTooBig = true;
-      joiners[i]->setConvertToDiskJoin();
-      // cout << "2joiner " << i << "  " << hex << (uint64_t) joiners[i].get() << dec << " -> DJS" << endl;
-      djsJoiners.push_back(joiners[i]);
-      djsJoinerMap.push_back(i);
+      // uint limit = rand() % smallSideCount;
+      for (i = 0; i < smallSideCount; i++)
+      {
+        // if (joiners[i]->isFinished() && i < limit) {  // debugging
+        if (joiners[i]->isFinished())
+        {
+          // cout << "2joiner " << i << "  " << hex << (uint64_t) joiners[i].get() << dec << " -> TBPS" <<
+          // endl;
+          tbpsJoiners.push_back(joiners[i]);
+        }
+        else
+          break;
+      }
+
+      for (; i < smallSideCount; i++)
+      {
+        joinIsTooBig = true;
+        joiners[i]->setConvertToDiskJoin();
+        // cout << "2joiner " << i << "  " << hex << (uint64_t) joiners[i].get() << dec << " -> DJS" << endl;
+        djsJoiners.push_back(joiners[i]);
+        djsJoinerMap.push_back(i);
+      }
     }
   }
 }
