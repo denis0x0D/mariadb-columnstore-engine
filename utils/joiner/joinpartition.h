@@ -52,6 +52,8 @@ class JoinPartition
   /* Returns true if there are more partitions to fetch, false otherwise */
   bool getNextPartition(std::vector<rowgroup::RGData>* smallData, uint64_t* partitionID, JoinPartition** jp);
 
+  void collectJoinPartitions(std::vector<JoinPartition*>& joinPartitions);
+
   boost::shared_ptr<rowgroup::RGData> getNextLargeRGData();
 
   /* It's important to follow the sequence of operations to maintain the correct
@@ -100,11 +102,21 @@ class JoinPartition
   {
     return maxSmallSize;
   }
+  void readByteStream(int which, messageqcpp::ByteStream* bs);
+  uint64_t getUniqueID()
+  {
+    return uniqueID;
+  }
+  void setNextSmallOffset(size_t offset)
+  {
+    nextSmallOffset = offset;
+  }
 
  protected:
  private:
   void initBuffers();
   int64_t convertToSplitMode();
+  bool canConvertToSplitMode();
   int64_t processSmallBuffer();
   int64_t processLargeBuffer();
 
@@ -137,6 +149,7 @@ class JoinPartition
   uint64_t largeSizeOnDisk;
   utils::Hasher_r hasher;
   bool rootNode;
+  bool canSplit;
 
   /* Not-in antijoin hack.  A small-side row with a null join column has to go into every partition or
   into one always resident partition (TBD).
@@ -148,7 +161,6 @@ class JoinPartition
   bool hasNullJoinColumn(rowgroup::Row&);
 
   // which = 0 -> smallFile, which = 1 -> largeFile
-  void readByteStream(int which, messageqcpp::ByteStream* bs);
   uint64_t writeByteStream(int which, messageqcpp::ByteStream& bs);
 
   /* Compression support */

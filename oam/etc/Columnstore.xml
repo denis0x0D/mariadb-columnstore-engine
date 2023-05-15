@@ -189,6 +189,7 @@
 		<TotalUmMemory>25%</TotalUmMemory>
 		<CPUniqueLimit>100</CPUniqueLimit>
 		<AllowDiskBasedJoin>N</AllowDiskBasedJoin>
+		<ForceDiskBasedJoin>N</ForceDiskBasedJoin>
 		<TempFileCompression>Y</TempFileCompression>
 		<TempFileCompressionType>Snappy</TempFileCompressionType> <!-- LZ4, Snappy -->
 	</HashJoin>
