@@ -268,18 +268,24 @@ void DiskJoinStep::largeReader()
 void DiskJoinStep::loadFcn()
 {
   boost::shared_ptr<LoaderOutput> out;
-  bool ret;
   std::vector<JoinPartition*> joinPartitions;
   // Collect all leaf buckets.
   jp->collectJoinPartitions(joinPartitions);
+  const uint64_t limit = partitionSize;
 
   try
   {
-    for (uint32_t i = 0, e = joinPartitions.size(); i < e && !cancelled(); ++i)
+    uint32_t partitionIndex = 0;
+    bool partitionDone = true;
+
+    while (partitionIndex < joinPartitions.size() && !cancelled())
     {
-      auto* joinPartition = joinPartitions[i];
+      uint64_t currentSize = 0;
+      auto* joinPartition = joinPartitions[partitionIndex];
       out.reset(new LoaderOutput());
-      joinPartition->nextSmallOffset = 0;
+
+      if (partitionDone)
+        joinPartition->nextSmallOffset = 0;
 
       while (true)
       {
@@ -288,18 +294,34 @@ void DiskJoinStep::loadFcn()
         joinPartition->readByteStream(0, &bs);
 
         if (!bs.length())
+        {
+          partitionDone = true;
           break;
+        }
 
         rgData.deserialize(bs);
         out->smallData.push_back(rgData);
+
+        currentSize += bs.length();
+        if (currentSize >= limit)
+        {
+          partitionDone = false;
+          break;
+        }
       }
 
       if (!out->smallData.size())
+      {
+        ++partitionIndex;
         continue;
+      }
 
       out->partitionID = joinPartition->uniqueID;
       out->jp = joinPartition;
       loadFIFO->insert(out);
+
+      if (partitionDone)
+        ++partitionIndex;
     }
   }
   catch (...)
