@@ -269,15 +269,15 @@ void DiskJoinStep::loadFcn()
 {
   boost::shared_ptr<LoaderOutput> out;
   std::vector<JoinPartition*> joinPartitions;
-  // Collect all leaf buckets.
+  // Collect all join partitions.
   jp->collectJoinPartitions(joinPartitions);
-  const uint64_t limit = partitionSize;
 
   try
   {
     uint32_t partitionIndex = 0;
     bool partitionDone = true;
 
+    // Iterate over partitions.
     while (partitionIndex < joinPartitions.size() && !cancelled())
     {
       uint64_t currentSize = 0;
@@ -290,9 +290,10 @@ void DiskJoinStep::loadFcn()
       while (true)
       {
         messageqcpp::ByteStream bs;
+        RowGroup rowGroup;
         RGData rgData;
-        joinPartition->readByteStream(0, &bs);
 
+        joinPartition->readByteStream(0, &bs);
         if (!bs.length())
         {
           partitionDone = true;
@@ -300,10 +301,20 @@ void DiskJoinStep::loadFcn()
         }
 
         rgData.deserialize(bs);
+        rowGroup.setData(&rgData);
+
+        // Check that current `RowGroup` has rows.
+        if (!rowGroup.getRowCount())
+        {
+          partitionDone = true;
+          break;
+        }
+
+        // TODO: Estimation is taken from original code, add proper estimation.
+        currentSize += (34 * rowGroup.getRowCount());
         out->smallData.push_back(rgData);
 
-        currentSize += bs.length();
-        if (currentSize >= limit)
+        if (currentSize >= partitionSize)
         {
           partitionDone = false;
           break;
@@ -316,10 +327,12 @@ void DiskJoinStep::loadFcn()
         continue;
       }
 
+      // Initialize `LoaderOutput` and add it to `FIFO`.
       out->partitionID = joinPartition->uniqueID;
       out->jp = joinPartition;
       loadFIFO->insert(out);
 
+      // If this partition is done - take a next one.
       if (partitionDone)
         ++partitionIndex;
     }
