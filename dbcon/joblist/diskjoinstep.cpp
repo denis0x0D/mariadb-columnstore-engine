@@ -314,11 +314,14 @@ void DiskJoinStep::loadFcn()
         currentSize += (34 * rowGroup.getRowCount());
         out->smallData.push_back(rgData);
 
-        if (currentSize >= partitionSize)
+        /* TODO: Implement this.
+        if (currentSize >= 1000)
         {
+          cout << "exceed the limit for current bucket " << currentSize << endl;
           partitionDone = false;
           break;
         }
+        */
       }
 
       if (!out->smallData.size())

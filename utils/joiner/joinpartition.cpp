@@ -54,6 +54,7 @@ JoinPartition::JoinPartition(const RowGroup& lRG, const RowGroup& sRG, const vec
  , htSizeEstimate(0)
  , htTargetSize(partitionSize)
  , rootNode(true)
+ , canSplit(true)
  , antiWithMatchNulls(antiWMN)
  , needsAllNullRows(hasFEFilter)
  , gotNullRow(false)
@@ -131,6 +132,7 @@ JoinPartition::JoinPartition(const JoinPartition& jp, bool splitMode)
  , htSizeEstimate(0)
  , htTargetSize(jp.htTargetSize)
  , rootNode(false)
+ , canSplit(true)
  , antiWithMatchNulls(jp.antiWithMatchNulls)
  , needsAllNullRows(jp.needsAllNullRows)
  , gotNullRow(false)
@@ -316,7 +318,6 @@ int64_t JoinPartition::doneInsertingLargeData()
 
 int64_t JoinPartition::convertToSplitMode()
 {
-  int i, j;
   ByteStream bs;
   RGData rgData;
   uint32_t hash;
@@ -331,7 +332,7 @@ int64_t JoinPartition::convertToSplitMode()
   smallSizeOnDisk = 0;
   buckets.reserve(bucketCount);
 
-  for (i = 0; i < (int)bucketCount; i++)
+  for (uint32_t i = 0; i < bucketCount; i++)
     buckets.push_back(boost::shared_ptr<JoinPartition>(new JoinPartition(*this, false)));
 
   RowGroup& rg = smallRG;
@@ -348,7 +349,7 @@ int64_t JoinPartition::convertToSplitMode()
     rgData.deserialize(bs);
     rg.setData(&rgData);
 
-    for (j = 0; j < (int)rg.getRowCount(); j++)
+    for (uint32_t j = 0; j < rg.getRowCount(); j++)
     {
       rg.getRow(j, &row);
 
@@ -356,7 +357,7 @@ int64_t JoinPartition::convertToSplitMode()
       {
         if (needsAllNullRows || !gotNullRow)
         {
-          for (j = 0; j < (int)bucketCount; j++)
+          for (j = 0; j < bucketCount; j++)
             ret += buckets[j]->insertSmallSideRow(row);
 
           gotNullRow = true;
@@ -387,9 +388,14 @@ int64_t JoinPartition::convertToSplitMode()
   boost::filesystem::remove(smallFilename);
   smallFilename.clear();
 
-  for (i = 0; i < (int)bucketCount; i++)
+  for (uint32_t i = 0; i < bucketCount; i++)
+  {
     if (rowDist[i] == rowCount)
-      throw IDBExcept("All rows hashed to the same bucket", ERR_DBJ_DATA_DISTRIBUTION);
+    {
+      buckets[i]->canSplit = false;
+      break;
+    }
+  }
 
   rg.setData(&buffer);
   rg.resetRowGroup(0);
@@ -436,12 +442,10 @@ int64_t JoinPartition::processSmallBuffer(RGData& rgData)
     the amount stored in RowGroups in mem + the size of the hash table.  The RowGroups
     in that case use 600MB, so 3.4GB is used by the hash table.  3.4GB/100M rows = 34 bytes/row
     */
-    /*
     htSizeEstimate += rg.getDataSize() + (34 * rg.getRowCount());
 
-    if (htSizeEstimate > htTargetSize)
+    if (canSplit && htSizeEstimate > htTargetSize)
       ret += convertToSplitMode();
-      */
     // cout << "wrote some data, returning " << ret << endl;
   }
   else

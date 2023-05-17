@@ -141,6 +141,7 @@ class JoinPartition
   uint64_t largeSizeOnDisk;
   utils::Hasher_r hasher;
   bool rootNode;
+  bool canSplit;
 
   /* Not-in antijoin hack.  A small-side row with a null join column has to go into every partition or
   into one always resident partition (TBD).
