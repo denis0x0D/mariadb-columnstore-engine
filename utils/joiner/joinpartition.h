@@ -110,6 +110,7 @@ class JoinPartition
  private:
   void initBuffers();
   int64_t convertToSplitMode();
+  bool canConvertToSplitMode();
   int64_t processSmallBuffer();
   int64_t processLargeBuffer();
 

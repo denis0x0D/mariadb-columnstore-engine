@@ -147,13 +147,6 @@ JoinPartition::JoinPartition(const JoinPartition& jp, bool splitMode)
   ostringstream os;
 
   fileMode = true;
-  // tuning issue: with the defaults, each 100MB bucket would split s.t. the children
-  // could store another 4GB total.  Given a good hash and evenly distributed data,
-  // the first level of expansion would happen for all JPs at once, giving a total
-  // capacity of (4GB * 40) = 160GB, when actual usage at that point is a little over 4GB.
-  // Instead, each will double in size, giving a capacity of 8GB -> 16 -> 32, and so on.
-  //	bucketCount = jp.bucketCount;
-  bucketCount = 2;
   config::Config* config = config::Config::makeConfig();
   filenamePrefix = config->getTempFileDir(config::Config::TempDirPurpose::Joins);
 
@@ -316,6 +309,72 @@ int64_t JoinPartition::doneInsertingLargeData()
   return ret;
 }
 
+bool JoinPartition::canConvertToSplitMode()
+{
+  if (!canSplit)
+    return false;
+
+  ByteStream bs;
+  RowGroup& rg = smallRG;
+  Row& row = smallRow;
+  RGData rgData;
+  uint64_t totalRowCount = 0;
+  std::unordered_map<uint32_t, uint32_t> rowDist;
+
+  nextSmallOffset = 0;
+  while (1)
+  {
+    uint32_t hash;
+    readByteStream(0, &bs);
+
+    if (bs.length() == 0)
+      break;
+
+    rgData.deserialize(bs);
+    rg.setData(&rgData);
+
+    for (uint32_t j = 0, e = rg.getRowCount(); j < e; ++j)
+    {
+      rg.getRow(j, &row);
+
+      if (antiWithMatchNulls && hasNullJoinColumn(row))
+        continue;
+
+      uint64_t tmp;
+      if (typelessJoin)
+        hash = getHashOfTypelessKey(row, smallKeyCols, hashSeed) % bucketCount;
+      else
+      {
+        if (UNLIKELY(row.isUnsigned(smallKeyCols[0])))
+          tmp = row.getUintField(smallKeyCols[0]);
+        else
+          tmp = row.getIntField(smallKeyCols[0]);
+
+        hash = hasher((char*)&tmp, 8, hashSeed);
+        hash = hasher.finalize(hash, 8) % bucketCount;
+      }
+
+      totalRowCount++;
+      rowDist[hash]++;
+    }
+  }
+
+  for (const auto& [hash, currentRowCount] : rowDist)
+  {
+    if (currentRowCount == totalRowCount)
+    {
+      canSplit = false;
+      break;
+    }
+  }
+
+  rg.setData(&buffer);
+  rg.resetRowGroup(0);
+  rg.getRow(0, &row);
+
+  return canSplit;
+}
+
 int64_t JoinPartition::convertToSplitMode()
 {
   ByteStream bs;
@@ -323,15 +382,13 @@ int64_t JoinPartition::convertToSplitMode()
   uint32_t hash;
   uint64_t tmp;
   int64_t ret = -(int64_t)smallSizeOnDisk;  // smallFile gets deleted
-  boost::scoped_array<uint32_t> rowDist(new uint32_t[bucketCount]);
   uint32_t rowCount = 0;
-
-  memset(rowDist.get(), 0, sizeof(uint32_t) * bucketCount);
   fileMode = false;
+
   htSizeEstimate = 0;
   smallSizeOnDisk = 0;
-  buckets.reserve(bucketCount);
 
+  buckets.reserve(bucketCount);
   for (uint32_t i = 0; i < bucketCount; i++)
     buckets.push_back(boost::shared_ptr<JoinPartition>(new JoinPartition(*this, false)));
 
@@ -378,24 +435,13 @@ int64_t JoinPartition::convertToSplitMode()
         hash = hasher((char*)&tmp, 8, hashSeed);
         hash = hasher.finalize(hash, 8) % bucketCount;
       }
-
-      rowCount++;
-      rowDist[hash]++;
-      ret += buckets[hash]->insertSmallSideRow(row);
+      buckets[hash]->insertSmallSideRow(row);
     }
   }
+
 
   boost::filesystem::remove(smallFilename);
   smallFilename.clear();
-
-  for (uint32_t i = 0; i < bucketCount; i++)
-  {
-    if (rowDist[i] == rowCount)
-    {
-      buckets[i]->canSplit = false;
-      break;
-    }
-  }
 
   rg.setData(&buffer);
   rg.resetRowGroup(0);
@@ -442,10 +488,11 @@ int64_t JoinPartition::processSmallBuffer(RGData& rgData)
     the amount stored in RowGroups in mem + the size of the hash table.  The RowGroups
     in that case use 600MB, so 3.4GB is used by the hash table.  3.4GB/100M rows = 34 bytes/row
     */
-    htSizeEstimate += rg.getDataSize() + (34 * rg.getRowCount());
+    htSizeEstimate += rg.getRowCount();
 
-    if (canSplit && htSizeEstimate > htTargetSize)
+    if (htTargetSize < htSizeEstimate && canConvertToSplitMode())
       ret += convertToSplitMode();
+
     // cout << "wrote some data, returning " << ret << endl;
   }
   else

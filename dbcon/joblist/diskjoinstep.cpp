@@ -272,6 +272,14 @@ void DiskJoinStep::loadFcn()
   // Collect all join partitions.
   jp->collectJoinPartitions(joinPartitions);
 
+  cout << "join partitions: " << endl;
+  for (uint32_t i = 0; i < joinPartitions.size(); ++i)
+  {
+    cout << joinPartitions[i]->uniqueID << ", ";
+  }
+
+  cout << endl;
+
   try
   {
     uint32_t partitionIndex = 0;
@@ -362,6 +370,7 @@ void DiskJoinStep::buildFcn()
   RowGroup l_smallRG = smallRG;
 
   l_smallRG.initRow(&smallRow);
+  uint32_t rowCount = 0;
 
   while (1)
   {
@@ -382,6 +391,7 @@ void DiskJoinStep::buildFcn()
     {
       l_smallRG.setData(&in->smallData[i]);
       l_smallRG.getRow(0, &smallRow);
+      rowCount += l_smallRG.getRowCount();
 
       for (j = 0; j < (int)l_smallRG.getRowCount(); j++, smallRow.nextRow())
         out->tupleJoiner->insert(smallRow, (largeIterationCount == 1));
@@ -390,6 +400,8 @@ void DiskJoinStep::buildFcn()
     out->tupleJoiner->doneInserting();
     buildFIFO->insert(out);
   }
+
+  cout << "small side row count " << rowCount << endl;
 
 out:
 
