@@ -277,7 +277,6 @@ void DiskJoinStep::loadFcn()
   {
     cout << joinPartitions[i]->uniqueID << ", ";
   }
-
   cout << endl;
 
   try
@@ -318,20 +317,16 @@ void DiskJoinStep::loadFcn()
           break;
         }
 
-        // TODO: Estimation is taken from original code, add proper estimation.
-        currentSize += (rowGroup.getRowCount());
+        // TODO: Add proper estimation, for string as well.
+        currentSize += (64 * rowGroup.getRowCount());
         out->smallData.push_back(rgData);
-        partitionDone = false;
-        break;
 
-        /* TODO: Implement this.
-        if (currentSize >= 1000)
+        if (currentSize > partitionSize)
         {
           cout << "exceed the limit for current bucket " << currentSize << endl;
           partitionDone = false;
           break;
         }
-        */
       }
 
       if (!out->smallData.size())

@@ -1841,7 +1841,7 @@ void CircularJoinGraphTransformer::chooseEdgeToTransform(Cycle& cycle,
     std::cout << "FK FK key not found, removing the first one inner join edge" << std::endl;
 
   // Take just a first.
-  resultEdge = std::make_pair(cycle.front(), 0 /*Dummy weight*/);
+  resultEdge = std::make_pair(cycle.back(), 0 /*Dummy weight*/);
 }
 
 void CircularJoinGraphTransformer::removeAssociatedHashJoinStepFromJoinSteps(const JoinEdge& joinEdge)

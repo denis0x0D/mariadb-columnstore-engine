@@ -34,6 +34,7 @@ using namespace logging;
 
 namespace joiner
 {
+// FIXME: Possible overflow, we have to null it after clearing files.
 uint64_t uniqueNums = 0;
 
 JoinPartition::JoinPartition()
@@ -265,9 +266,6 @@ int64_t JoinPartition::doneInsertingSmallData()
       smallSizeOnDisk += leafNodeIncrement;
     }
 
-  // else
-  //	cout << uniqueID << " htsizeestimate = " << htSizeEstimate << endl;
-
   if (!rootNode)
   {
     buffer.reinit(largeRG);
@@ -470,30 +468,18 @@ int64_t JoinPartition::processSmallBuffer(RGData& rgData)
   int64_t ret = 0;
 
   rg.setData(&rgData);
-  // if (rootNode)
-  // cout << "smallside RGData: " << rg.toString() << endl;
 
   if (fileMode)
   {
     ByteStream bs;
     rg.serializeRGData(bs);
-    // cout << "writing RGData: " << rg.toString() << endl;
 
     ret = writeByteStream(0, bs);
-    // cout << "wrote " << ret << " bytes" << endl;
 
-    /* Check whether this partition is now too big -> convert to split mode.
-
-    The current estimate is based on 100M 4-byte rows = 4GB.  The total size is
-    the amount stored in RowGroups in mem + the size of the hash table.  The RowGroups
-    in that case use 600MB, so 3.4GB is used by the hash table.  3.4GB/100M rows = 34 bytes/row
-    */
-    htSizeEstimate += rg.getRowCount();
-
+    htSizeEstimate += (64 * rg.getRowCount());
+    // Check whether this partition is now too big -> convert to split mode.
     if (htTargetSize < htSizeEstimate && canConvertToSplitMode())
       ret += convertToSplitMode();
-
-    // cout << "wrote some data, returning " << ret << endl;
   }
   else
   {
@@ -530,19 +516,16 @@ int64_t JoinPartition::processSmallBuffer(RGData& rgData)
         hash = hasher.finalize(hash, 8) % bucketCount;
       }
 
-      // cout << "hashing smallside row: " << row.toString() << endl;
       ret += buckets[hash]->insertSmallSideRow(row);
     }
-
-    // cout << "distributed rows, returning " << ret << endl;
   }
 
   smallSizeOnDisk += ret;
   return ret;
 }
 
-/* the difference between processSmall & processLarge is mostly the names of
-   variables being small* -> large*, template? */
+// the difference between processSmall & processLarge is mostly the names of
+// variables being small* -> large*, template? */
 
 int64_t JoinPartition::processLargeBuffer()
 {
@@ -563,11 +546,8 @@ int64_t JoinPartition::processLargeBuffer(RGData& rgData)
 
   rg.setData(&rgData);
 
-  // if (rootNode)
-  //	cout << "largeside RGData: "  << rg.toString() << endl;
-
-  /* Need to fail a query with an anti join, an FE filter, and a NULL row on the
-  large side b/c it needs to be joined with the entire small side table. */
+  // Need to fail a query with an anti join, an FE filter, and a NULL row on the
+  // large side b/c it needs to be joined with the entire small side table.
   if (antiWithMatchNulls && needsAllNullRows)
   {
     rg.getRow(0, &row);
@@ -586,9 +566,7 @@ int64_t JoinPartition::processLargeBuffer(RGData& rgData)
   {
     ByteStream bs;
     rg.serializeRGData(bs);
-    // cout << "writing large RGData: " << rg.toString() << endl;
     ret = writeByteStream(1, bs);
-    // cout << "wrote " << ret << " bytes" << endl;
   }
   else
   {
@@ -612,7 +590,6 @@ int64_t JoinPartition::processLargeBuffer(RGData& rgData)
         hash = hasher.finalize(hash, 8) % bucketCount;
       }
 
-      // cout << "large side hashing row: " << row.toString() << endl;
       ret += buckets[hash]->insertLargeSideRow(row);
     }
   }
@@ -635,53 +612,6 @@ void JoinPartition::collectJoinPartitions(std::vector<JoinPartition*>& joinParti
   }
 }
 
-
-bool JoinPartition::getNextPartition(vector<RGData>* smallData, uint64_t* partitionID, JoinPartition** jp)
-{
-  if (fileMode)
-  {
-    ByteStream bs;
-    RGData rgData;
-
-    if (nextPartitionToReturn > 0)
-      return false;
-
-    // cout << "reading the small side" << endl;
-    nextSmallOffset = 0;
-
-    while (1)
-    {
-      readByteStream(0, &bs);
-
-      if (bs.length() == 0)
-        break;
-
-      cout << "partiion id " << uniqueID << " bs length " << bs.length() << endl;
-      rgData.deserialize(bs);
-      // smallRG.setData(&rgData);
-      // cout << "read a smallRG with " << smallRG.getRowCount() << " rows" << endl;
-      smallData->push_back(rgData);
-    }
-
-    nextPartitionToReturn = 1;
-    *partitionID = uniqueID;
-    *jp = this;
-    return true;
-  }
-
-  bool ret = false;
-
-  while (!ret && nextPartitionToReturn < bucketCount)
-  {
-    ret = buckets[nextPartitionToReturn]->getNextPartition(smallData, partitionID, jp);
-
-    if (!ret)
-      nextPartitionToReturn++;
-  }
-
-  return ret;
-}
-
 boost::shared_ptr<RGData> JoinPartition::getNextLargeRGData()
 {
   boost::shared_ptr<RGData> ret;
@@ -695,11 +625,7 @@ boost::shared_ptr<RGData> JoinPartition::getNextLargeRGData()
     ret->deserialize(bs);
   }
   else
-  {
-//    boost::filesystem::remove(largeFilename);
- //   largeSizeOnDisk = 0;
     nextLargeOffset = 0;
-  }
 
   return ret;
 }
@@ -751,7 +677,6 @@ void JoinPartition::initForLargeSideFeed()
 
 void JoinPartition::saveSmallSidePartition(vector<RGData>& rgData)
 {
-  // cout << "JP: saving partition: " << id << endl;
   htSizeEstimate = 0;
   smallSizeOnDisk = 0;
   nextSmallOffset = 0;
