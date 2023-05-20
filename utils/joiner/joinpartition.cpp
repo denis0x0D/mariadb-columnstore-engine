@@ -696,8 +696,9 @@ boost::shared_ptr<RGData> JoinPartition::getNextLargeRGData()
   }
   else
   {
-    boost::filesystem::remove(largeFilename);
-    largeSizeOnDisk = 0;
+//    boost::filesystem::remove(largeFilename);
+ //   largeSizeOnDisk = 0;
+    nextLargeOffset = 0;
   }
 
   return ret;

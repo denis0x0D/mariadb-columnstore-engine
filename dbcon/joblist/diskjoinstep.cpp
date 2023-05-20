@@ -319,8 +319,10 @@ void DiskJoinStep::loadFcn()
         }
 
         // TODO: Estimation is taken from original code, add proper estimation.
-        currentSize += (34 * rowGroup.getRowCount());
+        currentSize += (rowGroup.getRowCount());
         out->smallData.push_back(rgData);
+        partitionDone = false;
+        break;
 
         /* TODO: Implement this.
         if (currentSize >= 1000)
@@ -335,6 +337,7 @@ void DiskJoinStep::loadFcn()
       if (!out->smallData.size())
       {
         ++partitionIndex;
+        partitionDone = true;
         continue;
       }
 
