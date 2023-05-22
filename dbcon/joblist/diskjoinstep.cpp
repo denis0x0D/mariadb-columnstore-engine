@@ -399,8 +399,6 @@ void DiskJoinStep::buildFcn()
     buildFIFO->insert(out);
   }
 
-  cout << "small side row count " << rowCount << endl;
-
 out:
 
   while (more)

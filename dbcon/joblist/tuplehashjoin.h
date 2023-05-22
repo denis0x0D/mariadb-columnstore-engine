@@ -622,6 +622,7 @@ class TupleHashJoinStep : public JobStep, public TupleDeliveryStep
   uint64_t djsPartitionSize;
   bool isDML;
   bool allowDJS;
+  bool forceDiskBasedJoin;
 
   // hacky mechanism to prevent nextBand from starting before the final
   // THJS configuration is settled.  Debatable whether to use a bool and poll instead;
