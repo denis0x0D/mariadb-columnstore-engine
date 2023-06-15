@@ -261,19 +261,9 @@ void DiskJoinStep::largeReader()
       more = largeDL->next(largeIt, &rgData);
 }
 
-void DiskJoinStep::loadFcn()
+void DiskJoinStep::loadFcn(const std::vector<joiner::JoinPartition*>& joinPartitions)
 {
   boost::shared_ptr<LoaderOutput> out;
-  std::vector<JoinPartition*> joinPartitions;
-  // Collect all join partitions.
-  jp->collectJoinPartitions(joinPartitions);
-
-#ifdef DEBUG_DJS
-  cout << "Collected join partitions: " << endl;
-  for (uint32_t i = 0; i < joinPartitions.size(); ++i)
-    cout << joinPartitions[i]->getUniqueID() << ", ";
-  cout << endl;
-#endif
 
   try
   {
@@ -338,7 +328,7 @@ void DiskJoinStep::loadFcn()
       // Initialize `LoaderOutput` and add it to `FIFO`.
       out->partitionID = joinPartition->getUniqueID();
       out->jp = joinPartition;
-      loadFIFO->insert(out);
+      loadFIFO[0]->insert(out);
 
       // If this partition is done - take a next one.
       if (partitionDone)
@@ -353,7 +343,7 @@ void DiskJoinStep::loadFcn()
     abort();
   }
 
-  loadFIFO->endOfInput();
+  loadFIFO[0]->endOfInput();
 }
 
 void DiskJoinStep::buildFcn()
@@ -361,7 +351,7 @@ void DiskJoinStep::buildFcn()
   boost::shared_ptr<LoaderOutput> in;
   boost::shared_ptr<BuilderOutput> out;
   bool more = true;
-  int it = loadFIFO->getIterator();
+  int it = loadFIFO[0]->getIterator();
   int i, j;
   Row smallRow;
   RowGroup l_smallRG = smallRG;
@@ -371,7 +361,7 @@ void DiskJoinStep::buildFcn()
   while (1)
   {
     // cout << "getting a partition from the loader" << endl;
-    more = loadFIFO->next(it, &in);
+    more = loadFIFO[0]->next(it, &in);
 
     if (!more || cancelled())
       goto out;
@@ -393,15 +383,15 @@ void DiskJoinStep::buildFcn()
     }
 
     out->tupleJoiner->doneInserting();
-    buildFIFO->insert(out);
+    buildFIFO[0]->insert(out);
   }
 
 out:
 
   while (more)
-    more = loadFIFO->next(it, &in);
+    more = loadFIFO[0]->next(it, &in);
 
-  buildFIFO->endOfInput();
+  buildFIFO[0]->endOfInput();
 }
 
 void DiskJoinStep::joinFcn()
@@ -411,7 +401,7 @@ void DiskJoinStep::joinFcn()
 
   boost::shared_ptr<BuilderOutput> in;
   bool more = true;
-  int it = buildFIFO->getIterator();
+  int it = buildFIFO[0]->getIterator();
   int i, j;
   vector<RGData> joinResults;
   RowGroup l_largeRG = largeRG, l_smallRG = smallRG;
@@ -467,7 +457,7 @@ void DiskJoinStep::joinFcn()
   {
     while (1)
     {
-      more = buildFIFO->next(it, &in);
+      more = buildFIFO[0]->next(it, &in);
 
       if (!more || cancelled())
         goto out;
@@ -587,7 +577,7 @@ void DiskJoinStep::joinFcn()
 out:
 
   while (more)
-    more = buildFIFO->next(it, &in);
+    more = buildFIFO[0]->next(it, &in);
 
   if (lastLargeIteration || cancelled())
   {
@@ -595,6 +585,34 @@ out:
     outputDL->endOfInput();
     closedOutput = true;
   }
+}
+
+void DiskJoinStep::initializeFIFO()
+{
+  if (!loadFIFO.size())
+  {
+    boost::shared_ptr<joblist::FIFO<boost::shared_ptr<LoaderOutput>>> lFIFO(
+        new FIFO<boost::shared_ptr<LoaderOutput>>(1, 1));
+    boost::shared_ptr<joblist::FIFO<boost::shared_ptr<BuilderOutput>>> bFIFO(
+        new FIFO<boost::shared_ptr<BuilderOutput>>(1, 1));
+    loadFIFO.push_back(lFIFO);
+    buildFIFO.push_back(bFIFO);
+  }
+  else
+  {
+    loadFIFO[0].reset(new FIFO<boost::shared_ptr<LoaderOutput>>(1, 1));
+    buildFIFO[0].reset(new FIFO<boost::shared_ptr<BuilderOutput>>(1, 1));
+  }
+}
+
+void DiskJoinStep::processJoinPartitions(const std::vector<JoinPartition*>& joinPartitions)
+{
+  std::vector<uint64_t> thrds;
+  thrds.reserve(3);
+  thrds.push_back(jobstepThreadPool.invoke(Loader(this, joinPartitions)));
+  thrds.push_back(jobstepThreadPool.invoke(Builder(this)));
+  thrds.push_back(jobstepThreadPool.invoke(Joiner(this)));
+  jobstepThreadPool.join(thrds);
 }
 
 void DiskJoinStep::mainRunner()
@@ -620,16 +638,14 @@ void DiskJoinStep::mainRunner()
       if (cancelled())
         break;
 
-      loadFIFO.reset(
-          new FIFO<boost::shared_ptr<LoaderOutput> >(1, 1));  // double buffering should be good enough
-      buildFIFO.reset(new FIFO<boost::shared_ptr<BuilderOutput> >(1, 1));
+      initializeFIFO();
 
-      std::vector<uint64_t> thrds;
-      thrds.reserve(3);
-      thrds.push_back(jobstepThreadPool.invoke(Loader(this)));
-      thrds.push_back(jobstepThreadPool.invoke(Builder(this)));
-      thrds.push_back(jobstepThreadPool.invoke(Joiner(this)));
-      jobstepThreadPool.join(thrds);
+      std::vector<JoinPartition*> joinPartitions;
+      // Collect all join partitions.
+      jp->collectJoinPartitions(joinPartitions);
+
+      auto processorId = jobstepThreadPool.invoke(JoinPartitionsProcessor(this, joinPartitions));
+      jobstepThreadPool.join(processorId);
     }
   }
   catch (...)

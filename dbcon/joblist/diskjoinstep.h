@@ -44,6 +44,8 @@ class DiskJoinStep : public JobStep
 
  protected:
  private:
+  void initializeFIFO();
+  void processJoinPartitions(const vector<joiner::JoinPartition*>& joinPartitions);
   boost::shared_ptr<joiner::JoinPartition> jp;
   rowgroup::RowGroup largeRG, smallRG, outputRG, joinFERG;
   std::vector<uint32_t> largeKeyCols, smallKeyCols;
@@ -80,6 +82,23 @@ class DiskJoinStep : public JobStep
 
   uint64_t mainThread;  // thread handle from thread pool
 
+  struct JoinPartitionsProcessor
+  {
+    JoinPartitionsProcessor(DiskJoinStep* djs, const std::vector<joiner::JoinPartition*>& joinPartitions)
+     : djs(djs), joinPartitions(joinPartitions)
+    {
+    }
+
+    void operator()()
+    {
+      utils::setThreadName("DJSJoinPartitionsProcessor");
+      djs->processJoinPartitions(joinPartitions);
+    }
+
+    DiskJoinStep* djs;
+    std::vector<joiner::JoinPartition*> joinPartitions;
+  };
+
   /* Loader structs */
   struct LoaderOutput
   {
@@ -87,21 +106,23 @@ class DiskJoinStep : public JobStep
     uint64_t partitionID;
     joiner::JoinPartition* jp;
   };
-  boost::shared_ptr<joblist::FIFO<boost::shared_ptr<LoaderOutput> > > loadFIFO;
+  std::vector<boost::shared_ptr<joblist::FIFO<boost::shared_ptr<LoaderOutput>>>> loadFIFO;
 
   struct Loader
   {
-    Loader(DiskJoinStep* d) : djs(d)
+    Loader(DiskJoinStep* d, const std::vector<joiner::JoinPartition*>& joinPartitions)
+     : djs(d), joinPartitions(joinPartitions)
     {
     }
     void operator()()
     {
       utils::setThreadName("DJSLoader");
-      djs->loadFcn();
+      djs->loadFcn(joinPartitions);
     }
     DiskJoinStep* djs;
+    std::vector<joiner::JoinPartition*> joinPartitions;
   };
-  void loadFcn();
+  void loadFcn(const std::vector<joiner::JoinPartition*>& joinPartitions);
 
   /* Builder structs */
   struct BuilderOutput
@@ -112,7 +133,7 @@ class DiskJoinStep : public JobStep
     joiner::JoinPartition* jp;
   };
 
-  boost::shared_ptr<joblist::FIFO<boost::shared_ptr<BuilderOutput> > > buildFIFO;
+  std::vector<boost::shared_ptr<joblist::FIFO<boost::shared_ptr<BuilderOutput>>>> buildFIFO;
 
   struct Builder
   {
