@@ -486,7 +486,7 @@ int64_t JoinPartition::processSmallBuffer(RGData& rgData)
 
     ret = writeByteStream(0, bs);
 
-    htSizeEstimate += rg.getRowCount() * rg.getColumnCount() * 64;
+    htSizeEstimate += rg.getRowCount() * rg.getColumnCount() * 16;
     // Check whether this partition is now too big -> convert to split mode.
     if (htTargetSize < htSizeEstimate && canConvertToSplitMode())
       ret += convertToSplitMode();
