@@ -44,8 +44,8 @@ class DiskJoinStep : public JobStep
 
  protected:
  private:
-  void initializeFIFO();
-  void processJoinPartitions(const vector<joiner::JoinPartition*>& joinPartitions);
+  void initializeFIFO(uint32_t threadCount);
+  void processJoinPartitions(const uint32_t threadID, const vector<joiner::JoinPartition*>& joinPartitions);
   boost::shared_ptr<joiner::JoinPartition> jp;
   rowgroup::RowGroup largeRG, smallRG, outputRG, joinFERG;
   std::vector<uint32_t> largeKeyCols, smallKeyCols;
@@ -84,18 +84,20 @@ class DiskJoinStep : public JobStep
 
   struct JoinPartitionsProcessor
   {
-    JoinPartitionsProcessor(DiskJoinStep* djs, const std::vector<joiner::JoinPartition*>& joinPartitions)
-     : djs(djs), joinPartitions(joinPartitions)
+    JoinPartitionsProcessor(DiskJoinStep* djs, const uint32_t threadID,
+                            const std::vector<joiner::JoinPartition*>& joinPartitions)
+     : djs(djs), threadID(threadID), joinPartitions(joinPartitions)
     {
     }
 
     void operator()()
     {
       utils::setThreadName("DJSJoinPartitionsProcessor");
-      djs->processJoinPartitions(joinPartitions);
+      djs->processJoinPartitions(threadID, joinPartitions);
     }
 
     DiskJoinStep* djs;
+    uint32_t threadID;
     std::vector<joiner::JoinPartition*> joinPartitions;
   };
 
@@ -110,19 +112,22 @@ class DiskJoinStep : public JobStep
 
   struct Loader
   {
-    Loader(DiskJoinStep* d, const std::vector<joiner::JoinPartition*>& joinPartitions)
-     : djs(d), joinPartitions(joinPartitions)
+    Loader(DiskJoinStep* d, const uint32_t threadID,
+           const std::vector<joiner::JoinPartition*>& joinPartitions)
+     : djs(d), threadID(threadID), joinPartitions(joinPartitions)
     {
     }
     void operator()()
     {
       utils::setThreadName("DJSLoader");
-      djs->loadFcn(joinPartitions);
+      djs->loadFcn(threadID, joinPartitions);
     }
+
     DiskJoinStep* djs;
+    uint32_t threadID;
     std::vector<joiner::JoinPartition*> joinPartitions;
   };
-  void loadFcn(const std::vector<joiner::JoinPartition*>& joinPartitions);
+  void loadFcn(const uint32_t threadID, const std::vector<joiner::JoinPartition*>& joinPartitions);
 
   /* Builder structs */
   struct BuilderOutput
@@ -137,32 +142,34 @@ class DiskJoinStep : public JobStep
 
   struct Builder
   {
-    Builder(DiskJoinStep* d) : djs(d)
+    Builder(DiskJoinStep* d, const uint32_t threadID) : djs(d), threadID(threadID)
     {
     }
     void operator()()
     {
       utils::setThreadName("DJSBuilder");
-      djs->buildFcn();
+      djs->buildFcn(threadID);
     }
     DiskJoinStep* djs;
+    uint32_t threadID;
   };
-  void buildFcn();
+  void buildFcn(const uint32_t threadID);
 
   /* Joining structs */
   struct Joiner
   {
-    Joiner(DiskJoinStep* d) : djs(d)
+    Joiner(DiskJoinStep* d, const uint32_t threadID) : djs(d)
     {
     }
     void operator()()
     {
       utils::setThreadName("DJSJoiner");
-      djs->joinFcn();
+      djs->joinFcn(threadID);
     }
     DiskJoinStep* djs;
+    uint32_t threadID;
   };
-  void joinFcn();
+  void joinFcn(const uint32_t threadID);
 
   // limits & usage
   boost::shared_ptr<int64_t> smallUsage;
