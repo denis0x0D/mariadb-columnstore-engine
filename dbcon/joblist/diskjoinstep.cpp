@@ -263,6 +263,7 @@ void DiskJoinStep::largeReader()
 
 void DiskJoinStep::loadFcn(const uint32_t threadID, const std::vector<joiner::JoinPartition*>& joinPartitions)
 {
+  cout << "load Fcn thread id " << threadID << endl;
   boost::shared_ptr<LoaderOutput> out;
 
   try
@@ -348,6 +349,8 @@ void DiskJoinStep::loadFcn(const uint32_t threadID, const std::vector<joiner::Jo
 
 void DiskJoinStep::buildFcn(const uint32_t threadID)
 {
+  cout << "build Fcn thread id " << threadID << endl;
+
   boost::shared_ptr<LoaderOutput> in;
   boost::shared_ptr<BuilderOutput> out;
   bool more = true;
@@ -398,6 +401,7 @@ void DiskJoinStep::joinFcn(const uint32_t threadID)
 {
   /* This function mostly serves as an adapter between the
   input data and the joinOneRG() fcn in THJS.  */
+  cout << "join Fcn thread id " << threadID << endl;
 
   boost::shared_ptr<BuilderOutput> in;
   bool more = true;
@@ -589,36 +593,18 @@ out:
 
 void DiskJoinStep::initializeFIFO(const uint32_t threadCount)
 {
-  if (!loadFIFO.size())
-  {
-    for (uint32_t i = 0; i < threadCount; ++i)
-    {
-      boost::shared_ptr<joblist::FIFO<boost::shared_ptr<LoaderOutput>>> lFIFO(
-          new FIFO<boost::shared_ptr<LoaderOutput>>(1, 1));
-      boost::shared_ptr<joblist::FIFO<boost::shared_ptr<BuilderOutput>>> bFIFO(
-          new FIFO<boost::shared_ptr<BuilderOutput>>(1, 1));
-      loadFIFO.push_back(lFIFO);
-      buildFIFO.push_back(bFIFO);
-    }
-  }
-  else
-  {
-    const uint32_t currentThreadCount = std::min(threadCount, (uint32_t)loadFIFO.size());
-    for (uint32_t i = 0; i < currentThreadCount; ++i)
-    {
-      loadFIFO[i].reset(new FIFO<boost::shared_ptr<LoaderOutput>>(1, 1));
-      buildFIFO[i].reset(new FIFO<boost::shared_ptr<BuilderOutput>>(1, 1));
-    }
+  loadFIFO.clear();
+  buildFIFO.clear();
 
-    for (uint32_t i = currentThreadCount; i < threadCount; ++i)
-    {
-      boost::shared_ptr<joblist::FIFO<boost::shared_ptr<LoaderOutput>>> lFIFO(
-          new FIFO<boost::shared_ptr<LoaderOutput>>(1, 1));
-      boost::shared_ptr<joblist::FIFO<boost::shared_ptr<BuilderOutput>>> bFIFO(
-          new FIFO<boost::shared_ptr<BuilderOutput>>(1, 1));
-      loadFIFO.push_back(lFIFO);
-      buildFIFO.push_back(bFIFO);
-    }
+  for (uint32_t i = 0; i < threadCount; ++i)
+  {
+    boost::shared_ptr<joblist::FIFO<boost::shared_ptr<LoaderOutput>>> lFIFO(
+        new FIFO<boost::shared_ptr<LoaderOutput>>(1, 1));
+    boost::shared_ptr<joblist::FIFO<boost::shared_ptr<BuilderOutput>>> bFIFO(
+        new FIFO<boost::shared_ptr<BuilderOutput>>(1, 1));
+
+    loadFIFO.push_back(lFIFO);
+    buildFIFO.push_back(bFIFO);
   }
 }
 
@@ -651,14 +637,43 @@ void DiskJoinStep::mainRunner()
       if (cancelled())
         break;
 
-      initializeFIFO(threadCount);
-
       // Collect all join partitions.
       std::vector<JoinPartition*> joinPartitions;
       jp->collectJoinPartitions(joinPartitions);
+      std::vector<std::vector<JoinPartition*>> joinPartitionsVector;
+      joinPartitionsVector.reserve(threadCount);
 
-      auto processorId = jobstepThreadPool.invoke(JoinPartitionsProcessor(this, 0, joinPartitions));
-      jobstepThreadPool.join(processorId);
+      for (uint32_t i = 0, k = (joinPartitions.size() / threadCount); i < joinPartitions.size(); i += k)
+      {
+        std::vector<JoinPartition*> tempJoinPartitions;
+        tempJoinPartitions.reserve(k);
+
+        for (uint32_t j = i, size = std::min(j + k, (uint32_t)joinPartitions.size()); j < size; ++j)
+          tempJoinPartitions.push_back(joinPartitions[j]);
+
+        joinPartitionsVector.push_back(std::move(tempJoinPartitions));
+      }
+
+      for (uint32_t i = 0; i < joinPartitionsVector.size(); ++i)
+      {
+        cout << "partition " << i << endl;
+        for (uint32_t j = 0; j < joinPartitionsVector[i].size(); ++j)
+        {
+          cout << joinPartitionsVector[i][j]->getUniqueID() << " ";
+        }
+        cout << endl;
+      }
+
+      initializeFIFO(joinPartitionsVector.size());
+
+      std::vector<uint64_t> processorThreadsId;
+      for (uint32_t threadID = 0; threadID < joinPartitionsVector.size(); ++threadID)
+      {
+        processorThreadsId.push_back(jobstepThreadPool.invoke(
+            JoinPartitionsProcessor(this, threadID, joinPartitionsVector[threadID])));
+      }
+
+      jobstepThreadPool.join(processorThreadsId);
     }
   }
   catch (...)

@@ -158,7 +158,7 @@ class DiskJoinStep : public JobStep
   /* Joining structs */
   struct Joiner
   {
-    Joiner(DiskJoinStep* d, const uint32_t threadID) : djs(d)
+    Joiner(DiskJoinStep* d, const uint32_t threadID) : djs(d), threadID(threadID)
     {
     }
     void operator()()
