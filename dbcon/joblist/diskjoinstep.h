@@ -46,6 +46,8 @@ class DiskJoinStep : public JobStep
  private:
   void initializeFIFO(uint32_t threadCount);
   void processJoinPartitions(const uint32_t threadID, const vector<joiner::JoinPartition*>& joinPartitions);
+  void prepareJobs(const std::vector<joiner::JoinPartition*>& joinPartitions, const uint32_t threadCount,
+                   std::vector<std::vector<joiner::JoinPartition*>>& joinPartitionsJobs);
   boost::shared_ptr<joiner::JoinPartition> jp;
   rowgroup::RowGroup largeRG, smallRG, outputRG, joinFERG;
   std::vector<uint32_t> largeKeyCols, smallKeyCols;

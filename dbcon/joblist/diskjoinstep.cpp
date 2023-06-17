@@ -263,7 +263,6 @@ void DiskJoinStep::largeReader()
 
 void DiskJoinStep::loadFcn(const uint32_t threadID, const std::vector<joiner::JoinPartition*>& joinPartitions)
 {
-  cout << "load Fcn thread id " << threadID << endl;
   boost::shared_ptr<LoaderOutput> out;
 
   try
@@ -349,8 +348,6 @@ void DiskJoinStep::loadFcn(const uint32_t threadID, const std::vector<joiner::Jo
 
 void DiskJoinStep::buildFcn(const uint32_t threadID)
 {
-  cout << "build Fcn thread id " << threadID << endl;
-
   boost::shared_ptr<LoaderOutput> in;
   boost::shared_ptr<BuilderOutput> out;
   bool more = true;
@@ -399,10 +396,8 @@ out:
 
 void DiskJoinStep::joinFcn(const uint32_t threadID)
 {
-  /* This function mostly serves as an adapter between the
-  input data and the joinOneRG() fcn in THJS.  */
-  cout << "join Fcn thread id " << threadID << endl;
-
+  // This function mostly serves as an adapter between the
+  // input data and the joinOneRG() fcn in THJS.
   boost::shared_ptr<BuilderOutput> in;
   bool more = true;
   int it = buildFIFO[threadID]->getIterator();
@@ -478,8 +473,8 @@ void DiskJoinStep::joinFcn(const uint32_t threadID)
                         &smallNullMem);
         for (j = 0; j < (int)joinResults.size(); j++)
         {
-          l_outputRG.setData(&joinResults[j]);
-          cout << "got joined output " << l_outputRG.toString() << endl;
+          // l_outputRG.setData(&joinResults[j]);
+          // cout << "got joined output " << l_outputRG.toString() << endl;
           outputDL->insert(joinResults[j]);
         }
 
@@ -619,13 +614,27 @@ void DiskJoinStep::processJoinPartitions(const uint32_t threadID,
   jobstepThreadPool.join(thrds);
 }
 
+void DiskJoinStep::prepareJobs(const std::vector<JoinPartition*>& joinPartitions, const uint32_t threadCount,
+                               std::vector<std::vector<JoinPartition*>>& joinPartitionsJobs)
+{
+  for (uint32_t i = 0, k = (joinPartitions.size() / threadCount); i < joinPartitions.size(); i += k)
+  {
+    std::vector<JoinPartition*> joinPartitionsJob;
+    joinPartitionsJob.reserve(k);
+
+    for (uint32_t j = i, size = std::min(j + k, (uint32_t)joinPartitions.size()); j < size; ++j)
+      joinPartitionsJob.push_back(joinPartitions[j]);
+
+    joinPartitionsJobs.push_back(std::move(joinPartitionsJob));
+  }
+}
+
 void DiskJoinStep::mainRunner()
 {
   try
   {
     smallReader();
-
-    uint32_t threadCount = 2;
+    uint32_t threadCount = 8;
 
     while (!lastLargeIteration && !cancelled())
     {
@@ -634,50 +643,28 @@ void DiskJoinStep::mainRunner()
 
       jp->initForProcessing();
 
-      if (cancelled())
+      if (UNLIKELY(cancelled()))
         break;
 
       // Collect all join partitions.
       std::vector<JoinPartition*> joinPartitions;
       jp->collectJoinPartitions(joinPartitions);
-      std::vector<std::vector<JoinPartition*>> joinPartitionsVector;
-      joinPartitionsVector.reserve(threadCount);
 
-      for (uint32_t i = 0, k = (joinPartitions.size() / threadCount); i < joinPartitions.size(); i += k)
-      {
-        std::vector<JoinPartition*> tempJoinPartitions;
-        tempJoinPartitions.reserve(k);
+      // Split partitions for each threads.
+      std::vector<std::vector<JoinPartition*>> joinPartitionsJobs;
+      joinPartitionsJobs.reserve(threadCount);
+      prepareJobs(joinPartitions, threadCount, joinPartitionsJobs);
 
-        for (uint32_t j = i, size = std::min(j + k, (uint32_t)joinPartitions.size()); j < size; ++j)
-          tempJoinPartitions.push_back(joinPartitions[j]);
+      // Initialize data lists.
+      initializeFIFO(joinPartitionsJobs.size());
 
-        joinPartitionsVector.push_back(std::move(tempJoinPartitions));
-      }
-
-      for (uint32_t i = 0; i < joinPartitionsVector.size(); ++i)
-      {
-        cout << "partition " << i << endl;
-        for (uint32_t j = 0; j < joinPartitionsVector[i].size(); ++j)
-        {
-          cout << joinPartitionsVector[i][j]->getUniqueID() << " ";
-        }
-        cout << endl;
-      }
-
-      initializeFIFO(joinPartitionsVector.size());
-
+      // Spawn jobs.
       std::vector<uint64_t> processorThreadsId;
-      for (uint32_t threadID = 0; threadID < joinPartitionsVector.size(); ++threadID)
+      for (uint32_t threadID = 0; threadID < joinPartitionsJobs.size(); ++threadID)
       {
-        processorThreadsId.push_back(jobstepThreadPool.invoke(
-            JoinPartitionsProcessor(this, threadID, joinPartitionsVector[threadID])));
+        processorThreadsId.push_back(
+            jobstepThreadPool.invoke(JoinPartitionsProcessor(this, threadID, joinPartitionsJobs[threadID])));
       }
-
-      /*
-      processorThreadsId.push_back(
-          jobstepThreadPool.invoke(JoinPartitionsProcessor(this, 1, joinPartitionsVector[1])));
-          */
-
       jobstepThreadPool.join(processorThreadsId);
     }
   }
@@ -689,11 +676,8 @@ void DiskJoinStep::mainRunner()
     abort();
   }
 
-  outputDL->endOfInput();
-  closedOutput = true;
-
   // make sure all inputs were drained & output closed
-  if (cancelled())
+  if (UNLIKELY(cancelled()))
   {
     try
     {
@@ -710,6 +694,12 @@ void DiskJoinStep::mainRunner()
       outputDL->endOfInput();
       closedOutput = true;
     }
+  }
+
+  if (LIKELY(!closedOutput))
+  {
+    outputDL->endOfInput();
+    closedOutput = true;
   }
 }
 
