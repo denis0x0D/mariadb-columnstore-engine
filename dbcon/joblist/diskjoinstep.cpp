@@ -476,13 +476,13 @@ void DiskJoinStep::joinFcn(const uint32_t threadID)
         thjs->joinOneRG(0, joinResults, l_largeRG, l_outputRG, l_largeRow, l_joinFERow, l_outputRow, baseRow,
                         joinMatches, smallRowTemplates, outputDL.get(), &joiners, &colMappings, &fergMappings,
                         &smallNullMem);
-
         for (j = 0; j < (int)joinResults.size(); j++)
         {
-          // l_outputRG.setData(&joinResults[j]);
-          // cout << "got joined output " << l_outputRG.toString() << endl;
+          l_outputRG.setData(&joinResults[j]);
+          cout << "got joined output " << l_outputRG.toString() << endl;
           outputDL->insert(joinResults[j]);
         }
+
         thjs->returnMemory();
         joinResults.clear();
         largeData = in->jp->getNextLargeRGData();
@@ -583,7 +583,7 @@ out:
   while (more)
     more = buildFIFO[threadID]->next(it, &in);
 
-  if (lastLargeIteration || cancelled())
+  if (cancelled())
   {
     reportStats();
     outputDL->endOfInput();
@@ -673,6 +673,11 @@ void DiskJoinStep::mainRunner()
             JoinPartitionsProcessor(this, threadID, joinPartitionsVector[threadID])));
       }
 
+      /*
+      processorThreadsId.push_back(
+          jobstepThreadPool.invoke(JoinPartitionsProcessor(this, 1, joinPartitionsVector[1])));
+          */
+
       jobstepThreadPool.join(processorThreadsId);
     }
   }
@@ -683,6 +688,9 @@ void DiskJoinStep::mainRunner()
     status(logging::ERR_EXEMGR_MALFUNCTION);
     abort();
   }
+
+  outputDL->endOfInput();
+  closedOutput = true;
 
   // make sure all inputs were drained & output closed
   if (cancelled())
