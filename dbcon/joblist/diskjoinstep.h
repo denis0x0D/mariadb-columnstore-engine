@@ -183,6 +183,8 @@ class DiskJoinStep : public JobStep
 
   uint32_t joinerIndex;
   bool closedOutput;
+
+  std::mutex outputMutex;
 };
 
 }  // namespace joblist
