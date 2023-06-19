@@ -634,7 +634,7 @@ void DiskJoinStep::mainRunner()
   try
   {
     smallReader();
-    uint32_t threadCount = 8;
+    uint32_t threadCount = 1;
 
     while (!lastLargeIteration && !cancelled())
     {
