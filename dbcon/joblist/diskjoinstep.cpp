@@ -471,12 +471,9 @@ void DiskJoinStep::joinFcn(const uint32_t threadID)
         thjs->joinOneRG(0, joinResults, l_largeRG, l_outputRG, l_largeRow, l_joinFERow, l_outputRow, baseRow,
                         joinMatches, smallRowTemplates, outputDL.get(), &joiners, &colMappings, &fergMappings,
                         &smallNullMem);
-        for (j = 0; j < (int)joinResults.size(); j++)
-        {
-          // l_outputRG.setData(&joinResults[j]);
-          // cout << "got joined output " << l_outputRG.toString() << endl;
-          outputDL->insert(joinResults[j]);
-        }
+
+        if (joinResults.size())
+          outputResult(joinResults);
 
         thjs->returnMemory();
         joinResults.clear();
@@ -552,15 +549,10 @@ void DiskJoinStep::joinFcn(const uint32_t threadID)
               outputRow.nextRow();
           }
 
-          if (l_outputRG.getRowCount() > 0)
-          {
-            // cout << "inserting an rg with " << l_outputRG.getRowCount() << endl;
-            outputDL->insert(rgData);
-          }
+          if (l_outputRG.getRowCount())
+            outputResult({rgData});
           if (thjs)
-          {
             thjs->returnMemory();
-          }
         }
       }
     }
@@ -629,12 +621,19 @@ void DiskJoinStep::prepareJobs(const std::vector<JoinPartition*>& joinPartitions
   }
 }
 
+void DiskJoinStep::outputResult(const std::vector<rowgroup::RGData>& result)
+{
+  std::lock_guard<std::mutex> lk(outputMutex);
+  for (const auto &rgData : result)
+    outputDL->insert(rgData);
+}
+
 void DiskJoinStep::mainRunner()
 {
   try
   {
     smallReader();
-    uint32_t threadCount = 1;
+    uint32_t threadCount = 2;
 
     while (!lastLargeIteration && !cancelled())
     {
