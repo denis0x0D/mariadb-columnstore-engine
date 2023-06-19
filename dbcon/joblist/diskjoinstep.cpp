@@ -606,19 +606,27 @@ void DiskJoinStep::processJoinPartitions(const uint32_t threadID,
   jobstepThreadPool.join(thrds);
 }
 
-void DiskJoinStep::prepareJobs(const std::vector<JoinPartition*>& joinPartitions, const uint32_t threadCount,
+void DiskJoinStep::prepareJobs(const std::vector<JoinPartition*>& joinPartitions,
                                std::vector<std::vector<JoinPartition*>>& joinPartitionsJobs)
 {
-  for (uint32_t i = 0, k = (joinPartitions.size() / threadCount); i < joinPartitions.size(); i += k)
+  const uint32_t issuedThreads = jobstepThreadPool.getIssuedThreads();
+  const uint32_t maxNumOfThreads = jobstepThreadPool.getMaxThreads();
+  const uint32_t numOfThreads =
+      std::min(std::max(maxNumOfThreads - issuedThreads, (uint32_t)1), (uint32_t)joinPartitions.size());
+  const uint32_t workSize = joinPartitions.size() / numOfThreads;
+
+  uint32_t offset = 0;
+  joinPartitionsJobs.reserve(numOfThreads);
+  for (uint32_t threadNum = 0; threadNum < numOfThreads; ++threadNum, offset += workSize)
   {
-    std::vector<JoinPartition*> joinPartitionsJob;
-    joinPartitionsJob.reserve(k);
-
-    for (uint32_t j = i, size = std::min(j + k, (uint32_t)joinPartitions.size()); j < size; ++j)
-      joinPartitionsJob.push_back(joinPartitions[j]);
-
-    joinPartitionsJobs.push_back(std::move(joinPartitionsJob));
+    auto start = joinPartitions.begin() + offset;
+    auto end = start + workSize;
+    std::vector<JoinPartition*> joinPartitionJob(start, end);
+    joinPartitionsJobs.push_back(std::move(joinPartitionJob));
   }
+
+  for (uint32_t i = 0, e = joinPartitions.size() % workSize; i < e; ++i, ++offset)
+    joinPartitionsJobs[i].push_back(joinPartitions[offset]);
 }
 
 void DiskJoinStep::outputResult(const std::vector<rowgroup::RGData>& result)
@@ -628,12 +636,21 @@ void DiskJoinStep::outputResult(const std::vector<rowgroup::RGData>& result)
     outputDL->insert(rgData);
 }
 
+void DiskJoinStep::spawnJobs(const std::vector<std::vector<JoinPartition*>>& joinPartitionsJobs)
+{
+  std::vector<uint64_t> processorThreadsId;
+  for (uint32_t threadID = 0; threadID < joinPartitionsJobs.size(); ++threadID)
+    processorThreadsId.push_back(
+        jobstepThreadPool.invoke(JoinPartitionsProcessor(this, threadID, joinPartitionsJobs[threadID])));
+
+  jobstepThreadPool.join(processorThreadsId);
+}
+
 void DiskJoinStep::mainRunner()
 {
   try
   {
     smallReader();
-    uint32_t threadCount = 16;
 
     while (!lastLargeIteration && !cancelled())
     {
@@ -651,20 +668,13 @@ void DiskJoinStep::mainRunner()
 
       // Split partitions for each threads.
       std::vector<std::vector<JoinPartition*>> joinPartitionsJobs;
-      joinPartitionsJobs.reserve(threadCount);
-      prepareJobs(joinPartitions, threadCount, joinPartitionsJobs);
+      prepareJobs(joinPartitions, joinPartitionsJobs);
 
       // Initialize data lists.
       initializeFIFO(joinPartitionsJobs.size());
 
       // Spawn jobs.
-      std::vector<uint64_t> processorThreadsId;
-      for (uint32_t threadID = 0; threadID < joinPartitionsJobs.size(); ++threadID)
-      {
-        processorThreadsId.push_back(
-            jobstepThreadPool.invoke(JoinPartitionsProcessor(this, threadID, joinPartitionsJobs[threadID])));
-      }
-      jobstepThreadPool.join(processorThreadsId);
+      spawnJobs(joinPartitionsJobs);
     }
   }
   catch (...)
