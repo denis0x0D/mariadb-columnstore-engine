@@ -633,7 +633,7 @@ void DiskJoinStep::mainRunner()
   try
   {
     smallReader();
-    uint32_t threadCount = 2;
+    uint32_t threadCount = 16;
 
     while (!lastLargeIteration && !cancelled())
     {
