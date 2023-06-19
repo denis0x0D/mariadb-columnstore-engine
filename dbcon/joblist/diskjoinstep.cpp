@@ -261,7 +261,8 @@ void DiskJoinStep::largeReader()
       more = largeDL->next(largeIt, &rgData);
 }
 
-void DiskJoinStep::loadFcn(const uint32_t threadID, const std::vector<joiner::JoinPartition*>& joinPartitions)
+void DiskJoinStep::loadFcn(const uint32_t threadID, const uint32_t smallSideSizeLimit,
+                           const std::vector<joiner::JoinPartition*>& joinPartitions)
 {
   boost::shared_ptr<LoaderOutput> out;
 
@@ -303,10 +304,10 @@ void DiskJoinStep::loadFcn(const uint32_t threadID, const std::vector<joiner::Jo
           break;
         }
 
-        currentSize += rowGroup.getRowCount() * rowGroup.getColumnCount() * 64;
+        currentSize += rowGroup.getRowCount() * rowGroup.getColumnCount() * 16;
         out->smallData.push_back(rgData);
 
-        if (currentSize > partitionSize)
+        if (currentSize > smallSideSizeLimit)
         {
 #ifdef DEBUG_DJS
           cout << "Memory limit exceeded for the partition: " << joinPartition->getUniqueID() << endl;
@@ -595,12 +596,13 @@ void DiskJoinStep::initializeFIFO(const uint32_t threadCount)
   }
 }
 
-void DiskJoinStep::processJoinPartitions(const uint32_t threadID,
+void DiskJoinStep::processJoinPartitions(const uint32_t threadID, const uint32_t smallSideSizeLimitPerThread,
                                          const std::vector<JoinPartition*>& joinPartitions)
 {
   std::vector<uint64_t> thrds;
   thrds.reserve(3);
-  thrds.push_back(jobstepThreadPool.invoke(Loader(this, threadID, joinPartitions)));
+  thrds.push_back(
+      jobstepThreadPool.invoke(Loader(this, threadID, smallSideSizeLimitPerThread, joinPartitions)));
   thrds.push_back(jobstepThreadPool.invoke(Builder(this, threadID)));
   thrds.push_back(jobstepThreadPool.invoke(Joiner(this, threadID)));
   jobstepThreadPool.join(thrds);
@@ -637,12 +639,13 @@ void DiskJoinStep::outputResult(const std::vector<rowgroup::RGData>& result)
     outputDL->insert(rgData);
 }
 
-void DiskJoinStep::spawnJobs(const std::vector<std::vector<JoinPartition*>>& joinPartitionsJobs)
+void DiskJoinStep::spawnJobs(const std::vector<std::vector<JoinPartition*>>& joinPartitionsJobs,
+                             const uint32_t smallSideSizeLimitPerThread)
 {
   std::vector<uint64_t> processorThreadsId;
   for (uint32_t threadID = 0; threadID < joinPartitionsJobs.size(); ++threadID)
-    processorThreadsId.push_back(
-        jobstepThreadPool.invoke(JoinPartitionsProcessor(this, threadID, joinPartitionsJobs[threadID])));
+    processorThreadsId.push_back(jobstepThreadPool.invoke(
+        JoinPartitionsProcessor(this, threadID, smallSideSizeLimitPerThread, joinPartitionsJobs[threadID])));
 
   jobstepThreadPool.join(processorThreadsId);
 }
@@ -672,10 +675,12 @@ void DiskJoinStep::mainRunner()
       prepareJobs(joinPartitions, joinPartitionsJobs);
 
       // Initialize data lists.
-      initializeFIFO(joinPartitionsJobs.size());
+      const uint32_t numOfThreads = joinPartitionsJobs.size();
+      initializeFIFO(numOfThreads);
 
       // Spawn jobs.
-      spawnJobs(joinPartitionsJobs);
+      const uint32_t smallSideSizeLimitPerThread = partitionSize / numOfThreads;
+      spawnJobs(joinPartitionsJobs, smallSideSizeLimitPerThread);
     }
   }
   catch (...)
