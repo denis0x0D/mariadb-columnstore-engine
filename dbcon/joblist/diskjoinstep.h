@@ -187,6 +187,7 @@ class DiskJoinStep : public JobStep
   bool closedOutput;
 
   std::mutex outputMutex;
+  const uint32_t maxNumOfJoinThreads = 32;
 };
 
 }  // namespace joblist

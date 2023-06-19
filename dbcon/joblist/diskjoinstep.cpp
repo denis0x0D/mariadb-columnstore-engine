@@ -612,7 +612,8 @@ void DiskJoinStep::prepareJobs(const std::vector<JoinPartition*>& joinPartitions
   const uint32_t issuedThreads = jobstepThreadPool.getIssuedThreads();
   const uint32_t maxNumOfThreads = jobstepThreadPool.getMaxThreads();
   const uint32_t numOfThreads =
-      std::min(std::max(maxNumOfThreads - issuedThreads, (uint32_t)1), (uint32_t)joinPartitions.size());
+      std::min(std::min(maxNumOfJoinThreads, std::max(maxNumOfThreads - issuedThreads, (uint32_t)1)),
+               (uint32_t)joinPartitions.size());
   const uint32_t workSize = joinPartitions.size() / numOfThreads;
 
   uint32_t offset = 0;
@@ -625,7 +626,7 @@ void DiskJoinStep::prepareJobs(const std::vector<JoinPartition*>& joinPartitions
     joinPartitionsJobs.push_back(std::move(joinPartitionJob));
   }
 
-  for (uint32_t i = 0, e = joinPartitions.size() % workSize; i < e; ++i, ++offset)
+  for (uint32_t i = 0, e = joinPartitions.size() % numOfThreads; i < e; ++i, ++offset)
     joinPartitionsJobs[i].push_back(joinPartitions[offset]);
 }
 
