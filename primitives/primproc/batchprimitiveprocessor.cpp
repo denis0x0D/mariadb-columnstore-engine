@@ -1165,21 +1165,20 @@ void BatchPrimitiveProcessor::initProcessor()
   asyncLoaded.reset(new bool[projectCount + 2]);
 }
 
-/* This version does a join on projected rows */
+// This version does a join on projected rows
 // In order to prevent super size result sets in the case of near cartesian joins on three or more joins,
 // the startRid start at 0) is used to begin the rid loop and if we cut off processing early because of
 // the size of the result set, we return the next rid to start with. If we finish ridCount rids, return 0-
-uint32_t BatchPrimitiveProcessor::executeTupleJoin(uint32_t startRid)
+uint32_t BatchPrimitiveProcessor::executeTupleJoin(uint32_t startRid, RowGroup& largeSideRowGroup)
 {
   uint32_t newRowCount = 0, i, j;
   vector<uint32_t> matches;
   uint64_t largeKey;
   uint64_t resultCount = 0;
   uint32_t newStartRid = startRid;
-  outputRG.getRow(0, &oldRow);
+  largeSideRowGroup.getRow(startRid, &oldRow);
   outputRG.getRow(0, &newRow);
 
-  // cout << "before join, RG has " << outputRG.getRowCount() << " BPP ridcount= " << ridCount << endl;
   // ridCount gets modified based on the number of Rids actually processed during this call.
   // origRidCount is the number of rids for this thread after filter, which are the total
   // number of rids to be processed from all calls to this function during this thread.
@@ -1196,7 +1195,6 @@ uint32_t BatchPrimitiveProcessor::executeTupleJoin(uint32_t startRid)
      * 		  are NULL values to match against, but there is no filter, all rows can be eliminated.
      */
 
-    // cout << "large side row: " << oldRow.toString() << endl;
     for (j = 0; j < joinerCount; j++)
     {
       bool found;
@@ -1211,7 +1209,6 @@ uint32_t BatchPrimitiveProcessor::executeTupleJoin(uint32_t startRid)
 
       if (LIKELY(!typelessJoin[j]))
       {
-        // cout << "not typeless join\n";
         bool isNull;
         uint32_t colIndex = largeSideKeyColumns[j];
 
@@ -1235,16 +1232,11 @@ uint32_t BatchPrimitiveProcessor::executeTupleJoin(uint32_t startRid)
             ((joinTypes[j] & ANTI) && !joinerIsEmpty &&
              ((isNull && (joinTypes[j] & MATCHNULLS)) || (found && !isNull))))
         {
-          // cout << " - not in the result set\n";
           break;
         }
-
-        // else
-        //	cout << " - in the result set\n";
       }
       else
       {
-        // cout << " typeless join\n";
         // the null values are not sent by UM in typeless case.  null -> !found
         TypelessData tlLargeKey(&oldRow);
         uint bucket = oldRow.hashTypeless(tlLargeSideKeyColumns[j], mSmallSideKeyColumnsPtr,
@@ -1254,9 +1246,7 @@ uint32_t BatchPrimitiveProcessor::executeTupleJoin(uint32_t startRid)
 
         if ((!found && !(joinTypes[j] & (LARGEOUTER | ANTI))) || (joinTypes[j] & ANTI))
         {
-          /* Separated the ANTI join logic for readability.
-           *
-           */
+          // Separated the ANTI join logic for readability.
           if (joinTypes[j] & ANTI)
           {
             if (found)
@@ -1321,9 +1311,6 @@ uint32_t BatchPrimitiveProcessor::executeTupleJoin(uint32_t startRid)
             else
             {
               smallSideRGs[j].getRow(tSmallSideMatches[j][newRowCount][k], &smallRows[j]);
-              // uint64_t rowOffset = ((uint64_t) tSmallSideMatches[j][newRowCount][k]) *
-              //		smallRows[j].getSize() + smallSideRGs[j].getEmptySize();
-              // smallRows[j].setData(&smallSideRowData[j][rowOffset]);
             }
 
             applyMapping(joinFEMappings[j], smallRows[j], &joinFERow);
@@ -1396,22 +1383,19 @@ uint32_t BatchPrimitiveProcessor::executeTupleJoin(uint32_t startRid)
             wide128Values[newRowCount] = wide128Values[i];
           relRids[newRowCount] = relRids[i];
           copyRow(oldRow, &newRow);
-          // cout << "joined row: " << newRow.toString() << endl;
         }
 
         newRowCount++;
         newRow.nextRow();
       }
-      // else
-      // cout << "j != joinerCount\n";
     }
     // If we've accumulated more than maxResultCount -- 1048576 (2^20)_ of resultCounts, cut off processing.
     // The caller will restart to continue where we left off.
     if (resultCount >= maxResultCount)
     {
-      // FIXME: Implement proper pipleline. (MCOL-5522).
-      cerr << "BPP join match count exceeded the limit, match count: " << resultCount << endl;
-      resultCount = 0;
+      // New start rid is a next row for large side.
+      newStartRid = i + 1;
+      break;
     }
   }
 
@@ -1421,19 +1405,6 @@ uint32_t BatchPrimitiveProcessor::executeTupleJoin(uint32_t startRid)
   ridCount = newRowCount;
   outputRG.setRowCount(ridCount);
 
-  /* prints out the whole result set.
-      if (ridCount != 0) {
-              cout << "RG rowcount=" << outputRG.getRowCount() << " BPP ridcount=" << ridCount << endl;
-              for (i = 0; i < joinerCount; i++) {
-                      for (j = 0; j < ridCount; j++) {
-                              cout << "joiner " << i << " has " << tSmallSideMatches[i][j].size() << "
-     entries" << endl; cout << "row " << j << ":"; for (uint32_t k = 0; k < tSmallSideMatches[i][j].size();
-     k++) cout << "  " << tSmallSideMatches[i][j][k]; cout << endl;
-                      }
-                      cout << endl;
-              }
-      }
-  */
   return newStartRid;
 }
 
@@ -1780,6 +1751,10 @@ void BatchPrimitiveProcessor::execute()
           }
         }
 
+        RGData largeSideRGData = outputRG.duplicate();
+        RowGroup largeSideRowGroup = outputRG;
+        largeSideRowGroup.setData(&largeSideRGData);
+
         do  // while (startRid > 0)
         {
 #ifdef PRIMPROC_STOPWATCH
@@ -1787,7 +1762,7 @@ void BatchPrimitiveProcessor::execute()
           startRid = executeTupleJoin(startRid);
           stopwatch->stop("-- executeTupleJoin()");
 #else
-          startRid = executeTupleJoin(startRid);
+          startRid = executeTupleJoin(startRid, largeSideRowGroup);
 //                    sStartRid = startRid;
 #endif
           /* project the non-key columns */
