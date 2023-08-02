@@ -10,5 +10,5 @@ LimitNOFILE=65536
 LimitNPROC=65536
 LimitCORE=@CORE_DUMPS@
 
-ExecStart=/usr/bin/env bash -c "@STORAGEMANAGER_ALLOC_CONFIG@ @LD_PRELOAD_STRING@ exec @ENGINE_BINDIR@/StorageManager"
+ExecStart="@ENGINE_BINDIR@/StorageManager"
 SuccessExitStatus=255
