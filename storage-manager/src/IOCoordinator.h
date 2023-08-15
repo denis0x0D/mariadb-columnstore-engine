@@ -113,6 +113,9 @@ class IOCoordinator : public boost::noncopyable
   ssize_t _write(const boost::filesystem::path& filename, const uint8_t* data, off_t offset, size_t length,
                  const boost::filesystem::path& firstDir);
 
+  bool writeToObject(const std::string& cloudKey, const std::string& objectKey, const uint8_t* data,
+                     off_t offset, size_t length);
+
   int loadObjectAndJournal(const char* objFilename, const char* journalFilename, uint8_t* data, off_t offset,
                            size_t length);
   int loadObject(int fd, uint8_t* data, off_t offset, size_t length);

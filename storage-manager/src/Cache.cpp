@@ -134,6 +134,12 @@ void Cache::read(const bf::path& prefix, const vector<string>& keys)
   getPCache(prefix).read(keys);
 }
 
+bool Cache::getObject(const std::string& prefix, const std::string& key, std::shared_ptr<uint8_t[]>* data,
+                      size_t& size)
+{
+  return true;
+}
+
 void Cache::doneReading(const bf::path& prefix, const vector<string>& keys)
 {
   getPCache(prefix).doneReading(keys);

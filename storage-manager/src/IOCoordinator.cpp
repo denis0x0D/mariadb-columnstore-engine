@@ -313,6 +313,34 @@ ssize_t IOCoordinator::write(const char* _filename, const uint8_t* data, off_t o
   return ret;
 }
 
+bool IOCoordinator::writeToObject(const string& prefix, const string& objectKey, const uint8_t* data,
+                                  off_t offset, size_t length)
+{
+  CloudStorage* cs = CloudStorage::get();
+  bool keyExists;
+
+  if (!cs->exists(objectKey, &keyExists))
+    return false;
+
+  size_t size;
+  std::shared_ptr<uint8_t[]> objectData;
+
+  if (cache->exists(prefix, objectKey))
+  {
+    if (!cache->getObject(prefix, objectKey, &objectData, size))
+      return false;
+  }
+  else
+  {
+    if (!cs->getObject(objectKey, &objectData, &size))
+      return false;
+  }
+
+  return true;
+  // write with offset to data
+  // create new object put it on cache and on s3
+}
+
 ssize_t IOCoordinator::_write(const boost::filesystem::path& filename, const uint8_t* data, off_t offset,
                               size_t length, const bf::path& firstDir)
 {
@@ -359,6 +387,7 @@ ssize_t IOCoordinator::_write(const boost::filesystem::path& filename, const uin
       }
       // cache->makeSpace(writeLength+JOURNAL_ENTRY_HEADER_SIZE);
 
+      // write to object
       err = replicator->addJournalEntry((firstDir / i->key), &data[count], objectOffset, writeLength);
       // assert((uint) err == writeLength);
 
