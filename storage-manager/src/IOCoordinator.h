@@ -112,10 +112,13 @@ class IOCoordinator : public boost::noncopyable
   int _truncate(const boost::filesystem::path& path, size_t newsize, ScopedFileLock* lock);
   ssize_t _write(const boost::filesystem::path& filename, const uint8_t* data, off_t offset, size_t length,
                  const boost::filesystem::path& firstDir);
+  ssize_t writeSynchronously(const boost::filesystem::path& filename, const uint8_t* data, off_t offset,
+                             size_t length, const boost::filesystem::path& firstDir);
 
-  int writeToObject(const std::string& filename, const std::string& cloudKey, const std::string& objectKey,
-                    const uint8_t* data, off_t objectOffset, size_t writeLen);
-  int createObject(const std::string& objectKey, const uint8_t* data, size_t size);
+  int updateAndPutObject(const std::string& filename, const std::string& cloudKey,
+                         const std::string& objectKey, const uint8_t* data, off_t objectOffset,
+                         size_t writeLen);
+  int createAndPutObject(const std::string& objectKey, const uint8_t* data, size_t size);
 
   int loadObjectAndJournal(const char* objFilename, const char* journalFilename, uint8_t* data, off_t offset,
                            size_t length);

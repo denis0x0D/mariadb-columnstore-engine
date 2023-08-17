@@ -305,7 +305,7 @@ ssize_t IOCoordinator::write(const char* _filename, const uint8_t* data, off_t o
   bf::path filename = ownership.get(_filename);
   const bf::path firstDir = *(filename.begin());
   ScopedWriteLock lock(this, filename.string());
-  int ret = _write(filename, data, offset, length, firstDir);
+  int ret = writeSynchronously(filename, data, offset, length, firstDir);
   lock.unlock();
   if (ret > 0)
     bytesWritten += ret;
@@ -313,91 +313,228 @@ ssize_t IOCoordinator::write(const char* _filename, const uint8_t* data, off_t o
   return ret;
 }
 
-int IOCoordinator::writeToObject(const string& filename, const string& prefix, const string& cloudKey,
-                                 const uint8_t* data, off_t objectOffset, size_t writeLen)
+int IOCoordinator::updateAndPutObject(const string& filename, const string& prefix, const string& cloudKey,
+                                      const uint8_t* data, off_t objectOffset, size_t writeLen)
 {
-  cout << "write to objec " << endl;
+  cout << "updpate and put object " << cloudKey << endl;
+  bool keyExists;
   MetadataFile md(filename, MetadataFile::no_create_t(), true);
   if (!md.exists())
-  {
-    cout << "md not exist " << endl;
     return -1;
-  }
 
   CloudStorage* cs = CloudStorage::get();
-  bool keyExists;
-
   cs->exists(cloudKey, &keyExists);
 
   if (!keyExists)
   {
-    cout << "object not exist " << endl;
-    return writeLen;
+    logger->log(LOG_ERR, "IOCoordinator::updateAndPutObject(): object does not exist on S3 storage.");
+    return -1;
   }
 
   size_t size;
   std::shared_ptr<uint8_t[]> objectData;
-
-  /*
-  if (cache->exists(prefix, cloudKey))
+  // FIXME: Not implemented.
+  if (false && cache->exists(prefix, cloudKey))
   {
-    if (!cache->getObject(prefix, cloudKey, &objectData, size))
-      return false;
+    auto err = cache->getObject(prefix, cloudKey, &objectData, size);
+    if (err)
+    {
+      logger->log(LOG_ERR, "IOCoordinator::updateAndPutObject(): Failed to get object from local cache.");
+      return -1;
+    }
   }
   else
-  */
   {
-    cs->getObject(cloudKey, &objectData, &size);
+    auto err = cs->getObject(cloudKey, &objectData, &size);
+    if (err)
+    {
+      logger->log(LOG_ERR, "IOCoordinator::updateAndPutObject(): Failed to get object from S3 storage.");
+      return -1;
+    }
   }
 
-  cout << "obj size " << size << endl;
-  cout << "offset " << objectOffset << endl;
-  cout << " write len " << writeLen << endl;
-
-  if ((objectOffset + writeLen) > size)
+  const size_t newSize = objectOffset + writeLen;
+  if ((newSize) > size)
   {
-    std::shared_ptr<uint8_t[]> tmp(new uint8_t[objectOffset + writeLen]);
-    std::memset(tmp.get(), 0, objectOffset + writeLen);
+    std::shared_ptr<uint8_t[]> tmp(new uint8_t[newSize]);
     std::memcpy(tmp.get(), objectData.get(), size);
     objectData.swap(tmp);
-    size = objectOffset + writeLen;
   }
-
   std::memcpy(&objectData[objectOffset], data, writeLen);
 
+  // Create new cloud key.
   string newCloudKey = MetadataFile::getNewKeyFromOldKey(cloudKey, size);
-
-  cout << "old cloud key " << cloudKey << endl;
-  cout << "new cloud key " << newCloudKey << endl;
-
   auto err = cs->putObject(objectData, size, newCloudKey);
   if (err)
   {
+    logger->log(LOG_ERR, "IOCoordinator::updateAndPutObject(): Failed to put object to the S3 storage.");
     cs->deleteObject(newCloudKey);
     return -1;
   }
 
+  // Update meta for the new object.
   md.updateEntry(MetadataFile::getOffsetFromKey(cloudKey), newCloudKey, size);
   replicator->updateMetadata(md);
 
-  cout << "meta updated " << endl;
-  // delete the old object & journal file
   cs->deleteObject(cloudKey);
-  return writeLen;
-
-  // write with offset to data
-  // create new object put it on cache and on s3
+  return 0;
 }
 
-int IOCoordinator::createObject(const string& objectKey, const uint8_t* data, size_t size)
+int IOCoordinator::createAndPutObject(const string& objectKey, const uint8_t* data, size_t size)
 {
-  cout << "create new object " << objectKey << endl;
+  cout << "create and put object " << objectKey << endl;
   CloudStorage* cs = CloudStorage::get();
-  // Fix this.
+  // TODO: Add `putObject` which takes a pointer not a shard pointer.
   std::shared_ptr<uint8_t[]> objectData(new uint8_t[size]);
   memcpy(objectData.get(), data, size);
-  cs->putObject(objectData, size, objectKey);
-  return size;
+  auto err = cs->putObject(objectData, size, objectKey);
+  if (err)
+  {
+    logger->log(LOG_ERR, "IOCoordinator::createObject(): failed to put object.");
+    return -1;
+  }
+  return 0;
+}
+
+ssize_t IOCoordinator::writeSynchronously(const boost::filesystem::path& filename, const uint8_t* data,
+                                          off_t offset, size_t length, const bf::path& firstDir)
+{
+  int err = 0, l_errno;
+  ssize_t count = 0;
+  uint64_t writeLength = 0;
+  uint64_t dataRemaining = length;
+  uint64_t objectOffset = 0;
+  vector<metadataObject> objects;
+
+  MetadataFile metadata = MetadataFile(filename, MetadataFile::no_create_t(), true);
+  if (!metadata.exists())
+  {
+    errno = ENOENT;
+    return -1;
+  }
+
+  objects = metadata.metadataRead(offset, length);
+  // TODO: Updated objects not in async write, do we need to cache them?
+  if (!objects.empty())
+  {
+    for (std::vector<metadataObject>::const_iterator i = objects.begin(); i != objects.end(); ++i)
+    {
+      if (count == 0 && (uint64_t)offset > i->offset)
+      {
+        objectOffset = offset - i->offset;
+        writeLength = min((objectSize - objectOffset), dataRemaining);
+      }
+      else
+      {
+        writeLength = min(objectSize, dataRemaining);
+        objectOffset = 0;
+      }
+
+      auto err = updateAndPutObject(filename.string(), firstDir.string(), i->key, &data[count], objectOffset,
+                                    writeLength);
+      if (err)
+      {
+        logger->log(LOG_ERR, "IOCoordinator::write(): Failed updateAndPutObject.");
+        return -1;
+      }
+
+      if ((writeLength + objectOffset) > i->length)
+        metadata.updateEntryLength(i->offset, (writeLength + objectOffset));
+
+      count += writeLength;
+      dataRemaining -= writeLength;
+      iocBytesWritten += writeLength;
+    }
+  }
+
+  // TODO: Need to potentially create new all-0 objects here if offset is more the objectSize bytes
+  // beyond the current end of the file.
+  // FIXME: How is this possible?
+  while (dataRemaining > 0)
+  {
+    off_t currentEndofData = metadata.getMetadataNewObjectOffset();
+    if (count == 0 && offset > currentEndofData)
+    {
+      objects = metadata.metadataRead(currentEndofData, 1);
+      if (objects.size() == 1)
+      {
+        metadataObject lastObject = objects.front();
+        uint64_t nullObjectSize = (objectSize - lastObject.length);
+        utils::VLArray<uint8_t, 4096> nullData(nullObjectSize);
+        std::memset(nullData, 0, nullObjectSize);
+        auto err = updateAndPutObject(filename.string(), firstDir.string(), lastObject.key, nullData.data(),
+                                      lastObject.length, nullObjectSize);
+        if (err)
+        {
+          logger->log(LOG_ERR, "IOCoordinator::write(): Failed to write to object with null data");
+          return -1;
+        }
+
+        metadata.updateEntryLength(lastObject.offset, (nullObjectSize + lastObject.length));
+        currentEndofData += nullObjectSize;
+        iocBytesWritten += nullObjectSize;
+      }
+
+      while ((currentEndofData + (off_t)objectSize) <= offset)
+      {
+        metadataObject nullObject = metadata.addMetadataObject(filename, objectSize);
+        utils::VLArray<uint8_t, 4096> nullData(objectSize);
+        std::memset(nullData, 0, objectSize);
+
+        err = createAndPutObject(nullObject.key, nullData.data(), writeLength);
+        if (err < 0)
+        {
+          logger->log(LOG_ERR, "IOCoordinator::write(): Failed createAndPutObject.");
+          return -1;
+        }
+
+        // Create a file to put in cache.
+        err = replicator->newNullObject((firstDir / nullObject.key), objectSize);
+        if (err < 0)
+        {
+          logger->log(LOG_ERR, "IOCoordinator::write(): Failed newNullObject.");
+          return -1;
+        }
+        cache->newObject(firstDir, nullObject.key, objectSize);
+
+        iocBytesWritten += objectSize;
+        currentEndofData += objectSize;
+      }
+
+      objectOffset = offset - currentEndofData;
+      writeLength = min((objectSize - objectOffset), dataRemaining);
+    }
+    else
+    {
+      writeLength = min(objectSize, dataRemaining);
+      objectOffset = 0;
+    }
+
+    metadataObject newObject = metadata.addMetadataObject(filename, (writeLength + objectOffset));
+    err = createAndPutObject(newObject.key, &data[count], writeLength);
+    if (err)
+    {
+      logger->log(LOG_ERR, "IOCoordinator::write(): Failed to create new object.");
+      metadata.removeEntry(newObject.offset);
+      return -1;
+    }
+
+    err = replicator->newObject((firstDir / newObject.key), &data[count], objectOffset, writeLength);
+    if (err < 0)
+    {
+      logger->log(LOG_ERR, "IOCoordinator::write(): Failed newObject.");
+      return -1;
+    }
+    cache->newObject(firstDir, newObject.key, writeLength + objectOffset);
+    count += writeLength;
+    dataRemaining -= writeLength;
+    iocBytesWritten += writeLength;
+  }
+
+  l_errno = errno;
+  replicator->updateMetadata(metadata);
+  errno = l_errno;
+  return count;
 }
 
 ssize_t IOCoordinator::_write(const boost::filesystem::path& filename, const uint8_t* data, off_t offset,
@@ -410,8 +547,7 @@ ssize_t IOCoordinator::_write(const boost::filesystem::path& filename, const uin
   uint64_t objectOffset = 0;
   vector<metadataObject> objects;
   vector<string> newObjectKeys;
-  // Synchronizer* synchronizer = Synchronizer::get();  // need to init sync here to break circular
-  // dependency...
+  Synchronizer* synchronizer = Synchronizer::get();  // need to init sync here to break circular dependency...
 
   MetadataFile metadata = MetadataFile(filename, MetadataFile::no_create_t(), true);
   if (!metadata.exists())
@@ -447,18 +583,9 @@ ssize_t IOCoordinator::_write(const boost::filesystem::path& filename, const uin
       }
       // cache->makeSpace(writeLength+JOURNAL_ENTRY_HEADER_SIZE);
 
-      // write to object
-      uint64_t err = writeToObject(filename.string(), firstDir.string(), i->key, &data[count], objectOffset,
-                                   writeLength);
-      if (err != writeLength)
-      {
-        cout << "write to object failed with error " << err << endl;
-        return -1;
-      }
-      //      err = replicator->addJournalEntry((firstDir / i->key), &data[count], objectOffset, writeLength);
+      err = replicator->addJournalEntry((firstDir / i->key), &data[count], objectOffset, writeLength);
       // assert((uint) err == writeLength);
 
-      /*
       if (err < 0)
       {
         l_errno = errno;
@@ -484,14 +611,13 @@ ssize_t IOCoordinator::_write(const boost::filesystem::path& filename, const uin
         // written.",count,length);
         return count;
       }
-      */
 
       if ((writeLength + objectOffset) > i->length)
         metadata.updateEntryLength(i->offset, (writeLength + objectOffset));
 
-      // cache->newJournalEntry(firstDir, writeLength + JOURNAL_ENTRY_HEADER_SIZE);
+      cache->newJournalEntry(firstDir, writeLength + JOURNAL_ENTRY_HEADER_SIZE);
 
-      // synchronizer->newJournalEntry(firstDir, i->key, writeLength + JOURNAL_ENTRY_HEADER_SIZE);
+      synchronizer->newJournalEntry(firstDir, i->key, writeLength + JOURNAL_ENTRY_HEADER_SIZE);
       count += writeLength;
       dataRemaining -= writeLength;
       iocBytesWritten += writeLength + JOURNAL_ENTRY_HEADER_SIZE;
@@ -511,9 +637,6 @@ ssize_t IOCoordinator::_write(const boost::filesystem::path& filename, const uin
     // unless offset is beyond newObject.offset + objectSize then we need to write null data to this object
     if (count == 0 && offset > currentEndofData)
     {
-      cout << "offset > currentEnd of data " << endl;
-
-      /*
       // First lets fill the last object with null data
       objects = metadata.metadataRead(currentEndofData, 1);
       if (objects.size() == 1)
@@ -552,14 +675,10 @@ ssize_t IOCoordinator::_write(const boost::filesystem::path& filename, const uin
         currentEndofData += nullJournalSize;
         iocBytesWritten += nullJournalSize + JOURNAL_ENTRY_HEADER_SIZE;
       }
-      */
       // dd we need to do some full null data objects
       while ((currentEndofData + (off_t)objectSize) <= offset)
       {
-        cout << "while ((currentEndofData + (off_t)objectSize) <= offset) " << endl;
-
         metadataObject nullObject = metadata.addMetadataObject(filename, objectSize);
-        /*
         err = replicator->newNullObject((firstDir / nullObject.key), objectSize);
         if (err < 0)
         {
@@ -575,7 +694,6 @@ ssize_t IOCoordinator::_write(const boost::filesystem::path& filename, const uin
         newObjectKeys.push_back(nullObject.key);
         iocBytesWritten += objectSize;
         currentEndofData += objectSize;
-        */
       }
 
       // this is starting beyond last object in metadata
@@ -595,9 +713,8 @@ ssize_t IOCoordinator::_write(const boost::filesystem::path& filename, const uin
     // cache->makeSpace(writeLength + objectOffset);
     metadataObject newObject = metadata.addMetadataObject(filename, (writeLength + objectOffset));
     // send to replicator
-    err = createObject(newObject.key, &data[count], writeLength);
-    // err = replicator->newObject((firstDir / newObject.key), &data[count], objectOffset, writeLength);
-    //  assert((uint) err == writeLength);
+    err = replicator->newObject((firstDir / newObject.key), &data[count], objectOffset, writeLength);
+    // assert((uint) err == writeLength);
     if (err < 0)
     {
       // log error and abort
@@ -645,12 +762,12 @@ ssize_t IOCoordinator::_write(const boost::filesystem::path& filename, const uin
 
       // rename and resize the object in metadata
       metadata.updateEntry(newObject.offset, newObject.key, (err + objectOffset));
-      // cache->newObject(firstDir, newObject.key, err + objectOffset);
+      cache->newObject(firstDir, newObject.key, err + objectOffset);
       newObjectKeys.push_back(newObject.key);
       goto out;
     }
 
-    // cache->newObject(firstDir, newObject.key, writeLength + objectOffset);
+    cache->newObject(firstDir, newObject.key, writeLength + objectOffset);
     newObjectKeys.push_back(newObject.key);
 
     count += writeLength;
@@ -660,7 +777,7 @@ ssize_t IOCoordinator::_write(const boost::filesystem::path& filename, const uin
 
 out:
   l_errno = errno;
-  // synchronizer->newObjects(firstDir, newObjectKeys);
+  synchronizer->newObjects(firstDir, newObjectKeys);
   replicator->updateMetadata(metadata);
   errno = l_errno;
   return count;
@@ -930,7 +1047,7 @@ int IOCoordinator::_truncate(const bf::path& bfpath, size_t newSize, ScopedFileL
   if (filesize < newSize)
   {
     uint8_t zero = 0;
-    err = _write(bfpath, &zero, newSize - 1, 1, firstDir);
+    err = writeSynchronously(bfpath, &zero, newSize - 1, 1, firstDir);
     lock->unlock();
     cache->doneWriting(firstDir);
     if (err < 0)
