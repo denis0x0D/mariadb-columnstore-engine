@@ -79,6 +79,9 @@ max_concurrent_uploads = 21
 # reasons, and all nodes have it mounted, SM instances will be able to
 # negotiate ownership of data from a failed instance.
 common_prefix_depth = 3
+#
+# This value specifies whether write async or not.
+async_write = false
 
 [S3]
 # These should be self-explanatory.  Region can be blank or commented

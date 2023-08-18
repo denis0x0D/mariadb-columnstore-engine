@@ -58,7 +58,7 @@ class IOCoordinator : public boost::noncopyable
   // The shared logic for merging a journal file with its base file.
   // len should be set to the length of the data requested
   std::shared_ptr<uint8_t[]> mergeJournal(const char* objectPath, const char* journalPath, off_t offset,
-                                            size_t len, size_t* sizeRead) const;
+                                          size_t len, size_t* sizeRead) const;
 
   // this version modifies object data in memory, given the journal filename.  Processes the whole object
   // and whole journal file.
@@ -112,6 +112,13 @@ class IOCoordinator : public boost::noncopyable
   int _truncate(const boost::filesystem::path& path, size_t newsize, ScopedFileLock* lock);
   ssize_t _write(const boost::filesystem::path& filename, const uint8_t* data, off_t offset, size_t length,
                  const boost::filesystem::path& firstDir);
+  ssize_t writeSynchronously(const boost::filesystem::path& filename, const uint8_t* data, off_t offset,
+                             size_t length, const boost::filesystem::path& firstDir);
+
+  int updateAndPutObject(const std::string& filename, const std::string& cloudKey,
+                         const std::string& objectKey, const uint8_t* data, off_t objectOffset,
+                         size_t writeLen);
+  int createAndPutObject(const std::string& objectKey, const uint8_t* data, size_t size);
 
   int loadObjectAndJournal(const char* objFilename, const char* journalFilename, uint8_t* data, off_t offset,
                            size_t length);
@@ -125,6 +132,7 @@ class IOCoordinator : public boost::noncopyable
   // from IOC's pov...
   size_t iocFilesOpened, iocObjectsCreated, iocJournalsCreated, iocFilesDeleted;
   size_t iocBytesRead, iocBytesWritten;
+  bool asyncWrite = true;
 };
 
 }  // namespace storagemanager
