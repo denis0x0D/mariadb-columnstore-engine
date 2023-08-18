@@ -132,6 +132,7 @@ class IOCoordinator : public boost::noncopyable
   // from IOC's pov...
   size_t iocFilesOpened, iocObjectsCreated, iocJournalsCreated, iocFilesDeleted;
   size_t iocBytesRead, iocBytesWritten;
+  bool asyncWrite = true;
 };
 
 }  // namespace storagemanager

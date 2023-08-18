@@ -78,6 +78,19 @@ IOCoordinator::IOCoordinator()
     throw runtime_error("Please set ObjectStorage/metadata_path in the storagemanager.cnf file");
   }
 
+  try
+  {
+    std::string asyncWriteStr = config->getValue("ObjectStorage", "async_write");
+    std::transform(asyncWriteStr.begin(), asyncWriteStr.end(), asyncWriteStr.begin(),
+                   [](char ch) { return std::tolower(ch); });
+    if (asyncWriteStr == "false" || asyncWriteStr == "0")
+      asyncWrite = false;
+  }
+  catch (...)
+  {
+    logger->log(LOG_WARNING, "Object/async_write failed to read value from config. ");
+  }
+
   cachePath = cache->getCachePath();
   journalPath = cache->getJournalPath();
 
@@ -305,7 +318,12 @@ ssize_t IOCoordinator::write(const char* _filename, const uint8_t* data, off_t o
   bf::path filename = ownership.get(_filename);
   const bf::path firstDir = *(filename.begin());
   ScopedWriteLock lock(this, filename.string());
-  int ret = writeSynchronously(filename, data, offset, length, firstDir);
+  int ret;
+
+  if (asyncWrite)
+    ret = _write(filename, data, offset, length, firstDir);
+  else
+    ret = writeSynchronously(filename, data, offset, length, firstDir);
   lock.unlock();
   if (ret > 0)
     bytesWritten += ret;
@@ -316,7 +334,6 @@ ssize_t IOCoordinator::write(const char* _filename, const uint8_t* data, off_t o
 int IOCoordinator::updateAndPutObject(const string& filename, const string& prefix, const string& cloudKey,
                                       const uint8_t* data, off_t objectOffset, size_t writeLen)
 {
-  cout << "updpate and put object " << cloudKey << endl;
   bool keyExists;
   MetadataFile md(filename, MetadataFile::no_create_t(), true);
   if (!md.exists())
@@ -382,7 +399,6 @@ int IOCoordinator::updateAndPutObject(const string& filename, const string& pref
 
 int IOCoordinator::createAndPutObject(const string& objectKey, const uint8_t* data, size_t size)
 {
-  cout << "create and put object " << objectKey << endl;
   CloudStorage* cs = CloudStorage::get();
   // TODO: Add `putObject` which takes a pointer not a shard pointer.
   std::shared_ptr<uint8_t[]> objectData(new uint8_t[size]);
@@ -390,7 +406,7 @@ int IOCoordinator::createAndPutObject(const string& objectKey, const uint8_t* da
   auto err = cs->putObject(objectData, size, objectKey);
   if (err)
   {
-    logger->log(LOG_ERR, "IOCoordinator::createObject(): failed to put object.");
+    logger->log(LOG_ERR, "IOCoordinator::createAndPutObject(): failed to put object.");
     return -1;
   }
   return 0;
@@ -1047,7 +1063,10 @@ int IOCoordinator::_truncate(const bf::path& bfpath, size_t newSize, ScopedFileL
   if (filesize < newSize)
   {
     uint8_t zero = 0;
-    err = writeSynchronously(bfpath, &zero, newSize - 1, 1, firstDir);
+    if (asyncWrite)
+      err = _write(bfpath, &zero, newSize - 1, 1, firstDir);
+    else
+      err = writeSynchronously(bfpath, &zero, newSize - 1, 1, firstDir);
     lock->unlock();
     cache->doneWriting(firstDir);
     if (err < 0)
