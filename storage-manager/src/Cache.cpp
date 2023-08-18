@@ -19,12 +19,15 @@
 #include "Config.h"
 #include "Downloader.h"
 #include "Synchronizer.h"
+#include "Utilities.h"
 #include <iostream>
 #include <syslog.h>
 #include <boost/filesystem.hpp>
 #include <boost/thread.hpp>
 #include <sys/types.h>
 #include <sys/stat.h>
+#include <stdlib.h>
+#include <fcntl.h>
 #include <unistd.h>
 
 using namespace std;

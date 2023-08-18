@@ -267,6 +267,7 @@ vector<metadataObject> MetadataFile::metadataRead(off_t offset, size_t length) c
   // find the first object in range
   // Note, the last object in mObjects may not be full, compare the last one against its maximum
   // size rather than its current size.
+  // TODO: Binary search should work here.
   while (i != mObjects.end())
   {
     if ((uint64_t)offset <= (i->offset + i->length - 1) ||
