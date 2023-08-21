@@ -137,52 +137,6 @@ void Cache::read(const bf::path& prefix, const vector<string>& keys)
   getPCache(prefix).read(keys);
 }
 
-int32_t Cache::getObject(const std::string& key, std::shared_ptr<uint8_t[]>* data, size_t* size)
-{
-  const std::string objectPath = cachePrefix.string() + key;
-  if (!bf::exists(objectPath))
-  {
-    logger->log(LOG_ERR, "Cache::getObject(): Could not file object file in local cache.");
-    return -1;
-  }
-
-  boost::system::error_code boost_err;
-  const auto fileLen = boost::filesystem::file_size(objectPath, boost_err);
-  if (boost_err)
-  {
-    logger->log(LOG_ERR, "Cache::getObject(): boost::file_size() failed.");
-    return -1;
-  }
-  data->reset(new uint8_t[fileLen]);
-
-  auto fd = ::open(objectPath.c_str(), O_RDONLY);
-  if (fd < 0)
-  {
-    logger->log(LOG_ERR, "Cache:getObject(): Failed to open object file %s.", objectPath.c_str());
-    return -1;
-  }
-  ScopedCloser s(fd);
-
-  uint32_t count = 0;
-  while (count < fileLen)
-  {
-    auto err = ::read(fd, &data[count], fileLen - count);
-    if (err < 0)
-    {
-      logger->log(LOG_ERR, "Cache::getObject(): Failed to read object file %s.", objectPath.c_str());
-      return -1;
-    }
-    else if (err == 0)
-    {
-      logger->log(LOG_ERR, "Cache::getObject(): Early EOF for object file %s.", objectPath.c_str());
-      return -1;
-    }
-    count += err;
-  }
-  *size = fileLen;
-  return 0;
-}
-
 void Cache::doneReading(const bf::path& prefix, const vector<string>& keys)
 {
   getPCache(prefix).doneReading(keys);

@@ -56,7 +56,6 @@ class Cache : public boost::noncopyable, public ConfigListener
   bool exists(const boost::filesystem::path& prefix, const std::string& key);
   void exists(const boost::filesystem::path& prefix, const std::vector<std::string>& keys,
               std::vector<bool>* out);
-  int32_t getObject(const std::string& key, std::shared_ptr<uint8_t[]>* data, size_t* size);
 
   // writing fcns
   // new*() fcns tell the Cache data was added.  After writing a set of objects,

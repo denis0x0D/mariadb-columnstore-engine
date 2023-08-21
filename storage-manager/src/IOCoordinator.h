@@ -54,6 +54,8 @@ class IOCoordinator : public boost::noncopyable
   int truncate(const char* path, size_t newsize);
   int unlink(const char* path);
   int copyFile(const char* filename1, const char* filename2);
+  int getObject(const boost::filesystem::path& prefix, const std::string& key,
+                std::shared_ptr<uint8_t[]> data, size_t& size);
 
   // The shared logic for merging a journal file with its base file.
   // len should be set to the length of the data requested
@@ -114,9 +116,8 @@ class IOCoordinator : public boost::noncopyable
                  const boost::filesystem::path& firstDir);
   ssize_t writeSynchronously(const boost::filesystem::path& filename, const uint8_t* data, off_t offset,
                              size_t length, const boost::filesystem::path& firstDir);
-
-  int updateAndPutObject(const std::string& filename, const std::string& cloudKey,
-                         const std::string& objectKey, const uint8_t* data, off_t objectOffset,
+  int updateAndPutObject(const std::string& filename, const boost::filesystem::path& prefix,
+                         const std::string& cloudKey, const uint8_t* data, off_t objectOffset,
                          size_t writeLen);
   int createAndPutObject(const std::string& objectKey, const uint8_t* data, size_t size);
 

@@ -31,6 +31,7 @@
 #include "checks.h"
 #include "vlarray.h"
 
+// TODO: Could we use from stanard lib?
 #define max(x, y) (x > y ? x : y)
 #define min(x, y) (x < y ? x : y)
 
@@ -331,10 +332,9 @@ ssize_t IOCoordinator::write(const char* _filename, const uint8_t* data, off_t o
   return ret;
 }
 
-int IOCoordinator::updateAndPutObject(const string& filename, const string& prefix, const string& cloudKey,
+int IOCoordinator::updateAndPutObject(const string& filename, const bf::path& prefix, const string& cloudKey,
                                       const uint8_t* data, off_t objectOffset, size_t writeLen)
 {
-  cout << "update and put object " << cloudKey << endl;
   bool keyExists;
   MetadataFile md(filename, MetadataFile::no_create_t(), true);
   if (!md.exists())
@@ -349,22 +349,62 @@ int IOCoordinator::updateAndPutObject(const string& filename, const string& pref
     return -1;
   }
 
-  size_t objectSize;
+  size_t currentObjectSize;
   std::shared_ptr<uint8_t[]> objectData;
+
   bool objectCached = cache->exists(prefix, cloudKey);
   if (objectCached)
   {
-    auto err = cache->getObject(cloudKey, &objectData, &objectSize);
-    if (err)
+    auto file = prefix / cloudKey;
+    ScopedReadLock readLock(this, file.string());
+
+    const auto cachedObjectPath = cachePath / prefix / cloudKey;
+    if (!bf::exists(cachedObjectPath))
     {
-      // TODO: How about download it from storage.
-      logger->log(LOG_ERR, "IOCoordinator::updateAndPutObject(): Failed to get object from local cache.");
+      logger->log(LOG_ERR, "IOCoordinator::updateAndPutObject(): Could not find object file in local cache.");
       return -1;
+    }
+
+    boost::system::error_code boost_err;
+    currentObjectSize = boost::filesystem::file_size(cachedObjectPath, boost_err);
+    if (boost_err)
+    {
+      logger->log(LOG_ERR, "IOCoordinator::updateAndPutObject(): boost::file_size() failed.");
+      return -1;
+    }
+    objectData.reset(new uint8_t[currentObjectSize]);
+
+    auto fd = ::open(cachedObjectPath.c_str(), O_RDONLY);
+    if (fd < 0)
+    {
+      logger->log(LOG_ERR, "IOCoordinator::updateAndPutObject(): Failed to open object file %s.",
+                  cachedObjectPath.c_str());
+      return -1;
+    }
+    ScopedCloser s(fd);
+
+    uint32_t count = 0;
+    while (count < currentObjectSize)
+    {
+      auto err = ::read(fd, &objectData[count], currentObjectSize - count);
+      if (err < 0)
+      {
+        logger->log(LOG_ERR, "IOCoordinator::updateAndPutObject(): Failed to read object file %s.",
+                    cachedObjectPath.c_str());
+        return -1;
+      }
+      else if (err == 0)
+      {
+        logger->log(LOG_ERR, "IOCoordinator::updateAndPutObject(): Early EOF for object file %s.",
+                    cachedObjectPath.c_str());
+        return -1;
+      }
+      count += err;
     }
   }
   else
   {
-    auto err = cs->getObject(cloudKey, &objectData, &objectSize);
+    auto err = cs->getObject(cloudKey, &objectData, &currentObjectSize);
     if (err)
     {
       logger->log(LOG_ERR, "IOCoordinator::updateAndPutObject(): Failed to get object from storage.");
@@ -372,12 +412,12 @@ int IOCoordinator::updateAndPutObject(const string& filename, const string& pref
     }
   }
 
-  const size_t newObjectSize = objectOffset + writeLen;
-  if (newObjectSize > objectSize)
+  const size_t newObjectSize = max(objectOffset + writeLen, currentObjectSize);
+  if (newObjectSize > currentObjectSize)
   {
     // Resize.
     std::shared_ptr<uint8_t[]> tmp(new uint8_t[newObjectSize]);
-    std::memcpy(tmp.get(), objectData.get(), objectSize);
+    std::memcpy(tmp.get(), objectData.get(), currentObjectSize);
     objectData.swap(tmp);
   }
   std::memcpy(&objectData[objectOffset], data, writeLen);
@@ -398,14 +438,17 @@ int IOCoordinator::updateAndPutObject(const string& filename, const string& pref
   cs->deleteObject(cloudKey);
   if (objectCached)
   {
-    cache->rename(prefix, cloudKey, newCloudKey, newObjectSize - objectSize);
-    auto err = replicator->newObject(cachePath.string() + newCloudKey, objectData.get(), 0, newObjectSize);
+    cache->rename(prefix, cloudKey, newCloudKey, newObjectSize - currentObjectSize);
+    // cache->newObject(prefix, newCloudKey, newObjectSize);
+    // cache->deletedObject(prefix, cloudKey, objectSize);
+
+    auto err = replicator->newObject(prefix / newCloudKey, objectData.get(), 0, newObjectSize);
     if (err < 0 || ((size_t)err != newObjectSize))
     {
       logger->log(LOG_ERR, "IOCoordinator::updateAndPutObject(): Failed to create a new object file.");
       return -1;
     }
-    err = replicator->remove(cachePath.string() + cloudKey);
+    err = replicator->remove(cachePath / prefix / cloudKey);
     if (err)
     {
       logger->log(LOG_ERR,
@@ -414,13 +457,11 @@ int IOCoordinator::updateAndPutObject(const string& filename, const string& pref
       return -1;
     }
   }
-
   return 0;
 }
 
 int IOCoordinator::createAndPutObject(const string& objectKey, const uint8_t* data, size_t size)
 {
-  cout << "Create and put object " << objectKey << endl;
   CloudStorage* cs = CloudStorage::get();
   // TODO: Add `putObject` which takes a pointer not a shard pointer.
   std::shared_ptr<uint8_t[]> objectData(new uint8_t[size]);
