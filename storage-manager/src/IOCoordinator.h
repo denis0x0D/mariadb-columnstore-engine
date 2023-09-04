@@ -112,10 +112,16 @@ class IOCoordinator : public boost::noncopyable
   void deleteMetaFile(const boost::filesystem::path& file);
 
   int _truncate(const boost::filesystem::path& path, size_t newsize, ScopedFileLock* lock);
-  ssize_t _write(const boost::filesystem::path& filename, const uint8_t* data, off_t offset, size_t length,
-                 const boost::filesystem::path& firstDir);
-  ssize_t writeSynchronously(const boost::filesystem::path& filename, const uint8_t* data, off_t offset,
-                             size_t length, const boost::filesystem::path& firstDir);
+
+  ssize_t writeAsync(const boost::filesystem::path& filename, const uint8_t* data, off_t offset,
+                     size_t length, const boost::filesystem::path& firstDir);
+  ssize_t writeSync(const boost::filesystem::path& filename, const uint8_t* data, off_t offset, size_t length,
+                    const boost::filesystem::path& firstDir);
+  ssize_t appendAsync(const boost::filesystem::path& filename, const uint8_t* data, size_t length,
+                      const boost::filesystem::path& firstDir);
+  ssize_t appendSync(const boost::filesystem::path& filename, const uint8_t* data, size_t length,
+                     const boost::filesystem::path& firstDir);
+
   int updateAndPutObject(const std::string& filename, const boost::filesystem::path& prefix,
                          const std::string& cloudKey, const uint8_t* data, off_t objectOffset,
                          size_t writeLen);

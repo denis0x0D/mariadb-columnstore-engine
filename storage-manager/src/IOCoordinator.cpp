@@ -322,9 +322,9 @@ ssize_t IOCoordinator::write(const char* _filename, const uint8_t* data, off_t o
   int ret;
 
   if (asyncWrite)
-    ret = _write(filename, data, offset, length, firstDir);
+    ret = writeAsync(filename, data, offset, length, firstDir);
   else
-    ret = writeSynchronously(filename, data, offset, length, firstDir);
+    ret = writeSync(filename, data, offset, length, firstDir);
   lock.unlock();
   if (ret > 0)
     bytesWritten += ret;
@@ -475,8 +475,8 @@ int IOCoordinator::createAndPutObject(const string& objectKey, const uint8_t* da
   return 0;
 }
 
-ssize_t IOCoordinator::writeSynchronously(const boost::filesystem::path& filename, const uint8_t* data,
-                                          off_t offset, size_t length, const bf::path& firstDir)
+ssize_t IOCoordinator::writeSync(const boost::filesystem::path& filename, const uint8_t* data, off_t offset,
+                                 size_t length, const bf::path& firstDir)
 {
   int err = 0, l_errno;
   ssize_t count = 0;
@@ -616,8 +616,8 @@ ssize_t IOCoordinator::writeSynchronously(const boost::filesystem::path& filenam
   return count;
 }
 
-ssize_t IOCoordinator::_write(const boost::filesystem::path& filename, const uint8_t* data, off_t offset,
-                              size_t length, const bf::path& firstDir)
+ssize_t IOCoordinator::writeAsync(const boost::filesystem::path& filename, const uint8_t* data, off_t offset,
+                                  size_t length, const bf::path& firstDir)
 {
   int err = 0, l_errno;
   ssize_t count = 0;
@@ -864,9 +864,115 @@ out:
 
 ssize_t IOCoordinator::append(const char* _filename, const uint8_t* data, size_t length)
 {
-  bytesWritten += length;
   bf::path filename = ownership.get(_filename);
+  ScopedWriteLock lock(this, filename.string());
   const bf::path firstDir = *(filename.begin());
+  ssize_t ret;
+
+  if (asyncWrite)
+    ret = appendAsync(filename, data, length, firstDir);
+  else
+    ret = appendSync(filename, data, length, firstDir);
+
+  if (ret > 0)
+    bytesWritten += ret;
+
+  lock.unlock();
+  cache->doneWriting(firstDir);
+  return ret;
+}
+
+ssize_t IOCoordinator::appendSync(const boost::filesystem::path& filename, const uint8_t* data, size_t length,
+                                  const bf::path& firstDir)
+{
+  int err, l_errno;
+  ssize_t count = 0;
+  uint64_t writeLength = 0;
+  uint64_t dataRemaining = length;
+  vector<metadataObject> objects;
+
+  MetadataFile metadata = MetadataFile(filename, MetadataFile::no_create_t(), true);
+  if (!metadata.exists())
+  {
+    errno = ENOENT;
+    return -1;
+  }
+
+  uint64_t offset = metadata.getLength();
+  // read metadata determine if this fits in the last object
+  objects = metadata.metadataRead(offset, length);
+
+  if (objects.size() == 1)
+  {
+    auto objectIt = objects.begin();
+
+    // XXXPAT: Need to handle the case where objectSize has been reduced since i was created
+    // ie, i->length may be > objectSize here, so objectSize - i->length may be a huge positive #.
+    // Need to disable changing object size for now.
+    if ((objectSize - objectIt->length) > 0)
+    {
+      // figure out how much data to write to this object
+      writeLength = min((objectSize - objectIt->length), dataRemaining);
+
+      err = updateAndPutObject(filename.string(), firstDir.string(), objectIt->key, &data[count],
+                               objectIt->length, writeLength);
+      if (err < 0)
+      {
+        l_errno = errno;
+        // log error and abort
+        logger->log(LOG_ERR, "IOCoordinator::appendSync(): Failed updateAndPut.");
+        errno = l_errno;
+        return -1;
+      }
+
+      count += writeLength;
+      dataRemaining -= writeLength;
+      iocBytesWritten += writeLength;
+      metadata.updateEntryLength(objectIt->offset, (writeLength + objectIt->length));
+    }
+  }
+  else if (objects.size() > 1)
+  {
+    logger->log(LOG_ERR, "IOCoordinator::appendSync(): multiple overlapping objects found on append.", count,
+                length);
+    assert(0);
+    errno = EIO;  // a better option for 'programmer error'?
+    return -1;
+  }
+  while (dataRemaining > 0)
+  {
+    writeLength = min(objectSize, dataRemaining);
+
+    metadataObject newObject = metadata.addMetadataObject(filename, writeLength);
+    err = createAndPutObject(newObject.key, &data[count], writeLength);
+    if (err)
+    {
+      logger->log(LOG_ERR, "IOCoordinator::appendSync(): Failed to create new object.");
+      metadata.removeEntry(newObject.offset);
+      return -1;
+    }
+
+    err = replicator->newObject((firstDir / newObject.key), &data[count], 0, writeLength);
+    if (err < 0)
+    {
+      logger->log(LOG_ERR, "IOCoordinator::appendSync(): Failed newObject.");
+      metadata.removeEntry(newObject.offset);
+      replicator->remove(cachePath / firstDir / newObject.key);
+      return -1;
+    }
+
+    count += writeLength;
+    dataRemaining -= writeLength;
+    iocBytesWritten += writeLength;
+    cache->newObject(firstDir, newObject.key, writeLength);
+  }
+
+  return count;
+}
+
+ssize_t IOCoordinator::appendAsync(const boost::filesystem::path& filename, const uint8_t* data,
+                                   size_t length, const bf::path& firstDir)
+{
   int err, l_errno;
   ssize_t count = 0;
   uint64_t writeLength = 0;
@@ -874,8 +980,6 @@ ssize_t IOCoordinator::append(const char* _filename, const uint8_t* data, size_t
   vector<metadataObject> objects;
   vector<string> newObjectKeys;
   Synchronizer* synchronizer = Synchronizer::get();  // need to init sync here to break circular dependency...
-
-  ScopedWriteLock lock(this, filename.string());
 
   MetadataFile metadata = MetadataFile(filename, MetadataFile::no_create_t(), true);
   if (!metadata.exists())
@@ -1011,10 +1115,6 @@ ssize_t IOCoordinator::append(const char* _filename, const uint8_t* data, size_t
 out:
   synchronizer->newObjects(firstDir, newObjectKeys);
   replicator->updateMetadata(metadata);
-  // need to release the file lock before telling Cache that we're done writing.
-  lock.unlock();
-  cache->doneWriting(firstDir);
-
   return count;
 }
 
@@ -1127,9 +1227,9 @@ int IOCoordinator::_truncate(const bf::path& bfpath, size_t newSize, ScopedFileL
   {
     uint8_t zero = 0;
     if (asyncWrite)
-      err = _write(bfpath, &zero, newSize - 1, 1, firstDir);
+      err = writeAsync(bfpath, &zero, newSize - 1, 1, firstDir);
     else
-      err = writeSynchronously(bfpath, &zero, newSize - 1, 1, firstDir);
+      err = writeSync(bfpath, &zero, newSize - 1, 1, firstDir);
     lock->unlock();
     cache->doneWriting(firstDir);
     if (err < 0)

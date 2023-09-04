@@ -137,6 +137,7 @@ stop_service()
     message "Stopping MariaDB services"
     systemctl stop mariadb
     systemctl stop mariadb-columnstore
+    systemctl stop mcs-storagemanager
 }
 
 check_service()
@@ -173,8 +174,7 @@ clean_old_installation()
     rm -rf /var/lib/columnstore/data1/*
     rm -rf /var/lib/columnstore/data/
     rm -rf /var/lib/columnstore/local/
-    rm -f /var/lib/columnstore/storagemanager/storagemanager-lock
-    rm -f /var/lib/columnstore/storagemanager/cs-initialized
+    rm -rf /var/lib/columnstore/storagemanager/*
     rm -rf /var/log/mariadb/columnstore/*
     rm -rf /tmp/*
     rm -rf $REPORT_PATH
@@ -491,6 +491,7 @@ socket=/run/mysqld/mysqld.sock" > /etc/my.cnf.d/socket.cnf'
 
     message "Running columnstore-post-install"
     mkdir -p /var/lib/columnstore/local
+    systemctl start mcs-storagemanager
     columnstore-post-install --rpmmode=install
     message "Running install_mcs_mysql"
     install_mcs_mysql.sh
