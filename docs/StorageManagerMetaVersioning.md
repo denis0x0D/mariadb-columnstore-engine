@@ -20,6 +20,7 @@ sequenceDiagram
     participant S3Bucket
     participant ColumnstoreEngine
     participant MetaData
+    participant MetaVersionObjects
     ColumnstoreEngine->>StorageManager: Handle `write(filename, offset)` to the file
     StorageManager->>MetaData: Translate `filename, offset` to meta `file, offset` and find related object's UIDs
     StorageManager->>S3Bucket: Request object from S3
@@ -28,6 +29,7 @@ sequenceDiagram
     StorageManager->>S3Bucket: Put updated object on S3 with new UID
     StorageManager->>MetaVersion: Check old object UID in meta version
     StorageManager->>S3Bucket: Delete old object if not exist in MetaVersion
+    StorageManager->>MetaVersionObjects: Save UID of the old object to the file
     StorageManager->>ColumnstoreEngine: Return success
 ```
 
@@ -40,4 +42,17 @@ sequenceDiagram
     StorageManager->>S3Bucket: Request meta version.
     S3Bucket->>StorageManager: Send meta version to worker node.
     StorageManager->>MetaVersion: Unpack metaversion.
+```
+
+`Remove version meta.`
+```mermaid
+sequenceDiagram
+    participant MetaVersion_i
+    participant MetaVersionObjects_i
+    participant StorageManager
+    participant S3Bucket
+    StorageManager->>MetaVersionObjects_i: Collect all objects
+    StorageManager->>S3Bucket: Remove all objects described in meta version object file
+    StorageManager->>MetaVersion_i: Remove file
+    StorageManager->>S3Bucket: Remove meta version file from S3.
 ```
