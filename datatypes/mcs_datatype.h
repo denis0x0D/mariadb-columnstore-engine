@@ -2418,6 +2418,10 @@ class TypeHandlerTemporal : public TypeHandler
 
 class TypeHandlerDate : public TypeHandlerTemporal
 {
+ public:
+  int32_t convertArrowColumnDate(int32_t dayVal, int& status) const;
+
+ private:
   const string& name() const override;
   code_t code() const override
   {
@@ -2444,6 +2448,11 @@ class TypeHandlerDate : public TypeHandlerTemporal
 
 class TypeHandlerDatetime : public TypeHandlerTemporal
 {
+ public:
+  int64_t convertArrowColumnDatetime(int64_t timeVal, int& status) const;
+  int64_t convertArrowColumnDatetimeUs(int64_t timeVal, int& status) const;
+
+ private:
   const string& name() const override;
   code_t code() const override
   {
@@ -2470,6 +2479,11 @@ class TypeHandlerDatetime : public TypeHandlerTemporal
 
 class TypeHandlerTime : public TypeHandlerTemporal
 {
+ public:
+  int64_t convertArrowColumnTime64(int64_t timeVal, int& status) const;
+  int64_t convertArrowColumnTime32(int32_t timeVal, int& status) const;
+
+ private:
   const string& name() const override;
   code_t code() const override
   {
@@ -2496,6 +2510,11 @@ class TypeHandlerTime : public TypeHandlerTemporal
 
 class TypeHandlerTimestamp : public TypeHandlerTemporal
 {
+ public:
+  int64_t convertArrowColumnTimestamp(int64_t timeVal, int& status) const;
+  int64_t convertArrowColumnTimestampUs(int64_t timeVal, int& status) const;
+
+ private:
   const string& name() const override;
   code_t code() const override
   {
