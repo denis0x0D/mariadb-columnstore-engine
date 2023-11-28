@@ -3179,14 +3179,14 @@ void TupleAggregateStep::prep2PhasesAggregate(JobInfo& jobInfo, vector<RowGroup>
           colAggPm++;
         }
 
-        // PM: put the count column for avg next to the sum
-        // let fall through to add a count column for average function
-        if (aggOp != ROWAGG_AVG)
-          break;
-        // The AVG aggregation has a special treatment everywhere.
-        // This is so because AVG(column) is a SUM(column)/COUNT(column)
-        // and these aggregations can be utilized by AVG, if present.
-        /* fall through */
+          // PM: put the count column for avg next to the sum
+          // let fall through to add a count column for average function
+          if (aggOp != ROWAGG_AVG)
+            break;
+          // The AVG aggregation has a special treatment everywhere.
+          // This is so because AVG(column) is a SUM(column)/COUNT(column)
+          // and these aggregations can be utilized by AVG, if present.
+          /* fall through */
 
         case ROWAGG_COUNT_ASTERISK:
         case ROWAGG_COUNT_COL_NAME:
@@ -3439,99 +3439,143 @@ void TupleAggregateStep::prep2PhasesAggregate(JobInfo& jobInfo, vector<RowGroup>
       // not a direct hit -- a returned column is not already in the RG from PMs
       else
       {
-        bool returnColMissing = true;
-
-        // check if a SUM or COUNT covered by AVG
-        if (aggOp == ROWAGG_SUM || aggOp == ROWAGG_COUNT_COL_NAME)
+        // MCOL-5476.
+        bool functionColumnMatched = false;
+        if (jobInfo.functionColumnMap.count(retKey))
         {
-          it = aggFuncMap.find(boost::make_tuple(returnedColVec[i].first, ROWAGG_AVG, pUDAFFunc,
-                                                 udafc ? udafc->getContext().getParamKeys() : NULL));
-
-          if (it != aggFuncMap.end())
+          const auto& rFunctionInfo = jobInfo.functionColumnMap[retKey];
+          // Try to match given `retKey` in `aggFuncMap`.
+          for (const auto& aggFuncMapPair : aggFuncMap)
           {
-            // false alarm
-            returnColMissing = false;
-
-            colPm = it->second;
-
-            if (aggOp == ROWAGG_SUM)
+            const auto tupleKey = aggFuncMapPair.first.get<0>();
+            // Skip if the keys are the same.
+            if (jobInfo.functionColumnMap.count(tupleKey) && tupleKey != retKey)
             {
-              wideDecimalOrLongDouble(colPm, typeAggPm[colPm], precisionAggPm, scaleAggPm, widthAggPm,
-                                      typeAggUm, scaleAggUm, precisionAggUm, widthAggUm);
+              const auto& lFunctionInfo = jobInfo.functionColumnMap[tupleKey];
+              // Oid and function name should be the same.
+              if (lFunctionInfo.associatedColumnOid == rFunctionInfo.associatedColumnOid &&
+                  lFunctionInfo.functionName == rFunctionInfo.functionName)
+              {
+                AGG_MAP::iterator it = aggFuncMap.find(boost::make_tuple(
+                    tupleKey, aggOp, pUDAFFunc, udafc ? udafc->getContext().getParamKeys() : NULL));
 
-              oidsAggUm.push_back(oidsAggPm[colPm]);
-              keysAggUm.push_back(retKey);
-              csNumAggUm.push_back(8);
-            }
-            else
-            {
-              // leave the count() to avg
-              aggOp = ROWAGG_COUNT_NO_OP;
-
-              colPm++;
-              oidsAggUm.push_back(oidsAggPm[colPm]);
-              keysAggUm.push_back(retKey);
-              scaleAggUm.push_back(0);
-              precisionAggUm.push_back(19);
-              typeAggUm.push_back(CalpontSystemCatalog::UBIGINT);
-              csNumAggUm.push_back(8);
-              widthAggUm.push_back(bigIntWidth);
+                if (it != aggFuncMap.end())
+                {
+                  colPm = it->second;
+                  oidsAggUm.push_back(oidsAggPm[colPm]);
+                  keysAggUm.push_back(retKey);
+                  scaleAggUm.push_back(scaleAggPm[colPm]);
+                  precisionAggUm.push_back(precisionAggPm[colPm]);
+                  typeAggUm.push_back(typeAggPm[colPm]);
+                  csNumAggUm.push_back(csNumAggPm[colPm]);
+                  widthAggUm.push_back(widthAggPm[colPm]);
+                  // Update the `retKey` to specify that this column is a duplicate.
+                  retKey = tupleKey;
+                  functionColumnMatched = true;
+                  break;
+                }
+              }
             }
           }
         }
-        else if (find(jobInfo.expressionVec.begin(), jobInfo.expressionVec.end(), retKey) !=
-                 jobInfo.expressionVec.end())
-        {
-          // a function on aggregation
-          TupleInfo ti = getTupleInfo(retKey, jobInfo);
-          oidsAggUm.push_back(ti.oid);
-          keysAggUm.push_back(retKey);
-          scaleAggUm.push_back(ti.scale);
-          precisionAggUm.push_back(ti.precision);
-          typeAggUm.push_back(ti.dtype);
-          csNumAggUm.push_back(ti.csNum);
-          widthAggUm.push_back(ti.width);
 
-          returnColMissing = false;
-        }
-        else if (jobInfo.windowSet.find(retKey) != jobInfo.windowSet.end())
+        if (!functionColumnMatched)
         {
-          // an window function
-          TupleInfo ti = getTupleInfo(retKey, jobInfo);
-          oidsAggUm.push_back(ti.oid);
-          keysAggUm.push_back(retKey);
-          scaleAggUm.push_back(ti.scale);
-          precisionAggUm.push_back(ti.precision);
-          typeAggUm.push_back(ti.dtype);
-          csNumAggUm.push_back(ti.csNum);
-          widthAggUm.push_back(ti.width);
+          bool returnColMissing = true;
 
-          returnColMissing = false;
-        }
-        else if (aggOp == ROWAGG_CONSTANT)
-        {
-          TupleInfo ti = getTupleInfo(retKey, jobInfo);
-          oidsAggUm.push_back(ti.oid);
-          keysAggUm.push_back(retKey);
-          scaleAggUm.push_back(ti.scale);
-          precisionAggUm.push_back(ti.precision);
-          typeAggUm.push_back(ti.dtype);
-          csNumAggUm.push_back(ti.csNum);
-          widthAggUm.push_back(ti.width);
+          // check if a SUM or COUNT covered by AVG
+          if (aggOp == ROWAGG_SUM || aggOp == ROWAGG_COUNT_COL_NAME)
+          {
+            it = aggFuncMap.find(boost::make_tuple(returnedColVec[i].first, ROWAGG_AVG, pUDAFFunc,
+                                                   udafc ? udafc->getContext().getParamKeys() : NULL));
 
-          returnColMissing = false;
-        }
+            if (it != aggFuncMap.end())
+            {
+              // false alarm
+              returnColMissing = false;
 
-        if (returnColMissing)
-        {
-          Message::Args args;
-          args.add(keyName(outIdx, retKey, jobInfo));
-          string emsg = IDBErrorInfo::instance()->errorMsg(ERR_NOT_GROUPBY_EXPRESSION, args);
-          cerr << "prep2PhasesAggregate: " << emsg << " oid=" << (int)jobInfo.keyInfo->tupleKeyVec[retKey].fId
-               << ", alias=" << jobInfo.keyInfo->tupleKeyVec[retKey].fTable
-               << ", view=" << jobInfo.keyInfo->tupleKeyVec[retKey].fView << ", function=" << (int)aggOp
-               << endl;
-          throw IDBExcept(emsg, ERR_NOT_GROUPBY_EXPRESSION);
+              colPm = it->second;
+
+              if (aggOp == ROWAGG_SUM)
+              {
+                wideDecimalOrLongDouble(colPm, typeAggPm[colPm], precisionAggPm, scaleAggPm, widthAggPm,
+                                        typeAggUm, scaleAggUm, precisionAggUm, widthAggUm);
+
+                oidsAggUm.push_back(oidsAggPm[colPm]);
+                keysAggUm.push_back(retKey);
+                csNumAggUm.push_back(8);
+              }
+              else
+              {
+                // leave the count() to avg
+                aggOp = ROWAGG_COUNT_NO_OP;
+
+                colPm++;
+                oidsAggUm.push_back(oidsAggPm[colPm]);
+                keysAggUm.push_back(retKey);
+                scaleAggUm.push_back(0);
+                precisionAggUm.push_back(19);
+                typeAggUm.push_back(CalpontSystemCatalog::UBIGINT);
+                csNumAggUm.push_back(8);
+                widthAggUm.push_back(bigIntWidth);
+              }
+            }
+          }
+          else if (find(jobInfo.expressionVec.begin(), jobInfo.expressionVec.end(), retKey) !=
+                   jobInfo.expressionVec.end())
+          {
+            // a function on aggregation
+            TupleInfo ti = getTupleInfo(retKey, jobInfo);
+            oidsAggUm.push_back(ti.oid);
+            keysAggUm.push_back(retKey);
+            scaleAggUm.push_back(ti.scale);
+            precisionAggUm.push_back(ti.precision);
+            typeAggUm.push_back(ti.dtype);
+            csNumAggUm.push_back(ti.csNum);
+            widthAggUm.push_back(ti.width);
+
+            returnColMissing = false;
+          }
+          else if (jobInfo.windowSet.find(retKey) != jobInfo.windowSet.end())
+          {
+            // an window function
+            TupleInfo ti = getTupleInfo(retKey, jobInfo);
+            oidsAggUm.push_back(ti.oid);
+            keysAggUm.push_back(retKey);
+            scaleAggUm.push_back(ti.scale);
+            precisionAggUm.push_back(ti.precision);
+            typeAggUm.push_back(ti.dtype);
+            csNumAggUm.push_back(ti.csNum);
+            widthAggUm.push_back(ti.width);
+
+            returnColMissing = false;
+          }
+          else if (aggOp == ROWAGG_CONSTANT)
+          {
+            TupleInfo ti = getTupleInfo(retKey, jobInfo);
+            oidsAggUm.push_back(ti.oid);
+            keysAggUm.push_back(retKey);
+            scaleAggUm.push_back(ti.scale);
+            precisionAggUm.push_back(ti.precision);
+            typeAggUm.push_back(ti.dtype);
+            csNumAggUm.push_back(ti.csNum);
+            widthAggUm.push_back(ti.width);
+
+            returnColMissing = false;
+          }
+
+          if (returnColMissing)
+          {
+            Message::Args args;
+            args.add(keyName(outIdx, retKey, jobInfo));
+            string emsg = IDBErrorInfo::instance()->errorMsg(ERR_NOT_GROUPBY_EXPRESSION, args);
+            cerr << "prep2PhasesAggregate: " << emsg
+                 << " oid=" << (int)jobInfo.keyInfo->tupleKeyVec[retKey].fId
+                 << ", alias=" << jobInfo.keyInfo->tupleKeyVec[retKey].fTable
+                 << ", view=" << jobInfo.keyInfo->tupleKeyVec[retKey].fView << ", function=" << (int)aggOp
+                 << endl;
+            throw IDBExcept(emsg, ERR_NOT_GROUPBY_EXPRESSION);
+          }
         }
       }
 
@@ -3713,7 +3757,8 @@ void TupleAggregateStep::prep2PhasesAggregate(JobInfo& jobInfo, vector<RowGroup>
 
   RowGroup aggRgUm(oidsAggUm.size(), posAggUm, oidsAggUm, keysAggUm, typeAggUm, csNumAggUm, scaleAggUm,
                    precisionAggUm, jobInfo.stringTableThreshold);
-  SP_ROWAGG_UM_t rowAggUm(new RowAggregationUMP2(groupByUm, functionVecUm, jobInfo.rm, jobInfo.umMemLimit, false));
+  SP_ROWAGG_UM_t rowAggUm(
+      new RowAggregationUMP2(groupByUm, functionVecUm, jobInfo.rm, jobInfo.umMemLimit, false));
   rowAggUm->timeZone(jobInfo.timeZone);
   rowgroups.push_back(aggRgUm);
   aggregators.push_back(rowAggUm);
