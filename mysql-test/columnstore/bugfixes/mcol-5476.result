@@ -57,6 +57,10 @@ select sum(distinct t1.a), abs(t2.b), abs(t2.b) from t1 join t2 on t1.a = t2.a g
 sum(distinct t1.a)	abs(t2.b)	abs(t2.b)
 3	1	1
 4	2	2
+select sum(t1.a), abs(t2.b), abs(t2.b) from t1 join t2 on t1.a = t2.a group by abs(t2.b);
+sum(t1.a)	abs(t2.b)	abs(t2.b)
+4	2	2
+3	1	1
 create table t3 (a datetime, b int) engine=Columnstore;
 insert into t3 values ("2007-01-30 21:31:07", 1), ("2007-01-30 21:31:07", 3), ("2007-01-29 21:31:07", 1), ("2007-01-29 21:31:07", 2);
 select distinct DAYOFWEEK(a) as C1, DAYOFWEEK(a) as C2, SUM(b) from t3 group by DAYOFWEEK(a), DAYOFWEEK(a);
@@ -65,4 +69,3 @@ C1	C2	SUM(b)
 3	3	4
 DROP TABLE t1, t2, t3;
 DROP DATABASE `mcol-5476`;
-ok

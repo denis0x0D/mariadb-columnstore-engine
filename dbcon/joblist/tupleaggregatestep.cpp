@@ -1132,33 +1132,8 @@ void TupleAggregateStep::prep1PhaseAggregate(JobInfo& jobInfo, vector<RowGroup>&
       }
       else
       {
-
-        bool foundKey = false;
-        uint32_t tupleKey{0};
-        if (jobInfo.functionColumnMap.count(key))
-        {
-          const auto& rFunctionInfo = jobInfo.functionColumnMap[key];
-          // Try to match given `retKey` in `aggFuncMap`.
-          for (const auto& p : groupbyMap)
-          {
-            const auto currentTupleKey = p.first;
-            // Skip if the keys are the same.
-            if (jobInfo.functionColumnMap.count(currentTupleKey) && currentTupleKey != key) 
-            {
-              const auto& lFunctionInfo = jobInfo.functionColumnMap[currentTupleKey];
-              // Oid and function name should be the same.
-              if (lFunctionInfo.associatedColumnOid == rFunctionInfo.associatedColumnOid &&
-                  lFunctionInfo.functionName == rFunctionInfo.functionName)
-              {
-                foundKey = true;
-                tupleKey = currentTupleKey;
-                break;
-              }
-            }
-          }
-        }
-
-        if (foundKey)
+        uint32_t foundTupleKey{0};
+        if (tryToFindEqualFunctionColumnByTupleKey(jobInfo, groupbyMap, key, foundTupleKey))
         {
           oidsAgg.push_back(oidsProj[colProj]);
           keysAgg.push_back(key);
@@ -1167,7 +1142,7 @@ void TupleAggregateStep::prep1PhaseAggregate(JobInfo& jobInfo, vector<RowGroup>&
           typeAgg.push_back(typeProj[colProj]);
           csNumAgg.push_back(csNumProj[colProj]);
           widthAgg.push_back(width[colProj]);
-          key = tupleKey;
+          key = foundTupleKey;
           ++outIdx;
           continue;
         }
@@ -5997,16 +5972,28 @@ void TupleAggregateStep::formatMiniStats()
   fMiniInfo += oss.str();
 }
 
-bool TupleAggregateStep::tryToFindEqualFunctionColumnByTupleKey(JobInfo& jobInfo, AGG_MAP& aggFuncMap,
+uint32_t TupleAggregateStep::getTupleKeyFromTuple(
+    const boost::tuple<uint32_t, int, mcsv1sdk::mcsv1_UDAF*, std::vector<uint32_t>*>& tuple)
+{
+  return tuple.get<0>();
+}
+
+uint32_t TupleAggregateStep::getTupleKeyFromTuple(uint32_t key)
+{
+  return key;
+}
+
+template <class GroupByMap>
+bool TupleAggregateStep::tryToFindEqualFunctionColumnByTupleKey(JobInfo& jobInfo, GroupByMap& groupByMap,
                                                                 const uint32_t tupleKey, uint32_t& foundKey)
 {
   if (jobInfo.functionColumnMap.count(tupleKey))
   {
     const auto& rFunctionInfo = jobInfo.functionColumnMap[tupleKey];
     // Try to match given `retKey` in `aggFuncMap`.
-    for (const auto& aggFuncMapPair : aggFuncMap)
+    for (const auto& groupByMapPair : groupByMap)
     {
-      const auto currentTupleKey = aggFuncMapPair.first.get<0>();
+      const auto currentTupleKey = getTupleKeyFromTuple(groupByMapPair.first);
       // Skip if the keys are the same.
       if (jobInfo.functionColumnMap.count(currentTupleKey) && currentTupleKey != tupleKey)
       {

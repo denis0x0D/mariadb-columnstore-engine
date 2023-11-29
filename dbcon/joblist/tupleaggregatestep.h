@@ -163,8 +163,14 @@ class TupleAggregateStep : public JobStep, public TupleDeliveryStep
   void pruneAuxColumns();
   void formatMiniStats();
   void printCalTrace();
-  static bool tryToFindEqualFunctionColumnByTupleKey(JobInfo& jobInfo, AGG_MAP& aggFuncMap,
+  template <class GroupByMap>
+  static bool tryToFindEqualFunctionColumnByTupleKey(JobInfo& jobInfo, GroupByMap& groupByMap,
                                                      const uint32_t tupleKey, uint32_t& foundTypleKey);
+  // This functions are workaround for the function above. For some reason different parts of the code with same
+  // semantics use different containers.
+  static uint32_t getTupleKeyFromTuple(const boost::tuple<uint32_t, int, mcsv1sdk::mcsv1_UDAF*, std::vector<uint32_t>*>& tuple);
+  static uint32_t getTupleKeyFromTuple(uint32_t key);
+
   boost::shared_ptr<execplan::CalpontSystemCatalog> fCatalog;
   uint64_t fRowsReturned;
   bool fDoneAggregate;
