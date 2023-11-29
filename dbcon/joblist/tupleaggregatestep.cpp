@@ -1132,13 +1132,55 @@ void TupleAggregateStep::prep1PhaseAggregate(JobInfo& jobInfo, vector<RowGroup>&
       }
       else
       {
-        Message::Args args;
-        args.add(keyName(i, key, jobInfo));
-        string emsg = IDBErrorInfo::instance()->errorMsg(ERR_NOT_GROUPBY_EXPRESSION, args);
-        cerr << "prep1PhaseAggregate: " << emsg << " oid=" << (int)jobInfo.keyInfo->tupleKeyVec[key].fId
-             << ", alias=" << jobInfo.keyInfo->tupleKeyVec[key].fTable
-             << ", view=" << jobInfo.keyInfo->tupleKeyVec[key].fView << ", function=" << (int)aggOp << endl;
-        throw IDBExcept(emsg, ERR_NOT_GROUPBY_EXPRESSION);
+
+        bool foundKey = false;
+        uint32_t tupleKey{0};
+        if (jobInfo.functionColumnMap.count(key))
+        {
+          const auto& rFunctionInfo = jobInfo.functionColumnMap[key];
+          // Try to match given `retKey` in `aggFuncMap`.
+          for (const auto& p : groupbyMap)
+          {
+            const auto currentTupleKey = p.first;
+            // Skip if the keys are the same.
+            if (jobInfo.functionColumnMap.count(currentTupleKey) && currentTupleKey != key) 
+            {
+              const auto& lFunctionInfo = jobInfo.functionColumnMap[currentTupleKey];
+              // Oid and function name should be the same.
+              if (lFunctionInfo.associatedColumnOid == rFunctionInfo.associatedColumnOid &&
+                  lFunctionInfo.functionName == rFunctionInfo.functionName)
+              {
+                foundKey = true;
+                tupleKey = currentTupleKey;
+                break;
+              }
+            }
+          }
+        }
+
+        if (foundKey)
+        {
+          oidsAgg.push_back(oidsProj[colProj]);
+          keysAgg.push_back(key);
+          scaleAgg.push_back(scaleProj[colProj]);
+          precisionAgg.push_back(precisionProj[colProj]);
+          typeAgg.push_back(typeProj[colProj]);
+          csNumAgg.push_back(csNumProj[colProj]);
+          widthAgg.push_back(width[colProj]);
+          key = tupleKey;
+          ++outIdx;
+          continue;
+        }
+        else
+        {
+          Message::Args args;
+          args.add(keyName(i, key, jobInfo));
+          string emsg = IDBErrorInfo::instance()->errorMsg(ERR_NOT_GROUPBY_EXPRESSION, args);
+          cerr << "prep1PhaseAggregate: " << emsg << " oid=" << (int)jobInfo.keyInfo->tupleKeyVec[key].fId
+               << ", alias=" << jobInfo.keyInfo->tupleKeyVec[key].fTable
+               << ", view=" << jobInfo.keyInfo->tupleKeyVec[key].fView << ", function=" << (int)aggOp << endl;
+          throw IDBExcept(emsg, ERR_NOT_GROUPBY_EXPRESSION);
+        }
       }
     }
 
