@@ -75,66 +75,8 @@ using namespace querytele;
 
 namespace
 {
-struct cmpTuple
-{
-  bool operator()(boost::tuple<uint32_t, int, mcsv1sdk::mcsv1_UDAF*, std::vector<uint32_t>*> a,
-                  boost::tuple<uint32_t, int, mcsv1sdk::mcsv1_UDAF*, std::vector<uint32_t>*> b) const
-  {
-    uint32_t keya = boost::get<0>(a);
-    uint32_t keyb = boost::get<0>(b);
-    int opa;
-    int opb;
-    mcsv1sdk::mcsv1_UDAF* pUDAFa;
-    mcsv1sdk::mcsv1_UDAF* pUDAFb;
-
-    // If key is less than
-    if (keya < keyb)
-      return true;
-    if (keya == keyb)
-    {
-      // test Op
-      opa = boost::get<1>(a);
-      opb = boost::get<1>(b);
-      if (opa < opb)
-        return true;
-      if (opa == opb)
-      {
-        // look at the UDAF object
-        pUDAFa = boost::get<2>(a);
-        pUDAFb = boost::get<2>(b);
-        if (pUDAFa < pUDAFb)
-          return true;
-        if (pUDAFa == pUDAFb)
-        {
-          std::vector<uint32_t>* paramKeysa = boost::get<3>(a);
-          std::vector<uint32_t>* paramKeysb = boost::get<3>(b);
-          if (paramKeysa == NULL || paramKeysb == NULL)
-            return false;
-          if (paramKeysa->size() < paramKeysb->size())
-            return true;
-          if (paramKeysa->size() == paramKeysb->size())
-          {
-            for (uint64_t i = 0; i < paramKeysa->size(); ++i)
-            {
-              if ((*paramKeysa)[i] < (*paramKeysb)[i])
-                return true;
-            }
-          }
-        }
-      }
-    }
-    return false;
-  }
-};
-
 typedef vector<std::pair<Row::Pointer, uint64_t>> RowBucket;
 typedef vector<RowBucket> RowBucketVec;
-
-// The AGG_MAP type is used to maintain a list of aggregate functions in order to
-// detect duplicates. Since all UDAF have the same op type (ROWAGG_UDAF), we add in
-// the function pointer in order to ensure uniqueness.
-typedef map<boost::tuple<uint32_t, int, mcsv1sdk::mcsv1_UDAF*, std::vector<uint32_t>*>, uint64_t, cmpTuple>
-    AGG_MAP;
 
 inline RowAggFunctionType functionIdMap(int planFuncId)
 {
@@ -3440,46 +3382,23 @@ void TupleAggregateStep::prep2PhasesAggregate(JobInfo& jobInfo, vector<RowGroup>
       else
       {
         // MCOL-5476.
-        bool functionColumnMatched = false;
-        if (jobInfo.functionColumnMap.count(retKey))
+        uint32_t foundTupleKey{0};
+        if (tryToFindEqualFunctionColumnByTupleKey(jobInfo, aggFuncMap, retKey, foundTupleKey))
         {
-          const auto& rFunctionInfo = jobInfo.functionColumnMap[retKey];
-          // Try to match given `retKey` in `aggFuncMap`.
-          for (const auto& aggFuncMapPair : aggFuncMap)
-          {
-            const auto tupleKey = aggFuncMapPair.first.get<0>();
-            // Skip if the keys are the same.
-            if (jobInfo.functionColumnMap.count(tupleKey) && tupleKey != retKey)
-            {
-              const auto& lFunctionInfo = jobInfo.functionColumnMap[tupleKey];
-              // Oid and function name should be the same.
-              if (lFunctionInfo.associatedColumnOid == rFunctionInfo.associatedColumnOid &&
-                  lFunctionInfo.functionName == rFunctionInfo.functionName)
-              {
-                AGG_MAP::iterator it = aggFuncMap.find(boost::make_tuple(
-                    tupleKey, aggOp, pUDAFFunc, udafc ? udafc->getContext().getParamKeys() : NULL));
-
-                if (it != aggFuncMap.end())
-                {
-                  colPm = it->second;
-                  oidsAggUm.push_back(oidsAggPm[colPm]);
-                  keysAggUm.push_back(retKey);
-                  scaleAggUm.push_back(scaleAggPm[colPm]);
-                  precisionAggUm.push_back(precisionAggPm[colPm]);
-                  typeAggUm.push_back(typeAggPm[colPm]);
-                  csNumAggUm.push_back(csNumAggPm[colPm]);
-                  widthAggUm.push_back(widthAggPm[colPm]);
-                  // Update the `retKey` to specify that this column is a duplicate.
-                  retKey = tupleKey;
-                  functionColumnMatched = true;
-                  break;
-                }
-              }
-            }
-          }
+          AGG_MAP::iterator it = aggFuncMap.find(boost::make_tuple(
+              foundTupleKey, aggOp, pUDAFFunc, udafc ? udafc->getContext().getParamKeys() : NULL));
+          colPm = it->second;
+          oidsAggUm.push_back(oidsAggPm[colPm]);
+          keysAggUm.push_back(retKey);
+          scaleAggUm.push_back(scaleAggPm[colPm]);
+          precisionAggUm.push_back(precisionAggPm[colPm]);
+          typeAggUm.push_back(typeAggPm[colPm]);
+          csNumAggUm.push_back(csNumAggPm[colPm]);
+          widthAggUm.push_back(widthAggPm[colPm]);
+          // Update the `retKey` to specify that this column is a duplicate.
+          retKey = foundTupleKey;
         }
-
-        if (!functionColumnMatched)
+        else
         {
           bool returnColMissing = true;
 
@@ -4550,6 +4469,7 @@ void TupleAggregateStep::prep2PhasesDistinctAggregate(JobInfo& jobInfo, vector<R
         // not a direct hit -- a returned column is not already in the RG from PMs
         else
         {
+          // here
           bool returnColMissing = true;
 
           // check if a SUM or COUNT covered by AVG
@@ -5987,4 +5907,30 @@ void TupleAggregateStep::formatMiniStats()
   fMiniInfo += oss.str();
 }
 
+bool TupleAggregateStep::tryToFindEqualFunctionColumnByTupleKey(JobInfo& jobInfo, AGG_MAP& aggFuncMap,
+                                                                const uint32_t tupleKey, uint32_t& foundKey)
+{
+  if (jobInfo.functionColumnMap.count(tupleKey))
+  {
+    const auto& rFunctionInfo = jobInfo.functionColumnMap[tupleKey];
+    // Try to match given `retKey` in `aggFuncMap`.
+    for (const auto& aggFuncMapPair : aggFuncMap)
+    {
+      const auto currentTupleKey = aggFuncMapPair.first.get<0>();
+      // Skip if the keys are the same.
+      if (jobInfo.functionColumnMap.count(currentTupleKey) && currentTupleKey != tupleKey)
+      {
+        const auto& lFunctionInfo = jobInfo.functionColumnMap[currentTupleKey];
+        // Oid and function name should be the same.
+        if (lFunctionInfo.associatedColumnOid == rFunctionInfo.associatedColumnOid &&
+            lFunctionInfo.functionName == rFunctionInfo.functionName)
+        {
+          foundKey = currentTupleKey;
+          return true;
+        }
+      }
+    }
+  }
+  return false;
+}
 }  // namespace joblist
