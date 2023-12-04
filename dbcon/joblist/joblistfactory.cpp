@@ -1248,7 +1248,7 @@ const JobStepVector doAggProject(const CalpontSelectExecutionPlan* csep, JobInfo
         const WindowFunctionColumn* wc = NULL;
         bool hasAggCols = false;
         bool hasWndCols = false;
-        bool hasFuncCols = false;
+        bool hasFuncColsWithOneArgument = false;
 
         if ((ac = dynamic_cast<const ArithmeticColumn*>(srcp.get())) != NULL)
         {
@@ -1268,7 +1268,7 @@ const JobStepVector doAggProject(const CalpontSelectExecutionPlan* csep, JobInfo
             hasWndCols = true;
           // MCOL-5476 Currently support function with only one argument for group by list.
           if (fc->simpleColumnList().size() == 1)
-            hasFuncCols = true;
+            hasFuncColsWithOneArgument = true;
         }
         else if (dynamic_cast<const AggregateColumn*>(srcp.get()) != NULL)
         {
@@ -1298,11 +1298,10 @@ const JobStepVector doAggProject(const CalpontSelectExecutionPlan* csep, JobInfo
           jobInfo.expressionVec.push_back(tupleKey);
         }
 
-        if (hasFuncCols)
+        if (hasFuncColsWithOneArgument)
         {
-          FunctionColumnInfo fcInfo;
-          fcInfo.associatedColumnOid = fc->simpleColumnList().front()->oid();
-          fcInfo.functionName = fc->functionName();
+          FunctionColumnInfo fcInfo(fcInfo.associatedColumnOid = fc->simpleColumnList().front()->oid(),
+                                    fc->functionName());
           jobInfo.functionColumnMap.insert({tupleKey, fcInfo});
         }
       }

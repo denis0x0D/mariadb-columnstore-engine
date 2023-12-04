@@ -1463,7 +1463,8 @@ void TupleAggregateStep::prep1PhaseAggregate(JobInfo& jobInfo, vector<RowGroup>&
 
   RowGroup aggRG(oidsAgg.size(), posAgg, oidsAgg, keysAgg, typeAgg, csNumAgg, scaleAgg, precisionAgg,
                  jobInfo.stringTableThreshold);
-  SP_ROWAGG_UM_t rowAgg(new RowAggregationUM(groupBy, functionVec, jobInfo.rm, jobInfo.umMemLimit, jobInfo.hasRollup));
+  SP_ROWAGG_UM_t rowAgg(
+      new RowAggregationUM(groupBy, functionVec, jobInfo.rm, jobInfo.umMemLimit, jobInfo.hasRollup));
   rowAgg->timeZone(jobInfo.timeZone);
   rowgroups.push_back(aggRG);
   aggregators.push_back(rowAgg);
@@ -5527,18 +5528,18 @@ void TupleAggregateStep::threadedAggregateRowGroups(uint32_t threadID)
               // The key is the groupby columns, which are the leading columns.
               // TBD This approach could potential
               // put all values in on bucket.
-	      // The fAggregator->hasRollup() is true when we perform one-phase
-	      // aggregation and also are doing subtotals' computations.
-	      // Subtotals produce new keys whose hash values may not be in
-	      // the processing bucket. Consider case for key tuples (1,2) and (1,3).
-	      // Their subtotals's keys will be (1, NULL) and (1, NULL)
-	      // but they will be left in their processing buckets and never
-	      // gets aggregated properly.
-	      // Due to this, we put all rows into the same bucket 0 when perfoming
-	      // single-phase aggregation with subtotals.
-	      // For all other cases (single-phase without subtotals and two-phase
-	      // aggregation with and without subtotals) fAggregator->hasRollup() is false.
-	      // In these cases we have full parallel processing as expected.
+              // The fAggregator->hasRollup() is true when we perform one-phase
+              // aggregation and also are doing subtotals' computations.
+              // Subtotals produce new keys whose hash values may not be in
+              // the processing bucket. Consider case for key tuples (1,2) and (1,3).
+              // Their subtotals's keys will be (1, NULL) and (1, NULL)
+              // but they will be left in their processing buckets and never
+              // gets aggregated properly.
+              // Due to this, we put all rows into the same bucket 0 when perfoming
+              // single-phase aggregation with subtotals.
+              // For all other cases (single-phase without subtotals and two-phase
+              // aggregation with and without subtotals) fAggregator->hasRollup() is false.
+              // In these cases we have full parallel processing as expected.
               uint64_t hash = fAggregator->hasRollup() ? 0 : rowgroup::hashRow(rowIn, hashLens[0] - 1);
               int bucketID = hash % fNumOfBuckets;
               rowBucketVecs[bucketID][0].emplace_back(rowIn.getPointer(), hash);
@@ -5999,17 +6000,19 @@ template <class GroupByMap>
 bool TupleAggregateStep::tryToFindEqualFunctionColumnByTupleKey(JobInfo& jobInfo, GroupByMap& groupByMap,
                                                                 const uint32_t tupleKey, uint32_t& foundKey)
 {
-  if (jobInfo.functionColumnMap.count(tupleKey))
+  auto funcMapIt = jobInfo.functionColumnMap.find(tupleKey);
+  if (funcMapIt != jobInfo.functionColumnMap.end())
   {
-    const auto& rFunctionInfo = jobInfo.functionColumnMap[tupleKey];
+    const auto& rFunctionInfo = funcMapIt->second;
     // Try to match given `tupleKey` in `groupByMap`.
     for (const auto& groupByMapPair : groupByMap)
     {
       const auto currentTupleKey = getTupleKeyFromTuple(groupByMapPair.first);
+      auto currentFuncMapIt = jobInfo.functionColumnMap.find(currentTupleKey);
       // Skip if the keys are the same.
-      if (jobInfo.functionColumnMap.count(currentTupleKey) && currentTupleKey != tupleKey)
+      if (currentFuncMapIt != jobInfo.functionColumnMap.end() && currentTupleKey != tupleKey)
       {
-        const auto& lFunctionInfo = jobInfo.functionColumnMap[currentTupleKey];
+        const auto& lFunctionInfo = currentFuncMapIt->second;
         // Oid and function name should be the same.
         if (lFunctionInfo.associatedColumnOid == rFunctionInfo.associatedColumnOid &&
             lFunctionInfo.functionName == rFunctionInfo.functionName)

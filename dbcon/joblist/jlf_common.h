@@ -100,6 +100,11 @@ struct FunctionColumnInfo
   uint64_t associatedColumnOid;
   // Function name.
   std::string functionName;
+
+  FunctionColumnInfo(uint64_t colOid, std::string funcName)
+   : associatedColumnOid(colOid), functionName(funcName)
+  {
+  }
 };
 
 // for compound join
