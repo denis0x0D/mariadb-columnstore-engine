@@ -114,6 +114,9 @@ void set_diskjoin_force_run(THD* thd, bool value);
 ulong get_diskjoin_max_partition_tree_depth(THD* thd);
 void set_diskjoin_max_partition_tree_depth(THD* thd, ulong value);
 
+ulong get_diskjoin_max_num_join_threads(THD* thd);
+void set_diskjoin_max_num_join_threads(THD* thd, ulong value);
+
 ulong get_max_pm_join_result_count(THD* thd);
 void set_max_pm_join_result_count(THD* thd, ulong value);
 

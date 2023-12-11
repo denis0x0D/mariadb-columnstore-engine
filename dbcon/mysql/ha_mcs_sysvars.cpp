@@ -138,6 +138,9 @@ static MYSQL_THDVAR_ULONG(diskjoin_bucketsize, PLUGIN_VAR_RQCMDARG,
 static MYSQL_THDVAR_ULONG(diskjoin_max_partition_tree_depth, PLUGIN_VAR_RQCMDARG,
                           "The maximum size of partition tree depth.", NULL, NULL, 8, 1, ~0U, 1);
 
+static MYSQL_THDVAR_ULONG(diskjoin_max_num_join_threads, PLUGIN_VAR_RQCMDARG, "The maximum number of join threads.",
+                          NULL, NULL, 1, 1, ~0U, 1);
+
 static MYSQL_THDVAR_BOOL(diskjoin_force_run, PLUGIN_VAR_RQCMDARG, "Force run for the disk join step.", NULL,
                          NULL, 0);
 
@@ -241,6 +244,7 @@ st_mysql_sys_var* mcs_system_variables[] = {MYSQL_SYSVAR(compression_type),
                                             MYSQL_SYSVAR(diskjoin_largesidelimit),
                                             MYSQL_SYSVAR(diskjoin_bucketsize),
                                             MYSQL_SYSVAR(diskjoin_max_partition_tree_depth),
+                                            MYSQL_SYSVAR(diskjoin_max_num_join_threads),
                                             MYSQL_SYSVAR(diskjoin_force_run),
                                             MYSQL_SYSVAR(max_pm_join_result_count),
                                             MYSQL_SYSVAR(um_mem_limit),
@@ -450,6 +454,15 @@ ulong get_diskjoin_max_partition_tree_depth(THD* thd)
 void set_diskjoin_max_partition_tree_depth(THD* thd, ulong value)
 {
   THDVAR(thd, diskjoin_max_partition_tree_depth) = value;
+}
+
+ulong get_diskjoin_max_num_join_threads(THD* thd)
+{
+  return (thd == NULL) ? 0 : THDVAR(thd, diskjoin_max_num_join_threads);
+}
+void set_diskjoin_max_num_join_threads(THD* thd, ulong value)
+{
+  THDVAR(thd, diskjoin_max_num_join_threads) = value;
 }
 
 bool get_diskjoin_force_run(THD* thd)

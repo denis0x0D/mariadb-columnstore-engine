@@ -382,6 +382,7 @@ struct JobInfo
   int64_t largeSideLimit;
   uint64_t partitionSize;
   uint32_t djsMaxPartitionTreeDepth;
+  uint32_t djsMaxNumJoinThreads;
   bool djsForceRun;
   bool isDML;
   long timeZone;

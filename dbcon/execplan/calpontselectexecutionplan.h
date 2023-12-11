@@ -711,6 +711,15 @@ class CalpontSelectExecutionPlan : public CalpontExecutionPlan
     return fDJSMaxPartitionTreeDepth;
   }
 
+  void djsMaxNumJoinThreads(uint32_t value)
+  {
+    fDJSMaxNumJoinThreads = value;
+  }
+  uint32_t djsMaxNumJoinThreads()
+  {
+    return fDJSMaxNumJoinThreads;
+  }
+
   void djsForceRun(bool b)
   {
     fDJSForceRun = b;
@@ -962,6 +971,7 @@ class CalpontSelectExecutionPlan : public CalpontExecutionPlan
   uint64_t fDJSLargeSideLimit = 0;
   uint64_t fDJSPartitionSize = 100 * 1024 * 1024;
   uint32_t fDJSMaxPartitionTreeDepth = 8;
+  uint32_t fDJSMaxNumJoinThreads = 1;
   bool fDJSForceRun = false;
   uint32_t fMaxPmJoinResultCount = 1048576;
   int64_t fUMMemLimit = numeric_limits<int64_t>::max();

@@ -107,6 +107,8 @@ TupleHashJoinStep::TupleHashJoinStep(const JobInfo& jobInfo)
   djsLargeLimit = jobInfo.largeSideLimit;
   djsPartitionSize = jobInfo.partitionSize;
   djsMaxPartitionTreeDepth = jobInfo.djsMaxPartitionTreeDepth;
+  djsMaxNumJoinThreads = jobInfo.djsMaxNumJoinThreads;
+  cout << djsMaxNumJoinThreads << endl;
   djsForceRun = jobInfo.djsForceRun;
   isDML = jobInfo.isDML;
 
@@ -761,6 +763,7 @@ void TupleHashJoinStep::hjRunner()
     {
       // these link themselves fifos[0]->DSJ[0]->fifos[1]->DSJ[1] ... ->fifos[smallSideCount],
       // THJS puts data into fifos[0], reads it from fifos[smallSideCount]
+      cout << djsMaxNumJoinThreads << endl;
       djs.push_back(std::shared_ptr<DiskJoinStep>(
           new DiskJoinStep(this, i, djsJoinerMap[i], (i == smallSideCount - 1))));
     }
