@@ -81,7 +81,6 @@ DiskJoinStep::DiskJoinStep(TupleHashJoinStep* t, int djsIndex, int joinIndex, bo
   smallLimit = thjs->djsSmallLimit;
   largeLimit = thjs->djsLargeLimit;
   partitionSize = thjs->djsPartitionSize;
-  maxPartitionTreeDepth = thjs->djsMaxPartitionTreeDepth;
 
   if (smallLimit == 0)
     smallLimit = numeric_limits<int64_t>::max();
@@ -92,7 +91,7 @@ DiskJoinStep::DiskJoinStep(TupleHashJoinStep* t, int djsIndex, int joinIndex, bo
   uint64_t totalUMMemory = thjs->resourceManager->getConfiguredUMMemLimit();
   jp.reset(new JoinPartition(largeRG, smallRG, smallKeyCols, largeKeyCols, typeless,
                              (joinType & ANTI) && (joinType & MATCHNULLS), (bool)fe, totalUMMemory,
-                             partitionSize, maxPartitionTreeDepth));
+                             partitionSize));
 
   if (cancelled())
   {
@@ -164,6 +163,7 @@ void DiskJoinStep::smallReader()
   RGData rgData;
   bool more = true;
   int64_t memUsage = 0, combinedMemUsage = 0;
+  [[maybe_unused]] int rowCount = 0;
   RowGroup l_smallRG = smallRG;
 
   try
@@ -175,6 +175,7 @@ void DiskJoinStep::smallReader()
       if (more)
       {
         l_smallRG.setData(&rgData);
+        rowCount += l_smallRG.getRowCount();
         memUsage = jp->insertSmallSideRGData(rgData);
         combinedMemUsage = atomicops::atomicAdd(smallUsage.get(), memUsage);
 
@@ -223,6 +224,7 @@ void DiskJoinStep::largeReader()
   RGData rgData;
   bool more = true;
   int64_t largeSize = 0;
+  [[maybe_unused]] int rowCount = 0;
   RowGroup l_largeRG = largeRG;
 
   largeIterationCount++;
@@ -237,6 +239,7 @@ void DiskJoinStep::largeReader()
       if (more)
       {
         l_largeRG.setData(&rgData);
+        rowCount += l_largeRG.getRowCount();
         // cout << "large side raw data: " << largeRG.toString() << endl;
 
         largeSize += jp->insertLargeSideRGData(rgData);
@@ -265,86 +268,22 @@ void DiskJoinStep::largeReader()
 void DiskJoinStep::loadFcn()
 {
   boost::shared_ptr<LoaderOutput> out;
-  std::vector<JoinPartition*> joinPartitions;
-  // Collect all join partitions.
-  jp->collectJoinPartitions(joinPartitions);
-
-#ifdef DEBUG_DJS
-  cout << "Collected join partitions: " << endl;
-  for (uint32_t i = 0; i < joinPartitions.size(); ++i)
-    cout << joinPartitions[i]->getUniqueID() << ", ";
-  cout << endl;
-#endif
+  bool ret;
 
   try
   {
-    uint32_t partitionIndex = 0;
-    bool partitionDone = true;
-
-    // Iterate over partitions.
-    while (partitionIndex < joinPartitions.size() && !cancelled())
+    do
     {
-      uint64_t currentSize = 0;
-      auto* joinPartition = joinPartitions[partitionIndex];
       out.reset(new LoaderOutput());
+      ret = jp->getNextPartition(&out->smallData, &out->partitionID, &out->jp);
 
-      if (partitionDone)
-        joinPartition->setNextSmallOffset(0);
-
-      while (true)
+      if (ret)
       {
-        messageqcpp::ByteStream bs;
-        RowGroup rowGroup;
-        RGData rgData;
-
-        joinPartition->readByteStream(0, &bs);
-        if (!bs.length())
-        {
-          partitionDone = true;
-          break;
-        }
-
-        rgData.deserialize(bs);
-        rowGroup.setData(&rgData);
-
-        // Check that current `RowGroup` has rows.
-        if (!rowGroup.getRowCount())
-        {
-          partitionDone = true;
-          break;
-        }
-
-        currentSize += rowGroup.getRowCount() * rowGroup.getColumnCount() * 64;
-        out->smallData.push_back(rgData);
-
-        if (currentSize > partitionSize)
-        {
-#ifdef DEBUG_DJS
-          cout << "Memory limit exceeded for the partition: " << joinPartition->getUniqueID() << endl;
-          cout << "Current size: " << currentSize << " Memory limit: " << partitionSize << endl;
-#endif
-          partitionDone = false;
-          currentSize = 0;
-          break;
-        }
+        // cout << "loaded partition " << out->partitionID << " smallData = " << out->smallData.size() <<
+        // endl;
+        loadFIFO->insert(out);
       }
-
-      if (!out->smallData.size())
-      {
-        ++partitionIndex;
-        partitionDone = true;
-        continue;
-      }
-
-      // Initialize `LoaderOutput` and add it to `FIFO`.
-      out->partitionID = joinPartition->getUniqueID();
-      out->jp = joinPartition;
-      loadFIFO->insert(out);
-
-      // If this partition is done - take a next one.
-      if (partitionDone)
-        ++partitionIndex;
-    }
+    } while (ret && !cancelled());
   }
   catch (...)
   {

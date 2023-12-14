@@ -149,7 +149,6 @@ class DiskJoinStep : public JobStep
   int64_t smallLimit;
   int64_t largeLimit;
   uint64_t partitionSize;
-  uint32_t maxPartitionTreeDepth;
 
   void reportStats();
 

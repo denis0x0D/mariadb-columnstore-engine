@@ -620,8 +620,6 @@ class TupleHashJoinStep : public JobStep, public TupleDeliveryStep
   int64_t djsSmallLimit;
   int64_t djsLargeLimit;
   uint64_t djsPartitionSize;
-  uint32_t djsMaxPartitionTreeDepth;
-  bool djsForceRun;
   bool isDML;
   bool allowDJS;
 
