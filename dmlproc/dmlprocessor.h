@@ -315,7 +315,7 @@ class RollbackTransactionProcessor : public dmlpackageprocessor::DMLPackageProce
    *
    * @param cpackage the UpdateDMLPackage to process
    */
-  inline DMLResult processPackage(dmlpackage::CalpontDMLPackage& cpackage)
+  inline DMLResult processPackage_(dmlpackage::CalpontDMLPackage& cpackage)
   {
     DMLResult result;
     result.result = NO_ERROR;

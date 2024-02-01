@@ -51,7 +51,7 @@ class CommandPackageProcessor : public DMLPackageProcessor
    *
    * @param cpackage the CommandDMLPackage to process
    */
-  EXPORT DMLResult processPackage(dmlpackage::CalpontDMLPackage& cpackage);
+  EXPORT DMLResult processPackage_(dmlpackage::CalpontDMLPackage& cpackage);
 
  protected:
  private:

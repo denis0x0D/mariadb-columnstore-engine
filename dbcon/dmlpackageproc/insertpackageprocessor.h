@@ -49,7 +49,7 @@ class InsertPackageProcessor : public DMLPackageProcessor
    *
    * @param cpackage the InsertDMLPackage to process
    */
-  EXPORT DMLResult processPackage(dmlpackage::CalpontDMLPackage& cpackage);
+  EXPORT DMLResult processPackage_(dmlpackage::CalpontDMLPackage& cpackage);
 
  protected:
  private:

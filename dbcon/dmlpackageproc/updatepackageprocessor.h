@@ -46,7 +46,7 @@ class UpdatePackageProcessor : public DMLPackageProcessor
    *
    * @param cpackage the UpdateDMLPackage to process
    */
-  EXPORT DMLResult processPackage(dmlpackage::CalpontDMLPackage& cpackage);
+  EXPORT DMLResult processPackage_(dmlpackage::CalpontDMLPackage& cpackage);
 
  protected:
  private:

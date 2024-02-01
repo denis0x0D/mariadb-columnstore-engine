@@ -409,6 +409,8 @@ class DDLPackageProcessor
    */
   EXPORT void fetchLogFile(TableLogInfo& tableLogInfos, uint64_t uniqueId);
 
+  // virtual EXPORT DDLResult processPackage(ddlpackage::TruncTableStatement& truncTableStmt);
+
   BRM::TxnID fTxnid;
 
  protected:

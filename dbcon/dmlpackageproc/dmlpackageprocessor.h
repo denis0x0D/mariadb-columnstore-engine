@@ -236,7 +236,9 @@ class DMLPackageProcessor
    *
    * @param cpackage the CalpontDMLPackage to process
    */
-  virtual DMLResult processPackage(dmlpackage::CalpontDMLPackage& cpackage) = 0;
+  DMLResult processPackage(dmlpackage::CalpontDMLPackage& cpackage);
+
+  virtual DMLResult processPackage_(dmlpackage::CalpontDMLPackage& cpackage) = 0;
 
   inline void setRM(joblist::ResourceManager* frm)
   {

@@ -61,7 +61,8 @@ using namespace oam;
 namespace dmlpackageprocessor
 {
 // StopWatch timer;
-DMLPackageProcessor::DMLResult UpdatePackageProcessor::processPackage(dmlpackage::CalpontDMLPackage& cpackage)
+DMLPackageProcessor::DMLResult UpdatePackageProcessor::processPackage_(
+    dmlpackage::CalpontDMLPackage& cpackage)
 {
   SUMMARY_INFO("UpdatePackageProcessor::processPackage");
 
@@ -200,7 +201,6 @@ DMLPackageProcessor::DMLResult UpdatePackageProcessor::processPackage(dmlpackage
               abs_ts.tv_sec = rm_ts.tv_sec;
               abs_ts.tv_nsec = rm_ts.tv_nsec;
             } while (nanosleep(&abs_ts, &rm_ts) < 0);
-
 
             try
             {

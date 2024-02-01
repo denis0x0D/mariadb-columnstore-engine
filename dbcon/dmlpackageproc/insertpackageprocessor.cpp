@@ -50,7 +50,8 @@ using namespace messageqcpp;
 
 namespace dmlpackageprocessor
 {
-DMLPackageProcessor::DMLResult InsertPackageProcessor::processPackage(dmlpackage::CalpontDMLPackage& cpackage)
+DMLPackageProcessor::DMLResult InsertPackageProcessor::processPackage_(
+    dmlpackage::CalpontDMLPackage& cpackage)
 {
   SUMMARY_INFO("InsertPackageProcessor::processPackage");
 
@@ -183,7 +184,6 @@ DMLPackageProcessor::DMLResult InsertPackageProcessor::processPackage(dmlpackage
               abs_ts.tv_sec = rm_ts.tv_sec;
               abs_ts.tv_nsec = rm_ts.tv_nsec;
             } while (nanosleep(&abs_ts, &rm_ts) < 0);
-
 
             try
             {
@@ -397,7 +397,19 @@ DMLPackageProcessor::DMLResult InsertPackageProcessor::processPackage(dmlpackage
     result.message = message;
   }
 
-  if ((rc != 0) && (rc != IDBRANGE_WARNING))
+  if (rc == 1)
+  {
+    logging::Message::Args args;
+    logging::Message message(1);
+    args.add("Insert Failed: ");
+    args.add(errorMsg);
+    args.add("");
+    args.add("");
+    message.format(args);
+    result.result = NETWORK_ERROR;
+    result.message = message;
+  }
+  else if ((rc != 0) && (rc != IDBRANGE_WARNING))
   {
     logging::Message::Args args;
     logging::Message message(1);
@@ -427,4 +439,3 @@ DMLPackageProcessor::DMLResult InsertPackageProcessor::processPackage(dmlpackage
 }
 
 }  // namespace dmlpackageprocessor
-

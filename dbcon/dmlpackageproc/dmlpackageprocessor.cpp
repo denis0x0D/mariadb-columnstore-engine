@@ -287,6 +287,21 @@ int32_t DMLPackageProcessor::tryToRollBackTransaction(uint64_t uniqueId, BRM::Tx
   return weRc;
 }
 
+DMLPackageProcessor::DMLResult DMLPackageProcessor::processPackage(dmlpackage::CalpontDMLPackage& cpackage)
+{
+  auto result = processPackage_(cpackage);
+  if (result.result == NETWORK_ERROR)
+  {
+    joblist::ResourceManager* rm = joblist::ResourceManager::instance(true);
+    joblist::DistributedEngineComm* fEc = joblist::DistributedEngineComm::instance(rm);
+    if (fEc->Setup())
+      return result;
+
+    result = processPackage_(cpackage);
+  }
+  return result;
+}
+
 int DMLPackageProcessor::rollBackTransaction(uint64_t uniqueId, BRM::TxnID txnID, uint32_t sessionID,
                                              std::string& errorMsg)
 {

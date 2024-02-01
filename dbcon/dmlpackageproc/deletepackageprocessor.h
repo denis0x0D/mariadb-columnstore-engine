@@ -49,7 +49,7 @@ class DeletePackageProcessor : public DMLPackageProcessor
    *
    * @param cpackage the delete dml package to process
    */
-  EXPORT DMLResult processPackage(dmlpackage::CalpontDMLPackage& cpackage);
+  EXPORT DMLResult processPackage_(dmlpackage::CalpontDMLPackage& cpackage);
 
  protected:
  private:

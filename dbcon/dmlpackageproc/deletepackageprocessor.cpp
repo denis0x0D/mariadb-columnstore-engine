@@ -57,7 +57,8 @@ using namespace messageqcpp;
 using namespace oam;
 namespace dmlpackageprocessor
 {
-DMLPackageProcessor::DMLResult DeletePackageProcessor::processPackage(dmlpackage::CalpontDMLPackage& cpackage)
+DMLPackageProcessor::DMLResult DeletePackageProcessor::processPackage_(
+    dmlpackage::CalpontDMLPackage& cpackage)
 {
   SUMMARY_INFO("DeletePackageProcessor::processPackage");
 
@@ -173,7 +174,6 @@ DMLPackageProcessor::DMLResult DeletePackageProcessor::processPackage(dmlpackage
               abs_ts.tv_sec = rm_ts.tv_sec;
               abs_ts.tv_nsec = rm_ts.tv_nsec;
             } while (nanosleep(&abs_ts, &rm_ts) < 0);
-
 
             try
             {
