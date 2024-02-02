@@ -43,7 +43,7 @@ class RestorePartitionProcessor : public DDLPackageProcessor
    *
    *  @param dropTableStmt the drop table statement
    */
-  EXPORT DDLResult processPackage(ddlpackage::RestorePartitionStatement& RestorePartitionStmt);
+  EXPORT DDLResult processPackage_(ddlpackage::SqlStatement* RestorePartitionStmt);
 
  protected:
  private:

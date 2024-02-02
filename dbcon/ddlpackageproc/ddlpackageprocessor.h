@@ -283,6 +283,10 @@ class DDLPackageProcessor
     // std::cout << "in DDLPackageProcessor constructor " << this << std::endl;
   }
 
+  // TODO: comments
+  DDLResult processPackage(ddlpackage::SqlStatement* sqlStmt);
+  virtual DDLResult processPackage_(ddlpackage::SqlStatement* sqlStmt);
+
   /** @brief destructor
    */
   EXPORT virtual ~DDLPackageProcessor();
@@ -887,4 +891,3 @@ bool from_string(T& t, const std::string& s, std::ios_base& (*f)(std::ios_base&)
 }  // namespace ddlpackageprocessor
 
 #undef EXPORT
-

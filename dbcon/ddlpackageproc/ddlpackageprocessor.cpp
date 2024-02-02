@@ -562,10 +562,9 @@ void DDLPackageProcessor::createFiles(CalpontSystemCatalog::TableName aTableName
 {
   SUMMARY_INFO("DDLPackageProcessor::createFiles");
   boost::shared_ptr<CalpontSystemCatalog> systemCatalogPtr =
-    CalpontSystemCatalog::makeCalpontSystemCatalog(1);
+      CalpontSystemCatalog::makeCalpontSystemCatalog(1);
   CalpontSystemCatalog::RIDList ridList = systemCatalogPtr->columnRIDs(aTableName);
-  CalpontSystemCatalog::OID tableAUXColOid =
-    systemCatalogPtr->tableAUXColumnOID(aTableName);
+  CalpontSystemCatalog::OID tableAUXColOid = systemCatalogPtr->tableAUXColumnOID(aTableName);
 
   if (tableAUXColOid > 3000)
   {
@@ -1125,6 +1124,29 @@ void DDLPackageProcessor::createWriteTruncateTableLogFile(
 
   if (rc != 0)
     throw std::runtime_error(errorMsg);
+}
+
+DDLPackageProcessor::DDLResult DDLPackageProcessor::processPackage(SqlStatement* sqlStmt)
+{
+  auto result = processPackage_(sqlStmt);
+  if (result.result)
+  {
+    joblist::ResourceManager* rm = joblist::ResourceManager::instance(true);
+    joblist::DistributedEngineComm* fEc = joblist::DistributedEngineComm::instance(rm);
+    if (fEc->Setup())
+      return result;
+
+    result = processPackage_(sqlStmt);
+  }
+  return result;
+}
+
+DDLPackageProcessor::DDLResult DDLPackageProcessor::processPackage_(SqlStatement* sqlStmt)
+{
+  cout << "PROCESS PACKAGE " << endl;
+  DDLPackageProcessor::DDLResult result;
+  result.result = NO_ERROR;
+  return result;
 }
 
 void DDLPackageProcessor::returnOIDs(execplan::CalpontSystemCatalog::RIDList& ridList,

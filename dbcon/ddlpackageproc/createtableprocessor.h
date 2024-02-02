@@ -43,7 +43,7 @@ class CreateTableProcessor : public DDLPackageProcessor
    *
    * @param createTableStmt the CreateTableStatement
    */
-  EXPORT DDLResult processPackage(ddlpackage::CreateTableStatement& createTableStmt);
+  EXPORT DDLResult processPackage_(ddlpackage::SqlStatement* sqlTableStmt);
 
  protected:
   void rollBackCreateTable(const std::string& error, BRM::TxnID txnID, int sessionId,

@@ -43,7 +43,7 @@ class AlterTableProcessor : public DDLPackageProcessor
    *
    * @param alterTableStmt the AlterTableStatement
    */
-  EXPORT DDLResult processPackage(ddlpackage::AlterTableStatement& alterTableStmt);
+  EXPORT DDLResult processPackage_(ddlpackage::SqlStatement* alterTableStmt);
   /** @brief add a physical column file
    *
    * @param result the result of the operation

@@ -43,7 +43,7 @@ class MarkPartitionProcessor : public DDLPackageProcessor
    *
    * @param createTableStmt the CreateTableStatement
    */
-  EXPORT DDLResult processPackage(ddlpackage::MarkPartitionStatement& MarkPartitionStmt);
+  EXPORT DDLResult processPackage_(ddlpackage::SqlStatement* MarkPartitionStmt);
 
  protected:
  private:

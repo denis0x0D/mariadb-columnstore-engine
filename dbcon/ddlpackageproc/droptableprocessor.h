@@ -43,7 +43,7 @@ class DropTableProcessor : public DDLPackageProcessor
    *
    *  @param dropTableStmt the drop table statement
    */
-  EXPORT DDLResult processPackage(ddlpackage::DropTableStatement& dropTableStmt);
+  EXPORT DDLResult processPackage_(ddlpackage::SqlStatement* dropTableStmt);
 
  protected:
  private:
@@ -63,7 +63,7 @@ class TruncTableProcessor : public DDLPackageProcessor
    *
    *  @param truncTableStmt the truncate table statement
    */
-  EXPORT DDLResult processPackage(ddlpackage::TruncTableStatement& truncTableStmt);
+  EXPORT DDLResult processPackage_(ddlpackage::SqlStatement* truncTableStmt);
 
  protected:
  private:

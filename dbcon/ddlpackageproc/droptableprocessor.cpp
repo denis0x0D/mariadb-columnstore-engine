@@ -50,10 +50,11 @@ using namespace oam;
 
 namespace ddlpackageprocessor
 {
-DropTableProcessor::DDLResult DropTableProcessor::processPackage(
-    ddlpackage::DropTableStatement& dropTableStmt)
+DropTableProcessor::DDLResult DropTableProcessor::processPackage_(ddlpackage::SqlStatement* sqlStmt)
 {
   SUMMARY_INFO("DropTableProcessor::processPackage");
+
+  auto* dropTableStmt = dynamic_cast<ddlpackage::DropTableStatement*>(sqlStmt);
 
   DDLResult result;
   result.result = NO_ERROR;
@@ -82,8 +83,8 @@ DropTableProcessor::DDLResult DropTableProcessor::processPackage(
     return result;
   }
 
-  string stmt = dropTableStmt.fSql + "|" + dropTableStmt.fTableName->fSchema + "|";
-  SQLLogger logger(stmt, fDDLLoggingId, dropTableStmt.fSessionID, txnID.id);
+  string stmt = dropTableStmt->fSql + "|" + dropTableStmt->fTableName->fSchema + "|";
+  SQLLogger logger(stmt, fDDLLoggingId, dropTableStmt->fSessionID, txnID.id);
 
   std::vector<CalpontSystemCatalog::OID> oidList;
   CalpontSystemCatalog::RIDList tableColRidList;
@@ -136,12 +137,12 @@ DropTableProcessor::DDLResult DropTableProcessor::processPackage(
   {
     // check table lock
     boost::shared_ptr<CalpontSystemCatalog> systemCatalogPtr =
-        CalpontSystemCatalog::makeCalpontSystemCatalog(dropTableStmt.fSessionID);
+        CalpontSystemCatalog::makeCalpontSystemCatalog(dropTableStmt->fSessionID);
     systemCatalogPtr->identity(CalpontSystemCatalog::EC);
-    systemCatalogPtr->sessionID(dropTableStmt.fSessionID);
+    systemCatalogPtr->sessionID(dropTableStmt->fSessionID);
     CalpontSystemCatalog::TableName tableName;
-    tableName.schema = dropTableStmt.fTableName->fSchema;
-    tableName.table = dropTableStmt.fTableName->fName;
+    tableName.schema = dropTableStmt->fTableName->fSchema;
+    tableName.table = dropTableStmt->fTableName->fName;
 
     try
     {
@@ -185,7 +186,7 @@ DropTableProcessor::DDLResult DropTableProcessor::processPackage(
 
     uint32_t processID = ::getpid();
     int32_t txnid = txnID.id;
-    int32_t sessionId = dropTableStmt.fSessionID;
+    int32_t sessionId = dropTableStmt->fSessionID;
     std::string processName("DDLProc");
     int i = 0;
 
@@ -228,12 +229,11 @@ DropTableProcessor::DDLResult DropTableProcessor::processPackage(
           abs_ts.tv_nsec = rm_ts.tv_nsec;
         } while (nanosleep(&abs_ts, &rm_ts) < 0);
 
-
         try
         {
           processID = ::getpid();
           txnid = txnID.id;
-          sessionId = dropTableStmt.fSessionID;
+          sessionId = dropTableStmt->fSessionID;
           ;
           processName = "DDLProc";
           tableLockId = fDbrm->getTableLock(pms, roPair.objnum, &processName, &processID, &sessionId, &txnid,
@@ -272,8 +272,8 @@ DropTableProcessor::DDLResult DropTableProcessor::processPackage(
     // 10.Return the OIDs
 
     CalpontSystemCatalog::TableName userTableName;
-    userTableName.schema = dropTableStmt.fTableName->fSchema;
-    userTableName.table = dropTableStmt.fTableName->fName;
+    userTableName.schema = dropTableStmt->fTableName->fSchema;
+    userTableName.table = dropTableStmt->fTableName->fName;
 
     tableColRidList = systemCatalogPtr->columnRIDs(userTableName);
 
@@ -300,10 +300,10 @@ DropTableProcessor::DDLResult DropTableProcessor::processPackage(
 #endif
     bytestream << (ByteStream::byte)WE_SVR_DELETE_SYSTABLE;
     bytestream << uniqueId;
-    bytestream << (uint32_t)dropTableStmt.fSessionID;
+    bytestream << (uint32_t)dropTableStmt->fSessionID;
     bytestream << (uint32_t)txnID.id;
-    bytestream << dropTableStmt.fTableName->fSchema;
-    bytestream << dropTableStmt.fTableName->fName;
+    bytestream << dropTableStmt->fTableName->fSchema;
+    bytestream << dropTableStmt->fTableName->fName;
 
     // Find out where systable is
     BRM::OID_t sysOid = 1001;
@@ -398,10 +398,10 @@ DropTableProcessor::DDLResult DropTableProcessor::processPackage(
     bytestream.restart();
     bytestream << (ByteStream::byte)WE_SVR_DELETE_SYSCOLUMN;
     bytestream << uniqueId;
-    bytestream << (uint32_t)dropTableStmt.fSessionID;
+    bytestream << (uint32_t)dropTableStmt->fSessionID;
     bytestream << (uint32_t)txnID.id;
-    bytestream << dropTableStmt.fTableName->fSchema;
-    bytestream << dropTableStmt.fTableName->fName;
+    bytestream << dropTableStmt->fTableName->fSchema;
+    bytestream << dropTableStmt->fTableName->fName;
 
     // Find out where syscolumn is
     sysOid = 1021;
@@ -518,7 +518,7 @@ DropTableProcessor::DDLResult DropTableProcessor::processPackage(
     }
 
     // Log the DDL statement
-    logDDL(dropTableStmt.fSessionID, txnID.id, dropTableStmt.fSql, dropTableStmt.fOwner);
+    logDDL(dropTableStmt->fSessionID, txnID.id, dropTableStmt->fSql, dropTableStmt->fOwner);
   }
   catch (std::exception& ex)
   {
@@ -738,8 +738,7 @@ DropTableProcessor::DDLResult DropTableProcessor::processPackage(
   return result;
 }
 
-TruncTableProcessor::DDLResult TruncTableProcessor::processPackage(
-    ddlpackage::TruncTableStatement& truncTableStmt)
+TruncTableProcessor::DDLResult TruncTableProcessor::processPackage_(ddlpackage::SqlStatement* sqlStmt)
 {
   SUMMARY_INFO("TruncTableProcessor::processPackage");
   // 1. lock the table
@@ -756,6 +755,8 @@ TruncTableProcessor::DDLResult TruncTableProcessor::processPackage(
   DDLResult result;
   result.result = NO_ERROR;
   std::string err;
+
+  auto* truncTableStmt = dynamic_cast<ddlpackage::TruncTableStatement*>(sqlStmt);
   VERBOSE_INFO(truncTableStmt);
 
   // @Bug 4150. Check dbrm status before doing anything to the table.
@@ -778,8 +779,8 @@ TruncTableProcessor::DDLResult TruncTableProcessor::processPackage(
   }
 
   //@Bug 5765 log the schema.
-  string stmt = truncTableStmt.fSql + "|" + truncTableStmt.fTableName->fSchema + "|";
-  SQLLogger logger(stmt, fDDLLoggingId, truncTableStmt.fSessionID, txnID.id);
+  string stmt = truncTableStmt->fSql + "|" + truncTableStmt->fTableName->fSchema + "|";
+  SQLLogger logger(stmt, fDDLLoggingId, truncTableStmt->fSessionID, txnID.id);
 
   std::vector<CalpontSystemCatalog::OID> columnOidList;
   std::vector<CalpontSystemCatalog::OID> allOidList;
@@ -792,9 +793,9 @@ TruncTableProcessor::DDLResult TruncTableProcessor::processPackage(
   ;
   int32_t txnid = txnID.id;
   boost::shared_ptr<CalpontSystemCatalog> systemCatalogPtr =
-      CalpontSystemCatalog::makeCalpontSystemCatalog(truncTableStmt.fSessionID);
+      CalpontSystemCatalog::makeCalpontSystemCatalog(truncTableStmt->fSessionID);
   systemCatalogPtr->identity(CalpontSystemCatalog::EC);
-  systemCatalogPtr->sessionID(truncTableStmt.fSessionID);
+  systemCatalogPtr->sessionID(truncTableStmt->fSessionID);
   CalpontSystemCatalog::TableInfo tableInfo;
   uint64_t uniqueId = 0;
 
@@ -840,10 +841,10 @@ TruncTableProcessor::DDLResult TruncTableProcessor::processPackage(
     // check table lock
 
     CalpontSystemCatalog::TableName tableName;
-    tableName.schema = truncTableStmt.fTableName->fSchema;
-    tableName.table = truncTableStmt.fTableName->fName;
+    tableName.schema = truncTableStmt->fTableName->fSchema;
+    tableName.table = truncTableStmt->fTableName->fName;
     roPair = systemCatalogPtr->tableRID(tableName);
-    int32_t sessionId = truncTableStmt.fSessionID;
+    int32_t sessionId = truncTableStmt->fSessionID;
     std::string processName("DDLProc");
     int i = 0;
 
@@ -886,12 +887,11 @@ TruncTableProcessor::DDLResult TruncTableProcessor::processPackage(
           abs_ts.tv_nsec = rm_ts.tv_nsec;
         } while (nanosleep(&abs_ts, &rm_ts) < 0);
 
-
         try
         {
           processID = ::getpid();
           txnid = txnID.id;
-          sessionId = truncTableStmt.fSessionID;
+          sessionId = truncTableStmt->fSessionID;
           processName = "DDLProc";
           tableLockId = fDbrm->getTableLock(pms, roPair.objnum, &processName, &processID, &sessionId, &txnid,
                                             BRM::LOADING);
@@ -916,8 +916,8 @@ TruncTableProcessor::DDLResult TruncTableProcessor::processPackage(
     }
 
     CalpontSystemCatalog::TableName userTableName;
-    userTableName.schema = truncTableStmt.fTableName->fSchema;
-    userTableName.table = truncTableStmt.fTableName->fName;
+    userTableName.schema = truncTableStmt->fTableName->fSchema;
+    userTableName.table = truncTableStmt->fTableName->fName;
 
     tableColRidList = systemCatalogPtr->columnRIDs(userTableName);
     tableAuxColOid = systemCatalogPtr->tableAUXColumnOID(userTableName);
@@ -1328,7 +1328,7 @@ TruncTableProcessor::DDLResult TruncTableProcessor::processPackage(
 
   if (rc != 0)
   {
-    rollBackTransaction(uniqueId, txnID, truncTableStmt.fSessionID);  // What to do with the error code
+    rollBackTransaction(uniqueId, txnID, truncTableStmt->fSessionID);  // What to do with the error code
     fSessionManager.rolledback(txnID);
   }
 
@@ -1341,7 +1341,7 @@ TruncTableProcessor::DDLResult TruncTableProcessor::processPackage(
   }
 
   // Log the DDL statement
-  logDDL(truncTableStmt.fSessionID, txnID.id, truncTableStmt.fSql, truncTableStmt.fOwner);
+  logDDL(truncTableStmt->fSessionID, txnID.id, truncTableStmt->fSql, truncTableStmt->fOwner);
 
   try
   {
@@ -1380,4 +1380,3 @@ TruncTableProcessor::DDLResult TruncTableProcessor::processPackage(
 }
 
 }  // namespace ddlpackageprocessor
-
