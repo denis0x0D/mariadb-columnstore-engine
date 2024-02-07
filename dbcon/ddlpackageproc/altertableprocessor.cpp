@@ -299,7 +299,8 @@ bool comptypesAreCompat(int oldCtype, int newCtype)
 
 namespace ddlpackageprocessor
 {
-AlterTableProcessor::DDLResult AlterTableProcessor::processPackage_(ddlpackage::SqlStatement* sqlTableStmt)
+AlterTableProcessor::DDLResult AlterTableProcessor::processPackageInternal(
+    ddlpackage::SqlStatement* sqlTableStmt)
 {
   SUMMARY_INFO("AlterTableProcessor::processPackage");
 

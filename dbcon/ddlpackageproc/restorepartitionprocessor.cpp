@@ -34,7 +34,7 @@ using namespace WriteEngine;
 
 namespace ddlpackageprocessor
 {
-RestorePartitionProcessor::DDLResult RestorePartitionProcessor::processPackage_(
+RestorePartitionProcessor::DDLResult RestorePartitionProcessor::processPackageInternal(
     ddlpackage::SqlStatement* sqlStmt)
 {
   SUMMARY_INFO("RestorePartitionProcessor::processPackage");

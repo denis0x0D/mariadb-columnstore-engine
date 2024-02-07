@@ -37,7 +37,8 @@ using namespace oam;
 
 namespace ddlpackageprocessor
 {
-DropPartitionProcessor::DDLResult DropPartitionProcessor::processPackage_(ddlpackage::SqlStatement* sqlStmt)
+DropPartitionProcessor::DDLResult DropPartitionProcessor::processPackageInternal(
+    ddlpackage::SqlStatement* sqlStmt)
 {
   SUMMARY_INFO("DropPartitionProcessor::processPackage");
 

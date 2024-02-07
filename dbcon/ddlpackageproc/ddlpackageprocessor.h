@@ -285,7 +285,7 @@ class DDLPackageProcessor
 
   // TODO: comments
   DDLResult processPackage(ddlpackage::SqlStatement* sqlStmt);
-  virtual DDLResult processPackage_(ddlpackage::SqlStatement* sqlStmt);
+  virtual DDLResult processPackageInternal(ddlpackage::SqlStatement* sqlStmt);
 
   /** @brief destructor
    */

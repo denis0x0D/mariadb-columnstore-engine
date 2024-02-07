@@ -50,7 +50,7 @@ using namespace oam;
 
 namespace ddlpackageprocessor
 {
-DropTableProcessor::DDLResult DropTableProcessor::processPackage_(ddlpackage::SqlStatement* sqlStmt)
+DropTableProcessor::DDLResult DropTableProcessor::processPackageInternal(ddlpackage::SqlStatement* sqlStmt)
 {
   SUMMARY_INFO("DropTableProcessor::processPackage");
 
@@ -737,7 +737,7 @@ DropTableProcessor::DDLResult DropTableProcessor::processPackage_(ddlpackage::Sq
   return result;
 }
 
-TruncTableProcessor::DDLResult TruncTableProcessor::processPackage_(ddlpackage::SqlStatement* sqlStmt)
+TruncTableProcessor::DDLResult TruncTableProcessor::processPackageInternal(ddlpackage::SqlStatement* sqlStmt)
 {
   SUMMARY_INFO("TruncTableProcessor::processPackage");
   // 1. lock the table
@@ -1091,7 +1091,7 @@ TruncTableProcessor::DDLResult TruncTableProcessor::processPackage_(ddlpackage::
 
           if (rc != 0)
           {
-            cout <<" ERROR CODE " << rc << endl;
+            cout << " ERROR CODE " << rc << endl;
             *bsIn >> errorMsg;
             fWEClient->removeQueue(uniqueId);
             break;

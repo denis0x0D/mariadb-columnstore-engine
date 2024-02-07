@@ -34,7 +34,8 @@ using namespace oam;
 
 namespace ddlpackageprocessor
 {
-MarkPartitionProcessor::DDLResult MarkPartitionProcessor::processPackage_(ddlpackage::SqlStatement* sqlStmt)
+MarkPartitionProcessor::DDLResult MarkPartitionProcessor::processPackageInternal(
+    ddlpackage::SqlStatement* sqlStmt)
 {
   SUMMARY_INFO("MarkPartitionProcessor::processPackage");
 
@@ -42,7 +43,7 @@ MarkPartitionProcessor::DDLResult MarkPartitionProcessor::processPackage_(ddlpac
   result.result = NO_ERROR;
   std::string err;
 
-  auto *markPartitionStmt = dynamic_cast<ddlpackage::MarkPartitionStatement*>(sqlStmt);
+  auto* markPartitionStmt = dynamic_cast<ddlpackage::MarkPartitionStatement*>(sqlStmt);
   VERBOSE_INFO(markPartitionStmt);
 
   BRM::TxnID txnID;

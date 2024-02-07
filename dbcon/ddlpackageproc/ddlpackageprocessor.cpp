@@ -1128,7 +1128,7 @@ void DDLPackageProcessor::createWriteTruncateTableLogFile(
 
 DDLPackageProcessor::DDLResult DDLPackageProcessor::processPackage(SqlStatement* sqlStmt)
 {
-  auto result = processPackage_(sqlStmt);
+  auto result = processPackageInternal(sqlStmt);
   if (result.result)
   {
     joblist::ResourceManager* rm = joblist::ResourceManager::instance(true);
@@ -1136,14 +1136,13 @@ DDLPackageProcessor::DDLResult DDLPackageProcessor::processPackage(SqlStatement*
     if (fEc->Setup())
       return result;
 
-    result = processPackage_(sqlStmt);
+    result = processPackageInternal(sqlStmt);
   }
   return result;
 }
 
-DDLPackageProcessor::DDLResult DDLPackageProcessor::processPackage_(SqlStatement* sqlStmt)
+DDLPackageProcessor::DDLResult DDLPackageProcessor::processPackageInternal(SqlStatement* sqlStmt)
 {
-  cout << "PROCESS PACKAGE " << endl;
   DDLPackageProcessor::DDLResult result;
   result.result = NO_ERROR;
   return result;

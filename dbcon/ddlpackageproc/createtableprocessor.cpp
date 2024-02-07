@@ -47,7 +47,7 @@ using namespace logging;
 
 namespace ddlpackageprocessor
 {
-CreateTableProcessor::DDLResult CreateTableProcessor::processPackage_(ddlpackage::SqlStatement* sqlStmt)
+CreateTableProcessor::DDLResult CreateTableProcessor::processPackageInternal(ddlpackage::SqlStatement* sqlStmt)
 {
   SUMMARY_INFO("CreateTableProcessor::processPackage");
 
