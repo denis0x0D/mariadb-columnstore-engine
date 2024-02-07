@@ -577,7 +577,21 @@ void PackageHandler::run()
             CalpontSystemCatalog::TableName tableName;
             tableName.schema = insertPkg.get_Table()->get_SchemaName();
             tableName.table = insertPkg.get_Table()->get_TableName();
-            CalpontSystemCatalog::ROPair roPair = fcsc->tableRID(tableName);
+            CalpontSystemCatalog::ROPair roPair;
+
+            // TODO: Put it into sep function.
+            try
+            {
+              roPair = fcsc->tableRID(tableName);
+            }
+            catch (...)
+            {
+              joblist::ResourceManager* rm = joblist::ResourceManager::instance(true);
+              joblist::DistributedEngineComm* fEc = joblist::DistributedEngineComm::instance(rm);
+              fEc->Setup();
+              roPair = fcsc->tableRID(tableName);
+            }
+
             fTableOid = roPair.objnum;
           }
           synchTable.setPackage(this, &insertPkg);  // Blocks if another DML thread is using this fTableOid

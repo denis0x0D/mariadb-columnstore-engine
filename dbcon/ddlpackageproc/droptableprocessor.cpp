@@ -387,7 +387,6 @@ DropTableProcessor::DDLResult DropTableProcessor::processPackage_(ddlpackage::Sq
       message.format(args);
       result.result = (ResultCode)rc;
       result.message = message;
-      // release table lock and session
       fSessionManager.rolledback(txnID);
       (void)fDbrm->releaseTableLock(tableLockId);
       fWEClient->removeQueue(uniqueId);
@@ -790,7 +789,6 @@ TruncTableProcessor::DDLResult TruncTableProcessor::processPackage_(ddlpackage::
   execplan::CalpontSystemCatalog::ROPair roPair;
   std::string processName("DDLProc");
   uint32_t processID = ::getpid();
-  ;
   int32_t txnid = txnID.id;
   boost::shared_ptr<CalpontSystemCatalog> systemCatalogPtr =
       CalpontSystemCatalog::makeCalpontSystemCatalog(truncTableStmt->fSessionID);
@@ -957,7 +955,7 @@ TruncTableProcessor::DDLResult TruncTableProcessor::processPackage_(ddlpackage::
     args.add("Truncate table failed: ");
     args.add(ex.what());
     args.add("");
-    fSessionManager.rolledback(txnID);
+    // fSessionManager.rolledback(txnID);
 
     try
     {
@@ -1089,9 +1087,11 @@ TruncTableProcessor::DDLResult TruncTableProcessor::processPackage_(ddlpackage::
         {
           *bsIn >> tmp8;
           rc = tmp8;
+          cout << "RC " << rc << endl;
 
           if (rc != 0)
           {
+            cout <<" ERROR CODE " << rc << endl;
             *bsIn >> errorMsg;
             fWEClient->removeQueue(uniqueId);
             break;
@@ -1153,6 +1153,7 @@ TruncTableProcessor::DDLResult TruncTableProcessor::processPackage_(ddlpackage::
 
       result.result = WARNING;
       result.message = message;
+      cout << "ROLLED BACK TNX " << endl;
       fSessionManager.rolledback(txnID);
       fWEClient->removeQueue(uniqueId);
       return result;
