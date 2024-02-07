@@ -57,7 +57,7 @@ using namespace messageqcpp;
 using namespace oam;
 namespace dmlpackageprocessor
 {
-DMLPackageProcessor::DMLResult DeletePackageProcessor::processPackage_(
+DMLPackageProcessor::DMLResult DeletePackageProcessor::processPackageInternal(
     dmlpackage::CalpontDMLPackage& cpackage)
 {
   SUMMARY_INFO("DeletePackageProcessor::processPackage");

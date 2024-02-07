@@ -61,7 +61,7 @@ using namespace oam;
 namespace dmlpackageprocessor
 {
 // StopWatch timer;
-DMLPackageProcessor::DMLResult UpdatePackageProcessor::processPackage_(
+DMLPackageProcessor::DMLResult UpdatePackageProcessor::processPackageInternal(
     dmlpackage::CalpontDMLPackage& cpackage)
 {
   SUMMARY_INFO("UpdatePackageProcessor::processPackage");

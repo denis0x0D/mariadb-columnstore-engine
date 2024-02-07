@@ -311,22 +311,21 @@ class RollbackTransactionProcessor : public dmlpackageprocessor::DMLPackageProce
   RollbackTransactionProcessor(BRM::DBRM* aDbrm) : DMLPackageProcessor(aDbrm, 1)
   {
   }
-  /** @brief process an Rollback transactions
-   *
-   * @param cpackage the UpdateDMLPackage to process
-   */
-  inline DMLResult processPackage_(dmlpackage::CalpontDMLPackage& cpackage)
-  {
-    DMLResult result;
-    result.result = NO_ERROR;
-    return result;
-  }
 
   void processBulkRollback(BRM::TableLockInfo lockInfo, BRM::DBRM* dbrm, uint64_t uniqueId,
                            oam::OamCache::dbRootPMMap_t& dbRootPMMap, bool& lockReleased);
 
  protected:
+ private:
+  /** @brief process an Rollback transactions
+   *
+   * @param cpackage the UpdateDMLPackage to process
+   */
+  DMLResult processPackageInternal(dmlpackage::CalpontDMLPackage& cpackage)
+  {
+    DMLResult result;
+    result.result = NO_ERROR;
+    return result;
+  }
 };
-
 }  // namespace dmlprocessor
-

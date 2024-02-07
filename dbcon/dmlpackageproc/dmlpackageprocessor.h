@@ -238,8 +238,6 @@ class DMLPackageProcessor
    */
   DMLResult processPackage(dmlpackage::CalpontDMLPackage& cpackage);
 
-  virtual DMLResult processPackage_(dmlpackage::CalpontDMLPackage& cpackage) = 0;
-
   inline void setRM(joblist::ResourceManager* frm)
   {
     fRM = frm;
@@ -528,6 +526,8 @@ class DMLPackageProcessor
   execplan::ClientRotator* fExeMgr;
 
  private:
+  virtual DMLResult processPackageInternal(dmlpackage::CalpontDMLPackage& cpackage) = 0;
+
   /** @brief clean beginning and ending glitches and spaces from string
    *
    * @param s string to be cleaned

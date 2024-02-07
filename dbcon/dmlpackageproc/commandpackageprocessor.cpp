@@ -53,7 +53,7 @@ namespace dmlpackageprocessor
 /*static*/ std::set<uint64_t> CommandPackageProcessor::fActiveClearTableLockCmds;
 /*static*/ boost::mutex CommandPackageProcessor::fActiveClearTableLockCmdMutex;
 
-DMLPackageProcessor::DMLResult CommandPackageProcessor::processPackage_(
+DMLPackageProcessor::DMLResult CommandPackageProcessor::processPackageInternal(
     dmlpackage::CalpontDMLPackage& cpackage)
 {
   SUMMARY_INFO("CommandPackageProcessor::processPackage");

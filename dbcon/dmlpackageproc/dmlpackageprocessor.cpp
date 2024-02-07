@@ -289,7 +289,7 @@ int32_t DMLPackageProcessor::tryToRollBackTransaction(uint64_t uniqueId, BRM::Tx
 
 DMLPackageProcessor::DMLResult DMLPackageProcessor::processPackage(dmlpackage::CalpontDMLPackage& cpackage)
 {
-  auto result = processPackage_(cpackage);
+  auto result = processPackageInternal(cpackage);
   if (result.result == NETWORK_ERROR)
   {
     joblist::ResourceManager* rm = joblist::ResourceManager::instance(true);
@@ -297,7 +297,7 @@ DMLPackageProcessor::DMLResult DMLPackageProcessor::processPackage(dmlpackage::C
     if (fEc->Setup())
       return result;
 
-    result = processPackage_(cpackage);
+    result = processPackageInternal(cpackage);
   }
   return result;
 }

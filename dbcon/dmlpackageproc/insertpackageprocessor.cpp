@@ -50,7 +50,7 @@ using namespace messageqcpp;
 
 namespace dmlpackageprocessor
 {
-DMLPackageProcessor::DMLResult InsertPackageProcessor::processPackage_(
+DMLPackageProcessor::DMLResult InsertPackageProcessor::processPackageInternal(
     dmlpackage::CalpontDMLPackage& cpackage)
 {
   SUMMARY_INFO("InsertPackageProcessor::processPackage");
