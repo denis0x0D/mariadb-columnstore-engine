@@ -199,6 +199,13 @@ class PackageHandler
   }
 
  private:
+  int32_t setupDec()
+  {
+    joblist::ResourceManager* rm = joblist::ResourceManager::instance(true);
+    joblist::DistributedEngineComm* fEc = joblist::DistributedEngineComm::instance(rm);
+    return fEc->Setup();
+  }
+
   messageqcpp::IOSocket fIos;
   boost::shared_ptr<messageqcpp::ByteStream> fByteStream;
   boost::scoped_ptr<dmlpackageprocessor::DMLPackageProcessor> fProcessor;
