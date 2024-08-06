@@ -22,6 +22,7 @@
 #include <boost/thread.hpp>
 #include <map>
 #include "SMLogging.h"
+#include "../fdb_wrapper_cpp/include/fdbcs.hpp"
 
 /* This class tracks the ownership of each prefix and manages ownership transfer.
    Could we come up with a better name btw? */
@@ -61,6 +62,8 @@ class Ownership : public boost::noncopyable
     void watchForInterlopers();
   };
 
+  std::unique_ptr<FDBCS::FDBDataBase> fdbDataBase_;
+  std::unique_ptr<FDBCS::FDBNetwork> fdbNetwork_;
   // maps a prefix to a state.  ownedPrefixes[p] == false means it's being init'd, == true means it's ready
   // for use.
   std::map<boost::filesystem::path, bool> ownedPrefixes;

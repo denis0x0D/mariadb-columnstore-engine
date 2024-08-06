@@ -1,4 +1,4 @@
-/* Copyright (C) 2019 MariaDB Corporation
+/* Copyright (C) 2024 MariaDB Corporation
 
    This program is free software; you can redistribute it and/or
    modify it under the terms of the GNU General Public License
@@ -24,6 +24,7 @@
 #include <unistd.h>
 #include <fcntl.h>
 #include <boost/filesystem.hpp>
+#include "../fdb_wrapper_cpp/include/fdbcs.hpp"
 
 using namespace std;
 namespace bf = boost::filesystem;
@@ -61,6 +62,40 @@ Ownership::Ownership()
     logger->log(LOG_CRIT, msg);
     throw runtime_error(msg);
   }
+
+  if (!FDBCS::setAPIVersion())
+  {
+    const char* msg = "Ownership: FDB setAPIVersion failed.";
+    logger->log(LOG_CRIT, msg);
+    throw runtime_error(msg);
+  }
+
+  fdbNetwork_ = std::make_unique<FDBCS::FDBNetwork>();
+  if (!fdbNetwork_->setUpAndRunNetwork())
+  {
+    const char* msg = "Ownership: FDB setUpAndRunNetwork failed.";
+    logger->log(LOG_CRIT, msg);
+    throw runtime_error(msg);
+  }
+
+  std::string clusterFilePath = config->getValue("ObjectStorage", "fdb_cluster_file_path");
+  std::cout << "Cluster file path: " << clusterFilePath << std::endl;
+  if (clusterFilePath.empty())
+  {
+    const char* msg =
+        "Ownership: Need to specify `Foundation DB cluster file path` in the storagemanager.cnf file";
+    logger->log(LOG_CRIT, msg);
+    throw runtime_error(msg);
+  }
+
+  fdbDataBase_ = FDBCS::DataBaseCreator::createDataBase(clusterFilePath);
+  if (!fdbDataBase_)
+  {
+    const char* msg = "Ownership: FDB createDataBase failed.";
+    logger->log(LOG_CRIT, msg);
+    throw runtime_error(msg);
+  }
+
   monitor = new Monitor(this);
 }
 
@@ -124,28 +159,20 @@ bf::path Ownership::get(const bf::path& p, bool getOwnership)
   return ret;
 }
 
-// minor timesaver
-#define TOUCH(p, f)                                                                                       \
-  {                                                                                                       \
-    int fd = ::open((metadataPrefix / p / f).string().c_str(), O_TRUNC | O_CREAT | O_WRONLY, 0660);       \
-    if (fd >= 0)                                                                                          \
-      ::close(fd);                                                                                        \
-    else                                                                                                  \
-    {                                                                                                     \
-      char buf[80];                                                                                       \
-      int saved_errno = errno;                                                                            \
-      cerr << "failed to touch " << metadataPrefix / p / f << " got " << strerror_r(saved_errno, buf, 80) \
-           << endl;                                                                                       \
-    }                                                                                                     \
-  }
-
-#define DELETE(p, f) ::unlink((metadataPrefix / p / f).string().c_str());
-
 void Ownership::touchFlushing(const bf::path& prefix, volatile bool* doneFlushing) const
 {
   while (!*doneFlushing)
   {
-    TOUCH(prefix, "FLUSHING");
+    {
+      auto tnx = fdbDataBase_->createTransaction();
+      tnx->set(prefix.string() + "FLUSHING", "");
+      if (!tnx->commit())
+      {
+        const char* msg = "Ownership: commit `touchFlushing` failed ";
+        logger->log(LOG_CRIT, msg);
+        throw runtime_error(msg);
+      }
+    }
     try
     {
       boost::this_thread::sleep_for(boost::chrono::seconds(1));
@@ -171,10 +198,17 @@ void Ownership::releaseOwnership(const bf::path& p, bool isDtor)
 
   if (isDtor)
   {
-    // This is a quick release.  If this is being destroyed, then it is through the graceful
-    // shutdown mechanism, which will flush data separately.
-    DELETE(p, "OWNED");
-    DELETE(p, "FLUSHING");
+    {
+      auto tnx = fdbDataBase_->createTransaction();
+      tnx->remove(p.string() + "OWNED");
+      tnx->remove(p.string() + "FLUSHING");
+      if (!tnx->commit())
+      {
+        const char* msg = "Ownership: commit `releaseOwnership` failed ";
+        logger->log(LOG_CRIT, msg);
+        throw runtime_error(msg);
+      }
+    }
     return;
   }
   else
@@ -191,19 +225,34 @@ void Ownership::releaseOwnership(const bf::path& p, bool isDtor)
   done = true;
   xfer.interrupt();
   xfer.join();
-
-  // update state
-  DELETE(p, "OWNED");
-  DELETE(p, "FLUSHING");
+  {
+    auto tnx = fdbDataBase_->createTransaction();
+    tnx->remove(p.string() + "OWNED");
+    tnx->remove(p.string() + "FLUSHING");
+    if (!tnx->commit())
+    {
+      const char* msg = "Ownership: commit `releaseOwnership` transaction failed";
+      logger->log(LOG_CRIT, msg);
+      throw runtime_error(msg);
+    }
+  }
 }
 
 void Ownership::_takeOwnership(const bf::path& p)
 {
   logger->log(LOG_DEBUG, "Ownership: taking ownership of %s", p.string().c_str());
-  DELETE(p, "FLUSHING");
-  DELETE(p, "REQUEST_TRANSFER");
-  // TODO: need to consider errors taking ownership
-  TOUCH(p, "OWNED");
+  {
+    auto tnx = fdbDataBase_->createTransaction();
+    tnx->remove(p.string() + "FLUSHING");
+    tnx->remove(p.string() + "REQUEST_TRANSFER");
+    tnx->set(p.string() + "OWNED", "");
+    if (!tnx->commit())
+    {
+      const char* msg = "Ownership: commit `_takeOwnership` transaction failed";
+      logger->log(LOG_CRIT, msg);
+      throw runtime_error(msg);
+    }
+  }
   mutex.lock();
   ownedPrefixes[p] = true;
   mutex.unlock();
@@ -225,45 +274,49 @@ void Ownership::takeOwnership(const bf::path& p)
   ownedPrefixes[p] = NULL;
   s.unlock();
 
-  bool okToTransfer = false;
-  struct stat statbuf;
-  int err;
-  char buf[80];
-  bf::path ownedPath = metadataPrefix / p / "OWNED";
-  bf::path flushingPath = metadataPrefix / p / "FLUSHING";
+  bool ownedKeyExists;
+  {
+    auto tnx = fdbDataBase_->createTransaction();
+    ownedKeyExists = tnx->get(p.string() + "OWNED").first;
+  }
 
   // if it's not already owned, then we can take possession
-  err = ::stat(ownedPath.string().c_str(), &statbuf);
-  if (err && errno == ENOENT)
+  if (!ownedKeyExists)
   {
     _takeOwnership(p);
     return;
   }
 
-  TOUCH(p, "REQUEST_TRANSFER");
+  {
+    auto tnx = fdbDataBase_->createTransaction();
+    tnx->set(p.string() + "REQUEST_TRANSFER", "");
+    tnx->commit();
+  }
+
+  bool okToTransfer = false;
   time_t lastFlushTime = time(NULL);
   while (!okToTransfer && time(NULL) < lastFlushTime + 10)
   {
     // if the OWNED file is deleted or if the flushing file isn't touched after 10 secs
     // it is ok to take possession.
-    err = ::stat(ownedPath.string().c_str(), &statbuf);
-    if (err)
+    bool ownedKeyExists;
     {
-      if (errno == ENOENT)
-        okToTransfer = true;
-      else
-        logger->log(LOG_CRIT, "Ownership::takeOwnership(): got '%s' doing stat of %s",
-                    strerror_r(errno, buf, 80), ownedPath.string().c_str());
+      auto tnx = fdbDataBase_->createTransaction();
+      ownedKeyExists = tnx->get(p.string() + "OWNED").first;
     }
-    err = ::stat(flushingPath.string().c_str(), &statbuf);
-    if (err && errno != ENOENT)
-      logger->log(LOG_CRIT, "Ownership::takeOwnership(): got '%s' doing stat of %s",
-                  strerror_r(errno, buf, 80), flushingPath.string().c_str());
-    else
+    if (!ownedKeyExists)
+      okToTransfer = true;
+
+    bool flushingKeyExists;
+    {
+      auto tnx = fdbDataBase_->createTransaction();
+      flushingKeyExists = tnx->get(p.string() + "FLUSHING").first;
+    }
+    if (flushingKeyExists)
     {
       logger->log(LOG_DEBUG, "Ownership: waiting to get %s", p.string().c_str());
-      if (!err)
-        lastFlushTime = statbuf.st_mtime;
+      // Since notice the flushing key.
+      lastFlushTime = time(NULL);
     }
     if (!okToTransfer)
       sleep(1);
@@ -286,9 +339,6 @@ Ownership::Monitor::~Monitor()
 void Ownership::Monitor::watchForInterlopers()
 {
   // look for requests to transfer ownership
-  struct stat statbuf;
-  int err;
-  char buf[80];
   vector<bf::path> releaseList;
 
   while (!stop)
@@ -302,17 +352,16 @@ void Ownership::Monitor::watchForInterlopers()
         break;
       if (prefix.second == false)
         continue;
-      bf::path p(owner->metadataPrefix / (prefix.first) / "REQUEST_TRANSFER");
-      const char* cp = p.string().c_str();
 
-      err = ::stat(cp, &statbuf);
+      bool requestKeyExists;
+      {
+        auto tnx = owner->fdbDataBase_->createTransaction();
+        requestKeyExists = tnx->get(prefix.first.string() + "REQUEST_TRANSFER").first;
+      }
       // release it if there's a release request only.  Log it if there's an error other than
       // that the file isn't there.
-      if (err == 0)
+      if (requestKeyExists)
         releaseList.push_back(prefix.first);
-      if (err < 0 && errno != ENOENT)
-        owner->logger->log(LOG_ERR, "Runner::watchForInterlopers(): failed to stat %s, got %s", cp,
-                           strerror_r(errno, buf, 80));
     }
     s.unlock();
 
