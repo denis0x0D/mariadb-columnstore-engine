@@ -20,6 +20,7 @@
 #include <string>
 #include <iostream>
 #include <thread>
+#include <memory>
 
 // https://apple.github.io/foundationdb/api-c.html
 // We have to define `FDB_API_VERSION` before include `fdb_c.h` header.
@@ -89,7 +90,7 @@ class FDBDataBase
 class DataBaseCreator
 {
  public:
-  static std::unique_ptr<FDBDataBase> createDataBase(const std::string clusterFilePath);
+  static std::shared_ptr<FDBDataBase> createDataBase(const std::string clusterFilePath);
 };
 
 bool setAPIVersion();

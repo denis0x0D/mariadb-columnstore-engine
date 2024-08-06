@@ -21,7 +21,7 @@ using namespace std;
 using namespace FDBCS;
 
 template <typename T>
-void assert_internal(const T& value)
+static void assert_internal(const T& value)
 {
   if (!value)
     abort();
@@ -36,7 +36,7 @@ int main()
   assert_internal(netWork.setUpAndRunNetwork());
 
   // Create database.
-  std::unique_ptr<FDBDataBase> db = DataBaseCreator::createDataBase(path);
+  auto db = DataBaseCreator::createDataBase(path);
   assert_internal(db);
   assert_internal(db->isDataBaseReady());
 
