@@ -15,7 +15,6 @@
    Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston,
    MA 02110-1301, USA. */
 
-
 #include <string>
 #include <iostream>
 #include <thread>
@@ -175,6 +174,7 @@ std::unique_ptr<FDBDataBase> DataBaseCreator::createDataBase(const std::string c
 
 bool setAPIVersion()
 {
-  return fdb_select_api_version(FDB_API_VERSION);
+  auto err = fdb_select_api_version(FDB_API_VERSION);
+  return err ? false : true;
 }
 }  // namespace FDBCS

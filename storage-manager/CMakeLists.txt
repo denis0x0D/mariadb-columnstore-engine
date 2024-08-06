@@ -60,13 +60,11 @@ configure_file("${CMAKE_CURRENT_SOURCE_DIR}/storagemanager.cnf.in" "${CMAKE_CURR
 link_directories(${CMAKE_BINARY_DIR}/lib)
 set(CMAKE_INSTALL_RPATH $ORIGIN $ORIGIN/../lib)
 
-
-
 add_library(storagemanager SHARED ${storagemanager_SRCS})
-add_dependencies(storagemanager marias3 external_boost)
+add_dependencies(storagemanager marias3 external_boost fdbcs)
 
 target_compile_definitions(storagemanager PUBLIC BOOST_NO_CXX11_SCOPED_ENUMS)
-target_link_libraries(storagemanager boost_chrono boost_system boost_thread boost_filesystem boost_regex pthread ${S3API_DEPS})
+target_link_libraries(storagemanager boost_chrono boost_system boost_thread boost_filesystem boost_regex pthread fdbcs ${S3API_DEPS})
 
 add_executable(StorageManager src/main.cpp)
 target_link_libraries(StorageManager storagemanager)
@@ -139,6 +137,13 @@ install(TARGETS storagemanager
     LIBRARY DESTINATION ${ENGINE_LIBDIR}
     COMPONENT columnstore-engine
 )
+
+if (FDB_LIB)
+install(TARGETS fdbcs
+    LIBRARY DESTINATION ${ENGINE_LIBDIR}
+    COMPONENT columnstore-engine
+)
+endif()
 
 install(TARGETS StorageManager smcat smput smls smrm testS3Connection
     RUNTIME DESTINATION ${ENGINE_BINDIR}
