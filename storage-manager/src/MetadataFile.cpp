@@ -173,6 +173,7 @@ MetadataFile::MetadataFile(const boost::filesystem::path& filename)
 {
   mpConfig = MetadataConfig::get();
   mpLogger = SMLogging::get();
+  auto fdb = MetadataStorage::getStorageInstance();
   _exists = true;
 
   mFilename = mpConfig->msMetadataPath / (filename.string() + ".meta");
@@ -375,6 +376,10 @@ int MetadataFile::writeMetadata()
   if (!boost::filesystem::exists(mFilename.parent_path()))
     boost::filesystem::create_directories(mFilename.parent_path());
 
+  std::stringstream stream;
+
+  write_json(stream, *jsontree);
+  std::cout << stream.str() << std::endl;
   write_json(mFilename.string(), *jsontree);
   _exists = true;
 
