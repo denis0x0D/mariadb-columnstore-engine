@@ -27,6 +27,8 @@
 #include <iostream>
 #include <unordered_map>
 #include <boost/filesystem/path.hpp>
+#include <memory>
+#include "../fdb_wrapper_cpp/include/fdbcs.hpp"
 
 namespace storagemanager
 {
@@ -106,6 +108,13 @@ class MetadataFile
 
    private:
     MetadataConfig();
+  };
+
+  class MetadataStorage
+  {
+   public:
+    static std::shared_ptr<FDBCS::FDBDataBase> getStorageInstance();
+    MetadataStorage() = delete;
   };
 
   static void printKPIs();

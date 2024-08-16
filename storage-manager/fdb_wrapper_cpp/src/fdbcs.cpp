@@ -160,7 +160,7 @@ std::unique_ptr<Transaction> FDBDataBase::createTransaction() const
   return std::make_unique<Transaction>(tnx);
 }
 
-std::unique_ptr<FDBDataBase> DataBaseCreator::createDataBase(const std::string clusterFilePath)
+std::shared_ptr<FDBDataBase> DataBaseCreator::createDataBase(const std::string clusterFilePath)
 {
   FDBDatabase* database;
   auto err = fdb_create_database(clusterFilePath.c_str(), &database);
@@ -169,7 +169,7 @@ std::unique_ptr<FDBDataBase> DataBaseCreator::createDataBase(const std::string c
     std::cerr << "fdb_create_database error, code: " << (int)err << std::endl;
     return nullptr;
   }
-  return std::make_unique<FDBDataBase>(database);
+  return std::make_shared<FDBDataBase>(database);
 }
 
 bool setAPIVersion()

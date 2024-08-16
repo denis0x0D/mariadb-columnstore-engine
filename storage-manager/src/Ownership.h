@@ -62,7 +62,7 @@ class Ownership : public boost::noncopyable
     void watchForInterlopers();
   };
 
-  std::unique_ptr<FDBCS::FDBDataBase> fdbDataBase_;
+  std::shared_ptr<FDBCS::FDBDataBase> fdbDataBase_;
   std::unique_ptr<FDBCS::FDBNetwork> fdbNetwork_;
   // maps a prefix to a state.  ownedPrefixes[p] == false means it's being init'd, == true means it's ready
   // for use.

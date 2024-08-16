@@ -21,16 +21,17 @@
 #include "MetadataFile.h"
 #include <set>
 #include <boost/filesystem.hpp>
+#include <memory>
 #define BOOST_SPIRIT_THREADSAFE
 #ifndef __clang__
-  #pragma GCC diagnostic push
-  #pragma GCC diagnostic ignored "-Wmaybe-uninitialized"
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wmaybe-uninitialized"
 #endif
 
 #include <boost/property_tree/ptree.hpp>
 
 #ifndef __clang__
-  #pragma GCC diagnostic pop
+#pragma GCC diagnostic pop
 #endif
 #include <boost/property_tree/json_parser.hpp>
 #include <boost/foreach.hpp>
@@ -38,6 +39,8 @@
 #include <boost/uuid/uuid_io.hpp>
 #include <boost/uuid/random_generator.hpp>
 #include <unistd.h>
+
+#include "../fdb_wrapper_cpp/include/fdbcs.hpp"
 
 #define max(x, y) (x > y ? x : y)
 #define min(x, y) (x < y ? x : y)
@@ -49,12 +52,62 @@ namespace bf = boost::filesystem;
 namespace
 {
 boost::mutex mdfLock;
+boost::mutex kvLock;
 storagemanager::MetadataFile::MetadataConfig* inst = NULL;
+std::shared_ptr<FDBCS::FDBDataBase> fdbDataBaseInst = nullptr;
+std::unique_ptr<FDBCS::FDBNetwork> fdbNetwork = nullptr;
 uint64_t metadataFilesAccessed = 0;
 }  // namespace
 
 namespace storagemanager
 {
+
+std::shared_ptr<FDBCS::FDBDataBase> MetadataFile::MetadataStorage::getStorageInstance()
+{
+  boost::unique_lock<boost::mutex> s(kvLock);
+
+  if (fdbDataBaseInst)
+    return fdbDataBaseInst;
+
+  Config* config = Config::get();
+  SMLogging* logger = SMLogging::get();
+
+  if (!FDBCS::setAPIVersion())
+  {
+    const char* msg = "Ownership: FDB setAPIVersion failed.";
+    logger->log(LOG_CRIT, msg);
+    throw runtime_error(msg);
+  }
+
+  fdbNetwork = std::make_unique<FDBCS::FDBNetwork>();
+  if (!fdbNetwork->setUpAndRunNetwork())
+  {
+    const char* msg = "Ownership: FDB setUpAndRunNetwork failed.";
+    logger->log(LOG_CRIT, msg);
+    throw runtime_error(msg);
+  }
+
+  std::string clusterFilePath = config->getValue("ObjectStorage", "fdb_cluster_file_path");
+  std::cout << "Cluster file path: " << clusterFilePath << std::endl;
+  if (clusterFilePath.empty())
+  {
+    const char* msg =
+        "Ownership: Need to specify `Foundation DB cluster file path` in the storagemanager.cnf file";
+    logger->log(LOG_CRIT, msg);
+    throw runtime_error(msg);
+  }
+
+  fdbDataBaseInst = FDBCS::DataBaseCreator::createDataBase(clusterFilePath);
+  if (!fdbDataBaseInst)
+  {
+    const char* msg = "Ownership: FDB createDataBase failed.";
+    logger->log(LOG_CRIT, msg);
+    throw runtime_error(msg);
+  }
+
+  return fdbDataBaseInst;
+}
+
 MetadataFile::MetadataConfig* MetadataFile::MetadataConfig::get()
 {
   if (inst)

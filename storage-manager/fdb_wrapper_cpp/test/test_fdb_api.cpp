@@ -30,7 +30,7 @@ int main() {
   assert(netWork.setUpAndRunNetwork() == true);
 
   // Create database.
-  std::unique_ptr<FDBDataBase> db = DataBaseCreator::createDataBase(path);
+  std::shared_ptr<FDBDataBase> db = DataBaseCreator::createDataBase(path);
   std::string key1 = "fajsdlkfjaskljfewiower39423fds";
   std::string value1 = "gfdgjksdflfdsjkslkdrewuior39243";
   // Set a key/value.
