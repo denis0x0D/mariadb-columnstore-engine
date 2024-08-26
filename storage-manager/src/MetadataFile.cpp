@@ -19,18 +19,19 @@
  * MetadataFile.cpp
  */
 #include "MetadataFile.h"
+#include "KVStorageInitializer.h"
 #include <set>
 #include <boost/filesystem.hpp>
 #define BOOST_SPIRIT_THREADSAFE
 #ifndef __clang__
-  #pragma GCC diagnostic push
-  #pragma GCC diagnostic ignored "-Wmaybe-uninitialized"
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wmaybe-uninitialized"
 #endif
 
 #include <boost/property_tree/ptree.hpp>
 
 #ifndef __clang__
-  #pragma GCC diagnostic pop
+#pragma GCC diagnostic pop
 #endif
 #include <boost/property_tree/json_parser.hpp>
 #include <boost/foreach.hpp>
@@ -38,6 +39,7 @@
 #include <boost/uuid/uuid_io.hpp>
 #include <boost/uuid/random_generator.hpp>
 #include <unistd.h>
+#include "../fdb_wrapper_cpp/include/fdbcs.hpp"
 
 #define max(x, y) (x > y ? x : y)
 #define min(x, y) (x < y ? x : y)
@@ -128,6 +130,19 @@ MetadataFile::MetadataFile(const boost::filesystem::path& filename)
   jsontree = jsonCache.get(mFilename);
   if (!jsontree)
   {
+    auto kvStorage = KVStorageInitializer::getStorageInstance();
+    auto tnx = kvStorage->createTransaction();
+    auto rPair = tnx->get(mFilename.string());
+    if (rPair.first)
+    {
+      cout << "Key found: " << mFilename.string() << endl;
+      cout << "Value is: " << rPair.second << endl;
+    }
+    else
+    {
+      cout << "Key not found " << mFilename.string() << endl;
+    }
+
     if (boost::filesystem::exists(mFilename))
     {
       jsontree.reset(new bpt::ptree());
@@ -169,6 +184,19 @@ MetadataFile::MetadataFile(const boost::filesystem::path& filename, no_create_t,
   jsontree = jsonCache.get(mFilename);
   if (!jsontree)
   {
+    auto kvStorage = KVStorageInitializer::getStorageInstance();
+    auto tnx = kvStorage->createTransaction();
+    auto rPair = tnx->get(mFilename.string());
+    if (rPair.first)
+    {
+      cout << "Key found: " << mFilename.string() << endl;
+      cout << "Value is: " << rPair.second << endl;
+    }
+    else
+    {
+      cout << "Key not found " << mFilename.string() << endl;
+    }
+
     if (boost::filesystem::exists(mFilename))
     {
       _exists = true;
@@ -321,6 +349,17 @@ int MetadataFile::writeMetadata()
 {
   if (!boost::filesystem::exists(mFilename.parent_path()))
     boost::filesystem::create_directories(mFilename.parent_path());
+
+  {
+    auto kvStorage = KVStorageInitializer::getStorageInstance();
+    auto tnx = kvStorage->createTransaction();
+    stringstream stream;
+    write_json(stream, *jsontree);
+    tnx->set(mFilename.string(),stream.str());
+    auto err = tnx->commit();
+    if (!err)
+      cout << "cannot commit tnx" << endl;
+  }
 
   write_json(mFilename.string(), *jsontree);
   _exists = true;
