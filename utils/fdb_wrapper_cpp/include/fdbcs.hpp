@@ -138,16 +138,16 @@ class BlobHandler
    : keyGen_(keyGen), blockSizeInBytes_(blockSizeInBytes)
   {
     // Block size in 100KB shows the best performance.
+    keySizeInBytes_ = keyGen_->getKeySize();
     assert(keySizeInBytes_);
     assert(blockSizeInBytes_);
-    keySizeInBytes_ = keyGen_->getKeySize();
     assert((keySizeInBytes_ + keyBlockIdentifier.size()) <= blockSizeInBytes_);
     numKeysInBlock_ = (blockSizeInBytes_ - keyBlockIdentifier.size()) / keySizeInBytes_;
   }
 
   bool writeBlob(std::shared_ptr<FDBCS::FDBDataBase> database, const ByteArray& key, const ByteArray& blob);
-  std::pair<bool, std::string> readBlob(std::shared_ptr<FDBCS::FDBDataBase> database, ByteArray& key);
-  bool removeBlob(std::shared_ptr<FDBCS::FDBDataBase> database, ByteArray& key);
+  std::pair<bool, std::string> readBlob(std::shared_ptr<FDBCS::FDBDataBase> database, const ByteArray& key);
+  bool removeBlob(std::shared_ptr<FDBCS::FDBDataBase> database, const ByteArray& key);
 
  private:
   void insertData(Block& block, const std::string& blob, const uint32_t offset);
@@ -158,7 +158,7 @@ class BlobHandler
   bool commitKeys(std::shared_ptr<FDBCS::FDBDataBase> database, std::unordered_map<Key, Block>& map,
                   const Keys& keys);
   bool commitKey(std::shared_ptr<FDBCS::FDBDataBase> database, const Key& key, const ByteArray& value);
-  bool removeKeys(std::shared_ptr<FDBCS::FDBDataBase> database, Keys& keys);
+  bool removeKeys(std::shared_ptr<FDBCS::FDBDataBase> database, const Keys& keys);
   std::unordered_map<uint32_t, uint32_t> computeNumKeysForEachTreeLevel(int32_t treeLen, uint32_t numBlocks);
   inline float log(uint32_t base, uint32_t value);
 
