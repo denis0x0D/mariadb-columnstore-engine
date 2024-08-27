@@ -100,6 +100,7 @@ MetadataFile::MetadataConfig::MetadataConfig()
 
   try
   {
+    cout << "create dir for meta " << msMetadataPath.string() << endl;
     boost::filesystem::create_directories(msMetadataPath);
   }
   catch (exception& e)
@@ -135,18 +136,9 @@ MetadataFile::MetadataFile(const boost::filesystem::path& filename)
     auto rPair = tnx->get(mFilename.string());
     if (rPair.first)
     {
-      cout << "Key found: " << mFilename.string() << endl;
-      cout << "Value is: " << rPair.second << endl;
-    }
-    else
-    {
-      cout << "Key not found " << mFilename.string() << endl;
-    }
-
-    if (boost::filesystem::exists(mFilename))
-    {
       jsontree.reset(new bpt::ptree());
-      boost::property_tree::read_json(mFilename.string(), *jsontree);
+      stringstream stream(rPair.second);
+      boost::property_tree::read_json(stream, *jsontree);
       jsonCache.put(mFilename, jsontree);
       s.unlock();
       mVersion = 1;
@@ -189,19 +181,10 @@ MetadataFile::MetadataFile(const boost::filesystem::path& filename, no_create_t,
     auto rPair = tnx->get(mFilename.string());
     if (rPair.first)
     {
-      cout << "Key found: " << mFilename.string() << endl;
-      cout << "Value is: " << rPair.second << endl;
-    }
-    else
-    {
-      cout << "Key not found " << mFilename.string() << endl;
-    }
-
-    if (boost::filesystem::exists(mFilename))
-    {
       _exists = true;
       jsontree.reset(new bpt::ptree());
-      boost::property_tree::read_json(mFilename.string(), *jsontree);
+      stringstream stream(rPair.second);
+      boost::property_tree::read_json(stream, *jsontree);
       jsonCache.put(mFilename, jsontree);
       s.unlock();
       mVersion = 1;
@@ -245,9 +228,38 @@ void MetadataFile::printKPIs()
 
 int MetadataFile::stat(struct stat* out) const
 {
-  int err = ::stat(mFilename.c_str(), out);
-  if (err)
-    return err;
+  /*
+  string fname = mFilename.string() + "temp";
+  try
+  {
+    ofstream stream(fname);
+    stream << "temp";
+    stream.close();
+  }
+  catch (...)
+  {
+    cout << "cannot create file " << fname << endl;
+  }
+  */
+  auto kvStorage = KVStorageInitializer::getStorageInstance();
+  auto tnx = kvStorage->createTransaction();
+  auto rPair = tnx->get(mFilename.string());
+  if (rPair.first)
+  {
+    string fname = mFilename.string() + "temp";
+    ofstream stream(fname);
+    stream << "temp";
+    stream.close();
+    int err = ::stat(fname.c_str(), out);
+    cout << "stat key exists: " << rPair.second << endl;
+    if (err)
+      return -1;
+  }
+  else
+  {
+    return -1;
+    // cout << "stat key not exist: " << rPair.second << endl;
+  }
 
   out->st_size = getLength();
   return 0;
@@ -348,20 +360,23 @@ metadataObject MetadataFile::addMetadataObject(const boost::filesystem::path& fi
 int MetadataFile::writeMetadata()
 {
   if (!boost::filesystem::exists(mFilename.parent_path()))
+  {
+    cout << "create directories " << mFilename.parent_path() << endl;
     boost::filesystem::create_directories(mFilename.parent_path());
-
+  }
   {
     auto kvStorage = KVStorageInitializer::getStorageInstance();
     auto tnx = kvStorage->createTransaction();
     stringstream stream;
     write_json(stream, *jsontree);
-    tnx->set(mFilename.string(),stream.str());
+    tnx->set(mFilename.string(), stream.str());
     auto err = tnx->commit();
     if (!err)
       cout << "cannot commit tnx" << endl;
   }
 
-  write_json(mFilename.string(), *jsontree);
+  // cout << "write json to the file" << mFilename.string() << endl;
+// write_json(mFilename.string(), *jsontree);
   _exists = true;
 
   boost::unique_lock<boost::mutex> s(jsonCache.getMutex());
