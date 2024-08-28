@@ -22,6 +22,11 @@
 #include "KVStorageInitializer.h"
 #include <set>
 #include <boost/filesystem.hpp>
+#include <boost/uuid/uuid.hpp>
+#include <boost/uuid/uuid_io.hpp>
+#include <boost/uuid/random_generator.hpp>
+#include <boost/lexical_cast.hpp>
+#include <filesystem>
 #define BOOST_SPIRIT_THREADSAFE
 #ifndef __clang__
 #pragma GCC diagnostic push
@@ -226,43 +231,44 @@ void MetadataFile::printKPIs()
   cout << "Metadata files accessed = " << metadataFilesAccessed << endl;
 }
 
-int MetadataFile::stat(struct stat* out) const
+int MetadataFile::stat(struct stat* out)
 {
-  /*
-  string fname = mFilename.string() + "temp";
-  try
-  {
-    ofstream stream(fname);
-    stream << "temp";
-    stream.close();
-  }
-  catch (...)
-  {
-    cout << "cannot create file " << fname << endl;
-  }
-  */
   auto kvStorage = KVStorageInitializer::getStorageInstance();
   auto tnx = kvStorage->createTransaction();
   auto rPair = tnx->get(mFilename.string());
   if (rPair.first)
   {
-    string fname = mFilename.string() + "temp";
-    ofstream stream(fname);
-    stream << "temp";
-    stream.close();
-    int err = ::stat(fname.c_str(), out);
-    cout << "stat key exists: " << rPair.second << endl;
-    if (err)
+    if (statCached)
+    {
+      std::memcpy(out, (uint8_t*)&statCache[0], sizeof(struct stat));
+      out->st_size = getLength();
+      return 0;
+    }
+    try
+    {
+      const std::string fName =
+          mFilename.string() + boost::lexical_cast<std::string>(boost::uuids::random_generator()());
+
+      std::ofstream fStream(fName);
+      fStream.close();
+      int err = ::stat(fName.c_str(), out);
+      if (err)
+        return -1;
+      statCache.resize(sizeof(struct stat));
+      statCached = true;
+      std::filesystem::remove(fName);
+      out->st_size = getLength();
+      return 0;
+    }
+    catch (const std::exception& ex)
+    {
+      SMLogging* logger = SMLogging::get();
+      logger->log(LOG_CRIT, "Metadatafile::stat() failed with error: %s", ex.what());
       return -1;
-  }
-  else
-  {
-    return -1;
-    // cout << "stat key not exist: " << rPair.second << endl;
+    }
   }
 
-  out->st_size = getLength();
-  return 0;
+  return -1;
 }
 
 size_t MetadataFile::getLength() const
@@ -375,8 +381,6 @@ int MetadataFile::writeMetadata()
       cout << "cannot commit tnx" << endl;
   }
 
-  // cout << "write json to the file" << mFilename.string() << endl;
-// write_json(mFilename.string(), *jsontree);
   _exists = true;
 
   boost::unique_lock<boost::mutex> s(jsonCache.getMutex());
