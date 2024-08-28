@@ -231,6 +231,34 @@ void MetadataFile::printKPIs()
   cout << "Metadata files accessed = " << metadataFilesAccessed << endl;
 }
 
+int MetadataFile::generateStatStructInfo(struct stat* out)
+{
+  try
+  {
+    const std::string fName =
+        mFilename.string() + boost::lexical_cast<std::string>(boost::uuids::random_generator()());
+    std::ofstream fStream(fName);
+    fStream.close();
+
+    int err = ::stat(fName.c_str(), out);
+    if (err)
+      return -1;
+
+    statCache.resize(sizeof(struct stat));
+    std::memcpy(&statCache[0], &out, sizeof(struct stat));
+    statCached = true;
+    std::filesystem::remove(fName);
+    out->st_size = getLength();
+  }
+  catch (const std::exception& ex)
+  {
+    SMLogging::get()->log(LOG_CRIT, "Metadatafile::stat() failed with error: %s", ex.what());
+    return -1;
+  }
+
+  return 0;
+}
+
 int MetadataFile::stat(struct stat* out)
 {
   auto kvStorage = KVStorageInitializer::getStorageInstance();
@@ -244,28 +272,7 @@ int MetadataFile::stat(struct stat* out)
       out->st_size = getLength();
       return 0;
     }
-    try
-    {
-      const std::string fName =
-          mFilename.string() + boost::lexical_cast<std::string>(boost::uuids::random_generator()());
-
-      std::ofstream fStream(fName);
-      fStream.close();
-      int err = ::stat(fName.c_str(), out);
-      if (err)
-        return -1;
-      statCache.resize(sizeof(struct stat));
-      statCached = true;
-      std::filesystem::remove(fName);
-      out->st_size = getLength();
-      return 0;
-    }
-    catch (const std::exception& ex)
-    {
-      SMLogging* logger = SMLogging::get();
-      logger->log(LOG_CRIT, "Metadatafile::stat() failed with error: %s", ex.what());
-      return -1;
-    }
+    return generateStatStructInfo(out);
   }
 
   return -1;
@@ -367,7 +374,6 @@ int MetadataFile::writeMetadata()
 {
   if (!boost::filesystem::exists(mFilename.parent_path()))
   {
-    cout << "create directories " << mFilename.parent_path() << endl;
     boost::filesystem::create_directories(mFilename.parent_path());
   }
   {
@@ -376,9 +382,11 @@ int MetadataFile::writeMetadata()
     stringstream stream;
     write_json(stream, *jsontree);
     tnx->set(mFilename.string(), stream.str());
-    auto err = tnx->commit();
-    if (!err)
-      cout << "cannot commit tnx" << endl;
+    if (!tnx->commit())
+    {
+      SMLogging::get()->log(LOG_CRIT, "Metadatafile: cannot commit tnx set().");
+      throw runtime_error("Metadatafile: cannot commit tnx set().");
+    }
   }
 
   _exists = true;

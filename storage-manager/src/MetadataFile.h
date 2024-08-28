@@ -122,6 +122,7 @@ class MetadataFile
   // std::set<metadataObject> mObjects;
   bool _exists;
   void makeEmptyJsonTree();
+  int generateStatStructInfo(struct stat *);
   std::vector<uint8_t> statCache;
   bool statCached{false};
 
