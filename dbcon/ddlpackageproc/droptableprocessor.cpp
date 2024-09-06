@@ -69,6 +69,7 @@ DropTableProcessor::DDLResult DropTableProcessor::processPackageInternal(ddlpack
     return result;
   }
   VERBOSE_INFO(dropTableStmt);
+  cout << "DEBUG LEVEL " << getDebugLevel() << endl;
 
   // Commit current transaction.
   // all DDL statements cause an implicit commit
