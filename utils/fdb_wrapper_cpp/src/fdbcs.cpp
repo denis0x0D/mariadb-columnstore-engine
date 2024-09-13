@@ -19,10 +19,20 @@
 #include <iostream>
 #include <thread>
 #include <chrono>
-#include "../include/fdbcs.hpp"
+#include <boost/uuid/uuid.hpp>
+#include <boost/uuid/uuid_io.hpp>
+#include <boost/uuid/random_generator.hpp>
+#include <boost/lexical_cast.hpp>
+#include <chrono>
+#include "fdbcs.hpp"
 
 namespace FDBCS
 {
+
+#define RETURN_ON_ERROR(retcode) \
+  if (!retcode)                  \
+    return retcode;
+
 Transaction::Transaction(FDBTransaction* tnx) : tnx_(tnx)
 {
 }
@@ -204,6 +214,183 @@ std::shared_ptr<FDBDataBase> DataBaseCreator::createDataBase(const std::string c
     return nullptr;
   }
   return std::make_shared<FDBDataBase>(database);
+}
+
+Keys BlobHandler::generateKeys(const uint32_t num)
+{
+  Keys keys;
+  keys.reserve(num);
+  for (uint32_t i = 0; i < num; ++i)
+    keys.push_back(boost::lexical_cast<std::string>(boost::uuids::random_generator()()));
+
+  return keys;
+}
+
+// FIXME: Put it to util?
+float BlobHandler::log(const uint32_t base, const uint32_t value)
+{
+  return std::log(value) / std::log(base);
+}
+
+void BlobHandler::insertKey(Block& block, const std::string& value)
+{
+  if (!block.first)
+  {
+    block.second.reserve(blockSizeInBytes_);
+    // TODO: How about better identifier for the key block and for the data block?
+    block.second.push_back('K');
+    block.first += 1;
+  }
+
+  block.second.insert(block.second.begin() + block.first, value.begin(), value.end());
+  block.first += value.size();
+}
+
+void BlobHandler::insertData(Block& block, const std::string& blob, const uint32_t offset)
+{
+  const uint32_t endOfBlob = std::min(offset + blockSizeInBytes_, (uint32_t)blob.size());
+  // Data block does not have any identifier, this code assumes we use `boost::uid` generator.
+  auto& dataBlock = block.second;
+  dataBlock.reserve(blockSizeInBytes_);
+  dataBlock.insert(dataBlock.begin() + block.first, blob.begin() + offset, blob.begin() + endOfBlob);
+}
+
+uint32_t BlobHandler::getNextLevelKeysNums(const uint32_t nextLevel, const uint32_t numBlocks,
+                                           const uint32_t treeLen)
+{
+  if (nextLevel + 1 == treeLen)
+  {
+    auto keyNums = numBlocks / numKeysInBlock_;
+    if (numBlocks % numKeysInBlock_)
+      ++keyNums;
+    return keyNums;
+  }
+
+  return std::min((uint32_t)std::pow(numKeysInBlock_, nextLevel), numBlocks);
+}
+
+bool BlobHandler::writeBlob(std::shared_ptr<FDBCS::FDBDataBase> dataBase, const ByteArray& key,
+                            const ByteArray& blob)
+{
+  const size_t blobSizeInBytes = blob.size();
+  uint32_t numBlocks = blobSizeInBytes / blockSizeInBytes_;
+  if (blobSizeInBytes % blockSizeInBytes_)
+    ++numBlocks;
+
+  const uint32_t treeLen = std::ceil(log(numKeysInBlock_, numBlocks));
+  Keys currentKeys{key};
+
+  std::unordered_map<Key, Block> map;
+  map[key] = {0, std::string()};
+
+  for (uint32_t currentLevel = 0; currentLevel < treeLen; ++currentLevel)
+  {
+    const auto nextLevel = currentLevel + 1;
+    const uint32_t nextLevelKeyNum = getNextLevelKeysNums(nextLevel, numBlocks, treeLen);
+    auto nextLevelKeys = generateKeys(nextLevelKeyNum);
+    uint32_t nextKeysIt = 0;
+    for (uint32_t i = 0, size = currentKeys.size(); i < size && nextKeysIt < nextLevelKeyNum; ++i)
+    {
+      auto& block = map[currentKeys[i]];
+      for (uint32_t j = 0; j < numKeysInBlock_ && nextKeysIt < nextLevelKeyNum; ++j, ++nextKeysIt)
+      {
+        const auto& nextKey = nextLevelKeys[nextKeysIt];
+        insertKey(block, nextKey);
+        map[nextKey] = {0, std::string()};
+      }
+      // FIXME: Currently FDB does not work properly, when summary value size greater than 10 MB inside one
+      // transaction. But calling `commit` on each `set` makes execution really slow.
+      auto tnx = dataBase->createTransaction();
+      tnx->set(currentKeys[i], block.second);
+      RETURN_ON_ERROR(tnx->commit());
+    }
+    currentKeys = std::move(nextLevelKeys);
+  }
+
+  uint32_t offset = 0;
+  for (uint32_t i = 0; i < numBlocks; ++i)
+  {
+    auto& block = map[currentKeys[i]];
+    insertData(block, blob, offset);
+    offset += blockSizeInBytes_;
+    auto tnx = dataBase->createTransaction();
+    tnx->set(currentKeys[i], block.second);
+    RETURN_ON_ERROR(tnx->commit());
+  }
+  return true;
+}
+
+std::pair<bool, Keys> BlobHandler::getKeysFromBlock(const Block& block)
+{
+  Keys keys;
+  const auto& blockData = block.second;
+  if (blockData.size() > blockSizeInBytes_)
+    return {false, {""}};
+
+  uint32_t offset = 1;
+  for (uint32_t i = 0; i < numKeysInBlock_ && offset + keySizeInBytes_ <= blockData.size(); ++i)
+  {
+    Key key(blockData.begin() + offset, blockData.begin() + offset + keySizeInBytes_);
+    keys.push_back(std::move(key));
+    offset += keySizeInBytes_;
+  }
+
+  return {true, keys};
+}
+
+bool BlobHandler::isDataBlock(const Block& block)
+{
+  return block.second[0] != 'K';
+}
+
+std::pair<bool, std::string> BlobHandler::readBlob(std::shared_ptr<FDBCS::FDBDataBase> database,
+                                                   ByteArray& key)
+{
+  Keys currentKeys{key};
+  while (currentKeys.size())
+  {
+    std::vector<Block> blocks;
+    for (const auto& key : currentKeys)
+    {
+      auto tnx = database->createTransaction();
+      auto p = tnx->get(key);
+      if (!p.first)
+        return {false, ""};
+      blocks.push_back({0, p.second});
+    }
+
+    if (isDataBlock(blocks.front()))
+      break;
+
+    Keys nextKeys;
+    for (const auto& block : blocks)
+    {
+      auto keysPair = getKeysFromBlock(block);
+      if (!keysPair.first)
+        return {false, ""};
+
+      auto& keys = keysPair.second;
+      nextKeys.insert(nextKeys.end(), keys.begin(), keys.end());
+    }
+    currentKeys = std::move(nextKeys);
+  }
+
+  std::string blob;
+  for (const auto& key : currentKeys)
+  {
+    auto tnx = database->createTransaction();
+    auto resultPair = tnx->get(key);
+    if (!resultPair.first)
+      return {false, ""};
+
+    auto& dataBlock = resultPair.second;
+    if (!dataBlock.size())
+      return {false, ""};
+
+    blob.insert(blob.end(), dataBlock.begin(), dataBlock.end());
+  }
+
+  return {true, blob};
 }
 
 bool setAPIVersion()

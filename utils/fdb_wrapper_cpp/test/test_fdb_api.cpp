@@ -20,6 +20,10 @@
 
 using namespace std;
 using namespace FDBCS;
+using std::chrono::duration;
+using std::chrono::duration_cast;
+using std::chrono::high_resolution_clock;
+using std::chrono::milliseconds;
 
 template <typename T>
 static void assert_internal(const T& value, const std::string& errMessage)
@@ -29,6 +33,36 @@ static void assert_internal(const T& value, const std::string& errMessage)
     std::cerr << errMessage << std::endl;
     abort();
   }
+}
+
+static std::string generateBlob(const uint32_t len)
+{
+  std::string blob;
+  blob.reserve(len);
+  for (uint32_t i = 0; i < len; ++i)
+  {
+    blob.push_back('a' + (i % 26));
+  }
+  return blob;
+}
+
+static void testBlobHandler(std::shared_ptr<FDBCS::FDBDataBase> db)
+{
+  const uint32_t size = 10090801;
+  std::string rootKey = "root";
+  auto blobA = generateBlob(size);
+  BlobHandler handler;
+  auto t1 = high_resolution_clock::now();
+  handler.writeBlob(db, rootKey, blobA);
+  auto t2 = high_resolution_clock::now();
+  auto ms_int = duration_cast<milliseconds>(t2 - t1);
+ // std::cout << "Write blob time: " << ms_int.count() << std::endl;
+  t1 = high_resolution_clock::now();
+  auto p = handler.readBlob(db, rootKey);
+  t1 = high_resolution_clock::now();
+  ms_int = duration_cast<milliseconds>(t2 - t1);
+  //std::cout << "Read blob time: " << ms_int.count() << std::endl;
+  assert_internal(blobA == p.second, "Blobs not equal");
 }
 
 int main()
@@ -98,5 +132,6 @@ int main()
     }
   }
 
+  testBlobHandler(db);
   return 0;
 }
