@@ -19,7 +19,11 @@
 #include <iostream>
 #include <thread>
 #include <chrono>
-#include "../include/fdbcs.hpp"
+#include <boost/uuid/uuid.hpp>
+#include <boost/uuid/uuid_io.hpp>
+#include <boost/uuid/random_generator.hpp>
+#include <boost/lexical_cast.hpp>
+#include "fdbcs.hpp"
 
 namespace FDBCS
 {
@@ -204,6 +208,65 @@ std::shared_ptr<FDBDataBase> DataBaseCreator::createDataBase(const std::string c
     return nullptr;
   }
   return std::make_shared<FDBDataBase>(database);
+}
+
+std::vector<std::string> BlobHandler::generateKeys(const uint32_t num)
+{
+  std::vector<std::string> keys;
+  keys.reserve(num);
+  for (uint32_t i = 0; i < num; ++i)
+    keys.push_back(boost::lexical_cast<std::string>(boost::uuids::random_generator()()));
+
+  return keys;
+}
+
+float BlobHandler::log(const uint32_t base, const uint32_t value)
+{
+  return std::log(value) / std::log(base);
+}
+
+void insertKey(std::pair<uint32_t, std::string>& block, const std::string& value)
+{
+  block.second.insert(block.second.begin() + block.first, value.begin(), value.end());
+  block.first += value.size();
+}
+
+bool BlobHandler::writeBlob(const ByteArray& key, const ByteArray& blob)
+{
+  const uint32_t blobSizeInBytes = blob.size();
+  const uint32_t keySizeInBytes =
+      (boost::lexical_cast<std::string>(boost::uuids::random_generator()())).size();
+  const uint32_t numKeysInBlock = blockSizeInBytes / keySizeInBytes;
+  uint32_t numBlocks = blobSizeInBytes / blockSizeInBytes;
+  if (blobSizeInBytes % blockSizeInBytes)
+    ++numBlocks;
+
+  const uint32_t treeLen = std::ceil(log(numKeysInBlock, numBlocks));
+  std::vector<std::string> currentKeys{key};
+  std::unordered_map<std::string, std::pair<uint32_t, std::string>> map;
+  // How about to use block class?
+  map[key] = {0, std::string(0, blockSizeInBytes)};
+
+  for (uint32_t i = 0; i < treeLen; ++i)
+  {
+    std::vector<std::string> nextLevelKeys = generateKeys(std::pow(numKeysInBlock, treeLen + 1));
+    uint32_t nextKeysIt = 0;
+    for (const auto& currentKey : currentKeys)
+    {
+      auto& block = map[currentKey];
+      for (uint32_t i = 0; i < numKeysInBlock; ++i, ++nextKeysIt)
+      {
+        const auto& nextKey = nextLevelKeys[nextKeysIt];
+        insertKey(block, nextKey);
+        map[nextKey] = {0, std::string(0, blockSizeInBytes)};
+      }
+      // insert [currentKey, block] into kv storage
+    }
+    // Clear old keys from map.
+    currentKeys = std::move(nextLevelKeys);
+  }
+
+  return true;
 }
 
 bool setAPIVersion()

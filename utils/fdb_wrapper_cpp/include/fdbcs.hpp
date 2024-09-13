@@ -21,6 +21,7 @@
 #include <iostream>
 #include <thread>
 #include <memory>
+#include <vector>
 
 // https://apple.github.io/foundationdb/api-c.html
 // We have to define `FDB_API_VERSION` before include `fdb_c.h` header.
@@ -102,6 +103,22 @@ class DataBaseCreator
  public:
   // Creates a `FDBDataBase` from the given `clusterFilePath` (path to the cluster file).
   static std::shared_ptr<FDBDataBase> createDataBase(const std::string clusterFilePath);
+};
+
+class BlobHandler
+{
+  BlobHandler(std::unique_ptr<Transaction> tnx) : tnx_(std::move(tnx))
+  {
+  }
+
+  bool writeBlob(const ByteArray& key, const ByteArray& blobl);
+  std::pair<bool, ByteArray> readBlob(const ByteArray& key);
+
+ private:
+  std::vector<std::string> generateKeys(const uint32_t num);
+  inline float log(uint32_t base, uint32_t value);
+  std::unique_ptr<Transaction> tnx_;
+  const uint32_t blockSizeInBytes{10000};
 };
 
 bool setAPIVersion();

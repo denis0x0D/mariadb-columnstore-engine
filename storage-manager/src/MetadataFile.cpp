@@ -44,7 +44,7 @@
 #include <boost/uuid/uuid_io.hpp>
 #include <boost/uuid/random_generator.hpp>
 #include <unistd.h>
-#include "../fdb_wrapper_cpp/include/fdbcs.hpp"
+#include "fdbcs.hpp"
 
 #define max(x, y) (x > y ? x : y)
 #define min(x, y) (x < y ? x : y)
