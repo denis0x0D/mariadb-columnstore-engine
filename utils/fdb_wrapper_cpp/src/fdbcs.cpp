@@ -225,31 +225,42 @@ float BlobHandler::log(const uint32_t base, const uint32_t value)
   return std::log(value) / std::log(base);
 }
 
-void insertKey(std::pair<uint32_t, std::string>& block, const std::string& value)
+void BlobHandler::insertKey(std::pair<uint32_t, std::string>& block, const std::string& value)
 {
   block.second.insert(block.second.begin() + block.first, value.begin(), value.end());
   block.first += value.size();
 }
 
-bool BlobHandler::writeBlob(const ByteArray& key, const ByteArray& blob)
+void BlobHandler::insertData(std::pair<uint32_t, std::string>& block, const std::string& blob,
+                             const uint32_t offset)
+{
+  const uint32_t endOfBlob = std::min(offset + blockSizeInBytes_, (uint32_t)blob.size());
+  auto& dataBlock = block.second;
+  dataBlock.insert(dataBlock.begin() + block.first, blob.begin() + offset, blob.begin() + endOfBlob);
+}
+
+bool BlobHandler::writeBlob(std::unordered_map<std::string, std::pair<uint32_t, std::string>>& map,
+                            const ByteArray& key, const ByteArray& blob)
 {
   const uint32_t blobSizeInBytes = blob.size();
+  // FIXME: Make the size `constexpr`.
   const uint32_t keySizeInBytes =
       (boost::lexical_cast<std::string>(boost::uuids::random_generator()())).size();
-  const uint32_t numKeysInBlock = blockSizeInBytes / keySizeInBytes;
-  uint32_t numBlocks = blobSizeInBytes / blockSizeInBytes;
-  if (blobSizeInBytes % blockSizeInBytes)
+  const uint32_t numKeysInBlock = blockSizeInBytes_ / keySizeInBytes;
+  uint32_t numBlocks = blobSizeInBytes / blockSizeInBytes_;
+  if (blobSizeInBytes % blockSizeInBytes_)
     ++numBlocks;
 
   const uint32_t treeLen = std::ceil(log(numKeysInBlock, numBlocks));
   std::vector<std::string> currentKeys{key};
-  std::unordered_map<std::string, std::pair<uint32_t, std::string>> map;
+  // std::unordered_map<std::string, std::pair<uint32_t, std::string>> map;
   // How about to use block class?
-  map[key] = {0, std::string(0, blockSizeInBytes)};
+  map[key] = {0, std::string(blockSizeInBytes_, 0)};
 
-  for (uint32_t i = 0; i < treeLen; ++i)
+  for (uint32_t currentLevel = 0; currentLevel < treeLen; ++currentLevel)
   {
-    std::vector<std::string> nextLevelKeys = generateKeys(std::pow(numKeysInBlock, treeLen + 1));
+    const auto nextLevel = currentLevel + 1;
+    std::vector<std::string> nextLevelKeys = generateKeys(std::pow(numKeysInBlock, nextLevel));
     uint32_t nextKeysIt = 0;
     for (const auto& currentKey : currentKeys)
     {
@@ -258,7 +269,12 @@ bool BlobHandler::writeBlob(const ByteArray& key, const ByteArray& blob)
       {
         const auto& nextKey = nextLevelKeys[nextKeysIt];
         insertKey(block, nextKey);
-        map[nextKey] = {0, std::string(0, blockSizeInBytes)};
+        if (nextLevel == treeLen)
+          // Data block
+          map[nextKey] = {0, std::string(blockSizeInBytes_, 0)};
+        else
+          // Key block
+          map[nextKey] = {0, std::string(blockSizeInBytes_, 0)};
       }
       // insert [currentKey, block] into kv storage
     }
@@ -266,7 +282,70 @@ bool BlobHandler::writeBlob(const ByteArray& key, const ByteArray& blob)
     currentKeys = std::move(nextLevelKeys);
   }
 
+  uint32_t offset = 0;
+  for (uint32_t i = 0; i < numBlocks; ++i)
+  {
+    auto& block = map[currentKeys[i]];
+    insertData(block, blob, offset);
+    offset += blockSizeInBytes_;
+  }
+
   return true;
+}
+
+std::vector<std::string> BlobHandler::getKeysFromBlock(const std::pair<uint32_t, std::string>& block,
+                                                       const uint32_t keySize)
+{
+  std::vector<std::string> keys;
+  const auto& blockData = block.second;
+  const uint32_t numKeysInBlock = blockSizeInBytes_ / keySize;
+  if (blockData.size() != blockSizeInBytes_)
+    return {""};
+
+  uint32_t offset = 2;
+  for (uint32_t i = 0; i < numKeysInBlock; ++i)
+  {
+    std::string key(blockData.begin() + offset, blockData.begin() + offset + keySize);
+    keys.push_back(std::move(key));
+    offset += keySize;
+  }
+
+  return keys;
+}
+
+std::pair<bool, std::string> BlobHandler::readBlob(
+    std::unordered_map<std::string, std::pair<uint32_t, std::string>>& map, ByteArray& key)
+{
+  const uint32_t keySizeInBytes =
+      (boost::lexical_cast<std::string>(boost::uuids::random_generator()())).size();
+
+  std::vector<std::string> currentKeys{key};
+  while (currentKeys.size())
+  {
+    std::vector<std::pair<uint32_t, std::string>> blocks;
+    for (const auto& key : currentKeys)
+      blocks.push_back(map[key]);
+    // is block data?
+    if (blocks.front().second[0] == 'B')
+      break;
+
+    std::vector<std::string> nextKeys;
+    for (const auto& block : blocks)
+    {
+      auto keys = getKeysFromBlock(block, keySizeInBytes);
+      nextKeys.insert(nextKeys.end(), keys.begin(), keys.end());
+    }
+    currentKeys = std::move(nextKeys);
+  }
+
+  std::string blob;
+  for (const auto& key : currentKeys)
+  {
+    auto& dataBlock = map[key].second;
+    blob.insert(blob.end(), dataBlock.begin() + 2, dataBlock.end());
+  }
+
+  return {true, blob};
 }
 
 bool setAPIVersion()

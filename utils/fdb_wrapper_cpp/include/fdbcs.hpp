@@ -22,6 +22,7 @@
 #include <thread>
 #include <memory>
 #include <vector>
+#include <unordered_map>
 
 // https://apple.github.io/foundationdb/api-c.html
 // We have to define `FDB_API_VERSION` before include `fdb_c.h` header.
@@ -105,20 +106,38 @@ class DataBaseCreator
   static std::shared_ptr<FDBDataBase> createDataBase(const std::string clusterFilePath);
 };
 
+class Block
+{
+  virtual ~Block() = 0;
+  virtual void append(const std::string& data) = 0;
+
+ protected:
+  std::string data_;
+  uint32_t offset_{0};
+};
+
 class BlobHandler
 {
-  BlobHandler(std::unique_ptr<Transaction> tnx) : tnx_(std::move(tnx))
+  BlobHandler(std::unique_ptr<Transaction> tnx, uint32_t blockSizeInBytes = 10000)
+   : tnx_(std::move(tnx)), blockSizeInBytes_(blockSizeInBytes)
   {
   }
 
-  bool writeBlob(const ByteArray& key, const ByteArray& blobl);
-  std::pair<bool, ByteArray> readBlob(const ByteArray& key);
+  bool writeBlob(std::unordered_map<std::string, std::pair<uint32_t, std::string>>& map, const ByteArray& key,
+                 const ByteArray& blobl);
+  std::pair<bool, std::string> readBlob(
+      std::unordered_map<std::string, std::pair<uint32_t, std::string>>& map, ByteArray& key);
 
  private:
+  void insertData(std::pair<uint32_t, std::string>& block, const std::string& blob, const uint32_t offset);
+  void insertKey(std::pair<uint32_t, std::string>& block, const std::string& value);
+  std::vector<std::string> getKeysFromBlock(const std::pair<uint32_t, std::string>& block,
+                                            const uint32_t keySize);
+
   std::vector<std::string> generateKeys(const uint32_t num);
   inline float log(uint32_t base, uint32_t value);
   std::unique_ptr<Transaction> tnx_;
-  const uint32_t blockSizeInBytes{10000};
+  uint32_t blockSizeInBytes_;
 };
 
 bool setAPIVersion();
