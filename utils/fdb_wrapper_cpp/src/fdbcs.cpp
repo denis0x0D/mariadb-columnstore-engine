@@ -227,7 +227,17 @@ float BlobHandler::log(const uint32_t base, const uint32_t value)
 
 void BlobHandler::insertKey(std::pair<uint32_t, std::string>& block, const std::string& value)
 {
+  if (!block.first)
+  {
+    block.second.reserve(blockSizeInBytes_);
+    block.second.push_back('K');
+    block.first += 1;
+  }
+
+  std::cout << "key block before " << block.second.size() << std::endl;
   block.second.insert(block.second.begin() + block.first, value.begin(), value.end());
+  std::cout << "key block e " << block.second.size() << std::endl;
+
   block.first += value.size();
 }
 
@@ -236,7 +246,9 @@ void BlobHandler::insertData(std::pair<uint32_t, std::string>& block, const std:
 {
   const uint32_t endOfBlob = std::min(offset + blockSizeInBytes_, (uint32_t)blob.size());
   auto& dataBlock = block.second;
-  dataBlock.insert(dataBlock.begin() + block.first, blob.begin() + offset, blob.begin() + endOfBlob);
+  dataBlock.reserve(blockSizeInBytes_);
+  dataBlock.push_back('D');
+  dataBlock.insert(dataBlock.begin() + block.first + 1, blob.begin() + offset, blob.begin() + endOfBlob);
 }
 
 bool BlobHandler::writeBlob(std::unordered_map<std::string, std::pair<uint32_t, std::string>>& map,
@@ -251,11 +263,14 @@ bool BlobHandler::writeBlob(std::unordered_map<std::string, std::pair<uint32_t, 
   if (blobSizeInBytes % blockSizeInBytes_)
     ++numBlocks;
 
+  std::cout << "Key size " << keySizeInBytes << std::endl;
+  std::cout << "num keys in block " << numKeysInBlock << std::endl;
+
   const uint32_t treeLen = std::ceil(log(numKeysInBlock, numBlocks));
   std::vector<std::string> currentKeys{key};
   // std::unordered_map<std::string, std::pair<uint32_t, std::string>> map;
   // How about to use block class?
-  map[key] = {0, std::string(blockSizeInBytes_, 0)};
+  map[key] = {0, std::string()};
 
   for (uint32_t currentLevel = 0; currentLevel < treeLen; ++currentLevel)
   {
@@ -269,13 +284,9 @@ bool BlobHandler::writeBlob(std::unordered_map<std::string, std::pair<uint32_t, 
       {
         const auto& nextKey = nextLevelKeys[nextKeysIt];
         insertKey(block, nextKey);
-        if (nextLevel == treeLen)
-          // Data block
-          map[nextKey] = {0, std::string(blockSizeInBytes_, 0)};
-        else
-          // Key block
-          map[nextKey] = {0, std::string(blockSizeInBytes_, 0)};
+        map[nextKey] = {0, std::string()};
       }
+      std::cout << "block size after keys inserted " << block.second.size() << std::endl;
       // insert [currentKey, block] into kv storage
     }
     // Clear old keys from map.
@@ -293,24 +304,31 @@ bool BlobHandler::writeBlob(std::unordered_map<std::string, std::pair<uint32_t, 
   return true;
 }
 
-std::vector<std::string> BlobHandler::getKeysFromBlock(const std::pair<uint32_t, std::string>& block,
-                                                       const uint32_t keySize)
+std::pair<bool, std::vector<std::string>> BlobHandler::getKeysFromBlock(
+    const std::pair<uint32_t, std::string>& block, const uint32_t keySize)
 {
   std::vector<std::string> keys;
   const auto& blockData = block.second;
+  std::cout << "blockData size " << blockData.size() << std::endl;
+  std::cout << "block size in bytes " << blockSizeInBytes_ << std::endl;
   const uint32_t numKeysInBlock = blockSizeInBytes_ / keySize;
-  if (blockData.size() != blockSizeInBytes_)
-    return {""};
+  if (blockData.size() > blockSizeInBytes_)
+  {
+    // std::cout << blockData << std::endl;
+    return {false, {""}};
+  }
 
-  uint32_t offset = 2;
+  std::cout << "num keys in block " << numKeysInBlock << std::endl;
+  uint32_t offset = 1;
   for (uint32_t i = 0; i < numKeysInBlock; ++i)
   {
     std::string key(blockData.begin() + offset, blockData.begin() + offset + keySize);
+    std::cout << key << std::endl;
     keys.push_back(std::move(key));
     offset += keySize;
   }
 
-  return keys;
+  return {true, keys};
 }
 
 std::pair<bool, std::string> BlobHandler::readBlob(
@@ -326,23 +344,31 @@ std::pair<bool, std::string> BlobHandler::readBlob(
     for (const auto& key : currentKeys)
       blocks.push_back(map[key]);
     // is block data?
-    if (blocks.front().second[0] == 'B')
+    if (blocks.front().second[0] == 'D')
       break;
 
     std::vector<std::string> nextKeys;
     for (const auto& block : blocks)
     {
-      auto keys = getKeysFromBlock(block, keySizeInBytes);
+      auto p = getKeysFromBlock(block, keySizeInBytes);
+      if (!p.first)
+      {
+        return {false, ""};
+      }
+      auto& keys = p.second;
       nextKeys.insert(nextKeys.end(), keys.begin(), keys.end());
     }
     currentKeys = std::move(nextKeys);
   }
 
+  std::cout << "keys for data " << currentKeys.size() << std::endl;
   std::string blob;
   for (const auto& key : currentKeys)
   {
     auto& dataBlock = map[key].second;
-    blob.insert(blob.end(), dataBlock.begin() + 2, dataBlock.end());
+    if (!dataBlock.size())
+      break;
+    blob.insert(blob.end(), dataBlock.begin() + 1, dataBlock.end());
   }
 
   return {true, blob};

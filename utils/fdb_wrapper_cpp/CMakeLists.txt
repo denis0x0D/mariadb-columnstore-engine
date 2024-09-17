@@ -13,12 +13,22 @@ add_executable(test_fdb_api test/test_fdb_api.cpp)
 add_dependencies(test_fdb_api fdbcs)
 target_link_libraries(test_fdb_api fdbcs fdb_c)
 
+add_executable(test_blob_handler test/test_blob_handler.cpp)
+add_dependencies(test_blob_handler fdbcs)
+target_link_libraries(test_blob_handler fdbcs fdb_c)
+
+
 install(TARGETS fdbcs
   LIBRARY DESTINATION ${ENGINE_LIBDIR}
   COMPONENT columnstore-engine
 )
 
 install(TARGETS test_fdb_api
+    RUNTIME DESTINATION ${ENGINE_BINDIR}
+    COMPONENT columnstore-engine
+)
+
+install(TARGETS test_blob_handler
     RUNTIME DESTINATION ${ENGINE_BINDIR}
     COMPONENT columnstore-engine
 )
