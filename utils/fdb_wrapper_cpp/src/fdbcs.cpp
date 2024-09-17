@@ -234,10 +234,7 @@ void BlobHandler::insertKey(std::pair<uint32_t, std::string>& block, const std::
     block.first += 1;
   }
 
-  std::cout << "key block before " << block.second.size() << std::endl;
   block.second.insert(block.second.begin() + block.first, value.begin(), value.end());
-  std::cout << "key block e " << block.second.size() << std::endl;
-
   block.first += value.size();
 }
 
@@ -263,10 +260,8 @@ bool BlobHandler::writeBlob(std::unordered_map<std::string, std::pair<uint32_t, 
   if (blobSizeInBytes % blockSizeInBytes_)
     ++numBlocks;
 
-  std::cout << "Key size " << keySizeInBytes << std::endl;
-  std::cout << "num keys in block " << numKeysInBlock << std::endl;
-
   const uint32_t treeLen = std::ceil(log(numKeysInBlock, numBlocks));
+  std::cout << "Tree len " << treeLen << std::endl;
   std::vector<std::string> currentKeys{key};
   // std::unordered_map<std::string, std::pair<uint32_t, std::string>> map;
   // How about to use block class?
@@ -274,24 +269,31 @@ bool BlobHandler::writeBlob(std::unordered_map<std::string, std::pair<uint32_t, 
 
   for (uint32_t currentLevel = 0; currentLevel < treeLen; ++currentLevel)
   {
+    std::cout << "current level " << currentLevel << std::endl;
     const auto nextLevel = currentLevel + 1;
-    std::vector<std::string> nextLevelKeys = generateKeys(std::pow(numKeysInBlock, nextLevel));
+    const uint32_t nextLevelKeyNum = std::min((uint32_t)std::pow(numKeysInBlock, nextLevel), numBlocks);
+    std::cout << "next level key num " << nextLevelKeyNum << std::endl;
+    std::vector<std::string> nextLevelKeys = generateKeys(nextLevelKeyNum);
+    std::cout << "keys generated " << nextLevelKeys.size() << std::endl;
     uint32_t nextKeysIt = 0;
-    for (const auto& currentKey : currentKeys)
+    for (uint32_t i = 0, size = currentKeys.size(); i < size && nextKeysIt < nextLevelKeyNum; ++i)
     {
-      auto& block = map[currentKey];
-      for (uint32_t i = 0; i < numKeysInBlock; ++i, ++nextKeysIt)
+      auto& block = map[currentKeys[i]];
+      for (uint32_t j = 0; j < numKeysInBlock && nextKeysIt < nextLevelKeyNum; ++j, ++nextKeysIt)
       {
         const auto& nextKey = nextLevelKeys[nextKeysIt];
         insertKey(block, nextKey);
         map[nextKey] = {0, std::string()};
       }
-      std::cout << "block size after keys inserted " << block.second.size() << std::endl;
       // insert [currentKey, block] into kv storage
     }
+    std::cout << "next key it " << nextKeysIt << std::endl;
     // Clear old keys from map.
     currentKeys = std::move(nextLevelKeys);
   }
+
+  std::cout << "num blocks " << numBlocks << std::endl;
+  std::cout << "key size " << currentKeys.size() << std::endl;
 
   uint32_t offset = 0;
   for (uint32_t i = 0; i < numBlocks; ++i)
@@ -300,6 +302,7 @@ bool BlobHandler::writeBlob(std::unordered_map<std::string, std::pair<uint32_t, 
     insertData(block, blob, offset);
     offset += blockSizeInBytes_;
   }
+  std::cout << "offset " << offset << std::endl;
 
   return true;
 }
@@ -309,21 +312,14 @@ std::pair<bool, std::vector<std::string>> BlobHandler::getKeysFromBlock(
 {
   std::vector<std::string> keys;
   const auto& blockData = block.second;
-  std::cout << "blockData size " << blockData.size() << std::endl;
-  std::cout << "block size in bytes " << blockSizeInBytes_ << std::endl;
   const uint32_t numKeysInBlock = blockSizeInBytes_ / keySize;
   if (blockData.size() > blockSizeInBytes_)
-  {
-    // std::cout << blockData << std::endl;
     return {false, {""}};
-  }
 
-  std::cout << "num keys in block " << numKeysInBlock << std::endl;
   uint32_t offset = 1;
-  for (uint32_t i = 0; i < numKeysInBlock; ++i)
+  for (uint32_t i = 0; i < numKeysInBlock && offset + keySize <= blockData.size(); ++i)
   {
     std::string key(blockData.begin() + offset, blockData.begin() + offset + keySize);
-    std::cout << key << std::endl;
     keys.push_back(std::move(key));
     offset += keySize;
   }
@@ -337,9 +333,12 @@ std::pair<bool, std::string> BlobHandler::readBlob(
   const uint32_t keySizeInBytes =
       (boost::lexical_cast<std::string>(boost::uuids::random_generator()())).size();
 
+  uint32_t level = 0;
   std::vector<std::string> currentKeys{key};
   while (currentKeys.size())
   {
+    std::cout << "level " << level << std::endl;
+    std::cout << "key size " << currentKeys.size() << std::endl;
     std::vector<std::pair<uint32_t, std::string>> blocks;
     for (const auto& key : currentKeys)
       blocks.push_back(map[key]);
@@ -358,10 +357,12 @@ std::pair<bool, std::string> BlobHandler::readBlob(
       auto& keys = p.second;
       nextKeys.insert(nextKeys.end(), keys.begin(), keys.end());
     }
+    ++level;
     currentKeys = std::move(nextKeys);
   }
 
-  std::cout << "keys for data " << currentKeys.size() << std::endl;
+  std::cout << "keys size " << currentKeys.size() << std::endl;
+
   std::string blob;
   for (const auto& key : currentKeys)
   {
