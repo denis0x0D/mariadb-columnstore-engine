@@ -248,8 +248,8 @@ void BlobHandler::insertData(std::pair<uint32_t, std::string>& block, const std:
   dataBlock.insert(dataBlock.begin() + block.first + 1, blob.begin() + offset, blob.begin() + endOfBlob);
 }
 
-static uint32_t getNextLevelKeysNums(const uint32_t numKeysInBlock, const uint32_t nextLevel,
-                                     const uint32_t numBlocks, const uint32_t treeLen)
+uint32_t BlobHandler::getNextLevelKeysNums(const uint32_t numKeysInBlock, const uint32_t nextLevel,
+                                           const uint32_t numBlocks, const uint32_t treeLen)
 {
   if (nextLevel + 1 == treeLen)
   {
@@ -262,9 +262,8 @@ static uint32_t getNextLevelKeysNums(const uint32_t numKeysInBlock, const uint32
   return std::min((uint32_t)std::pow(numKeysInBlock, nextLevel), numBlocks);
 }
 
-bool BlobHandler::writeBlob(std::shared_ptr<FDBCS::FDBDataBase> dataBase,
-                            std::unordered_map<std::string, std::pair<uint32_t, std::string>>& map,
-                            const ByteArray& key, const ByteArray& blob)
+bool BlobHandler::writeBlob(std::shared_ptr<FDBCS::FDBDataBase> dataBase, const ByteArray& key,
+                            const ByteArray& blob)
 {
   const uint32_t blobSizeInBytes = blob.size();
   // FIXME: Make the size `constexpr`.
@@ -279,7 +278,7 @@ bool BlobHandler::writeBlob(std::shared_ptr<FDBCS::FDBDataBase> dataBase,
   std::cout << "Tree len " << treeLen << std::endl;
   std::vector<std::string> currentKeys{key};
 
-  // std::unordered_map<std::string, std::pair<uint32_t, std::string>> map;
+  std::unordered_map<std::string, std::pair<uint32_t, std::string>> map;
   // How about to use block class?
   map[key] = {0, std::string()};
 
@@ -353,9 +352,8 @@ std::pair<bool, std::vector<std::string>> BlobHandler::getKeysFromBlock(
   return {true, keys};
 }
 
-std::pair<bool, std::string> BlobHandler::readBlob(
-    std::shared_ptr<FDBCS::FDBDataBase> database,
-    std::unordered_map<std::string, std::pair<uint32_t, std::string>>& map, ByteArray& key)
+std::pair<bool, std::string> BlobHandler::readBlob(std::shared_ptr<FDBCS::FDBDataBase> database,
+                                                   ByteArray& key)
 {
   const uint32_t keySizeInBytes =
       (boost::lexical_cast<std::string>(boost::uuids::random_generator()())).size();
@@ -404,9 +402,17 @@ std::pair<bool, std::string> BlobHandler::readBlob(
   std::string blob;
   for (const auto& key : currentKeys)
   {
-    auto& dataBlock = map[key].second;
+    auto tnx = database->createTransaction();
+    auto p = tnx->get(key);
+    if (!p.first)
+      std::cout << "block not found for key " << key << std::endl;
+
+    auto& dataBlock = p.second;
     if (!dataBlock.size())
+    {
+      std::cout << "block is empty" << std::endl;
       break;
+    }
     blob.insert(blob.end(), dataBlock.begin() + 1, dataBlock.end());
   }
 

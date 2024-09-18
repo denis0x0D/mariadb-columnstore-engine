@@ -119,31 +119,23 @@ class Block
 class BlobHandler
 {
  public:
-  BlobHandler(std::unique_ptr<Transaction> tnx, uint32_t blockSizeInBytes = 10000)
-   : tnx_(std::move(tnx)), blockSizeInBytes_(blockSizeInBytes)
-  {
-  }
-
   BlobHandler(uint32_t blockSizeInBytes = 10000) : blockSizeInBytes_(blockSizeInBytes)
   {
   }
 
-  bool writeBlob(std::shared_ptr<FDBCS::FDBDataBase> database,
-                 std::unordered_map<std::string, std::pair<uint32_t, std::string>>& map, const ByteArray& key,
-                 const ByteArray& blob);
-  std::pair<bool, std::string> readBlob(
-      std::shared_ptr<FDBCS::FDBDataBase> database,
-      std::unordered_map<std::string, std::pair<uint32_t, std::string>>& map, ByteArray& key);
+  bool writeBlob(std::shared_ptr<FDBCS::FDBDataBase> database, const ByteArray& key, const ByteArray& blob);
+  std::pair<bool, std::string> readBlob(std::shared_ptr<FDBCS::FDBDataBase> database, ByteArray& key);
 
  private:
   void insertData(std::pair<uint32_t, std::string>& block, const std::string& blob, const uint32_t offset);
   void insertKey(std::pair<uint32_t, std::string>& block, const std::string& value);
   std::pair<bool, std::vector<std::string>> getKeysFromBlock(const std::pair<uint32_t, std::string>& block,
                                                              const uint32_t keySize);
-
   std::vector<std::string> generateKeys(const uint32_t num);
+  uint32_t getNextLevelKeysNums(const uint32_t numKeysInBlock, const uint32_t nextLevel,
+                                const uint32_t numBlocks, const uint32_t treeLen);
+
   inline float log(uint32_t base, uint32_t value);
-  std::unique_ptr<Transaction> tnx_;
   uint32_t blockSizeInBytes_;
 };
 
