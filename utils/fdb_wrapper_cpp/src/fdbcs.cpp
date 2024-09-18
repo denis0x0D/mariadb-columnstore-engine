@@ -248,7 +248,8 @@ void BlobHandler::insertData(std::pair<uint32_t, std::string>& block, const std:
   dataBlock.insert(dataBlock.begin() + block.first + 1, blob.begin() + offset, blob.begin() + endOfBlob);
 }
 
-bool BlobHandler::writeBlob(std::unordered_map<std::string, std::pair<uint32_t, std::string>>& map,
+bool BlobHandler::writeBlob(std::shared_ptr<FDBCS::FDBDataBase> dataBase,
+                            std::unordered_map<std::string, std::pair<uint32_t, std::string>>& map,
                             const ByteArray& key, const ByteArray& blob)
 {
   const uint32_t blobSizeInBytes = blob.size();
@@ -263,6 +264,7 @@ bool BlobHandler::writeBlob(std::unordered_map<std::string, std::pair<uint32_t, 
   const uint32_t treeLen = std::ceil(log(numKeysInBlock, numBlocks));
   std::cout << "Tree len " << treeLen << std::endl;
   std::vector<std::string> currentKeys{key};
+
   // std::unordered_map<std::string, std::pair<uint32_t, std::string>> map;
   // How about to use block class?
   map[key] = {0, std::string()};
@@ -285,6 +287,10 @@ bool BlobHandler::writeBlob(std::unordered_map<std::string, std::pair<uint32_t, 
         insertKey(block, nextKey);
         map[nextKey] = {0, std::string()};
       }
+      std::cout << "set " << currentKeys[i] << std::endl;
+      auto tnx = dataBase->createTransaction();
+      tnx->set(currentKeys[i], block.second);
+      tnx->commit();
       // insert [currentKey, block] into kv storage
     }
     std::cout << "next key it " << nextKeysIt << std::endl;
@@ -296,20 +302,26 @@ bool BlobHandler::writeBlob(std::unordered_map<std::string, std::pair<uint32_t, 
   std::cout << "key size " << currentKeys.size() << std::endl;
 
   uint32_t offset = 0;
-  for (uint32_t i = 0; i < numBlocks; ++i)
+
+  for (uint32_t i = 0; i < numBlocks; ++i)  // numBlocks; ++i)
   {
+    auto tnx = dataBase->createTransaction();
     auto& block = map[currentKeys[i]];
     insertData(block, blob, offset);
+    std::cout << "set " << currentKeys[i] << std::endl;
+    tnx->set(currentKeys[i], block.second);
     offset += blockSizeInBytes_;
+    tnx->commit();
   }
-  std::cout << "offset " << offset << std::endl;
 
+  std::cout << "offset " << offset << std::endl;
   return true;
 }
 
 std::pair<bool, std::vector<std::string>> BlobHandler::getKeysFromBlock(
     const std::pair<uint32_t, std::string>& block, const uint32_t keySize)
 {
+  std::cout << "key from block :" << block.second << std::endl;
   std::vector<std::string> keys;
   const auto& blockData = block.second;
   const uint32_t numKeysInBlock = blockSizeInBytes_ / keySize;
@@ -328,6 +340,7 @@ std::pair<bool, std::vector<std::string>> BlobHandler::getKeysFromBlock(
 }
 
 std::pair<bool, std::string> BlobHandler::readBlob(
+    std::shared_ptr<FDBCS::FDBDataBase> database,
     std::unordered_map<std::string, std::pair<uint32_t, std::string>>& map, ByteArray& key)
 {
   const uint32_t keySizeInBytes =
@@ -341,7 +354,18 @@ std::pair<bool, std::string> BlobHandler::readBlob(
     std::cout << "key size " << currentKeys.size() << std::endl;
     std::vector<std::pair<uint32_t, std::string>> blocks;
     for (const auto& key : currentKeys)
-      blocks.push_back(map[key]);
+    {
+      auto tnx = database->createTransaction();
+      auto p = tnx->get(key);
+      if (!p.first)
+      {
+        std::cout << "key not found " << key << std::endl;
+        // return {false, ""};
+      }
+      std::cout << "key found " << key << std::endl;
+      std::cout << "value :" << p.second << std::endl;
+      blocks.push_back({0, p.second});
+    }
     // is block data?
     if (blocks.front().second[0] == 'D')
       break;

@@ -128,9 +128,11 @@ class BlobHandler
   {
   }
 
-  bool writeBlob(std::unordered_map<std::string, std::pair<uint32_t, std::string>>& map, const ByteArray& key,
+  bool writeBlob(std::shared_ptr<FDBCS::FDBDataBase> database,
+                 std::unordered_map<std::string, std::pair<uint32_t, std::string>>& map, const ByteArray& key,
                  const ByteArray& blob);
   std::pair<bool, std::string> readBlob(
+      std::shared_ptr<FDBCS::FDBDataBase> database,
       std::unordered_map<std::string, std::pair<uint32_t, std::string>>& map, ByteArray& key);
 
  private:
