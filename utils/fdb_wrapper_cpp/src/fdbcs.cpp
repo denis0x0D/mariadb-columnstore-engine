@@ -248,6 +248,20 @@ void BlobHandler::insertData(std::pair<uint32_t, std::string>& block, const std:
   dataBlock.insert(dataBlock.begin() + block.first + 1, blob.begin() + offset, blob.begin() + endOfBlob);
 }
 
+static uint32_t getNextLevelKeysNums(const uint32_t numKeysInBlock, const uint32_t nextLevel,
+                                     const uint32_t numBlocks, const uint32_t treeLen)
+{
+  if (nextLevel + 1 == treeLen)
+  {
+    auto keyNums = numBlocks / numKeysInBlock;
+    if (numBlocks % numKeysInBlock)
+      ++keyNums;
+    return keyNums;
+  }
+
+  return std::min((uint32_t)std::pow(numKeysInBlock, nextLevel), numBlocks);
+}
+
 bool BlobHandler::writeBlob(std::shared_ptr<FDBCS::FDBDataBase> dataBase,
                             std::unordered_map<std::string, std::pair<uint32_t, std::string>>& map,
                             const ByteArray& key, const ByteArray& blob)
@@ -273,7 +287,7 @@ bool BlobHandler::writeBlob(std::shared_ptr<FDBCS::FDBDataBase> dataBase,
   {
     std::cout << "current level " << currentLevel << std::endl;
     const auto nextLevel = currentLevel + 1;
-    const uint32_t nextLevelKeyNum = std::min((uint32_t)std::pow(numKeysInBlock, nextLevel), numBlocks);
+    const uint32_t nextLevelKeyNum = getNextLevelKeysNums(numKeysInBlock, nextLevel, numBlocks, treeLen);
     std::cout << "next level key num " << nextLevelKeyNum << std::endl;
     std::vector<std::string> nextLevelKeys = generateKeys(nextLevelKeyNum);
     std::cout << "keys generated " << nextLevelKeys.size() << std::endl;
