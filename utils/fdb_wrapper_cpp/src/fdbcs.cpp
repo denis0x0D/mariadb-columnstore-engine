@@ -23,6 +23,7 @@
 #include <boost/uuid/uuid_io.hpp>
 #include <boost/uuid/random_generator.hpp>
 #include <boost/lexical_cast.hpp>
+#include <chrono>
 #include "fdbcs.hpp"
 
 namespace FDBCS
@@ -210,9 +211,9 @@ std::shared_ptr<FDBDataBase> DataBaseCreator::createDataBase(const std::string c
   return std::make_shared<FDBDataBase>(database);
 }
 
-std::vector<std::string> BlobHandler::generateKeys(const uint32_t num)
+Keys BlobHandler::generateKeys(const uint32_t num)
 {
-  std::vector<std::string> keys;
+  Keys keys;
   keys.reserve(num);
   for (uint32_t i = 0; i < num; ++i)
     keys.push_back(boost::lexical_cast<std::string>(boost::uuids::random_generator()()));
@@ -220,16 +221,18 @@ std::vector<std::string> BlobHandler::generateKeys(const uint32_t num)
   return keys;
 }
 
+// FIXME: Put it to util?
 float BlobHandler::log(const uint32_t base, const uint32_t value)
 {
   return std::log(value) / std::log(base);
 }
 
-void BlobHandler::insertKey(std::pair<uint32_t, std::string>& block, const std::string& value)
+void BlobHandler::insertKey(Block& block, const std::string& value)
 {
   if (!block.first)
   {
     block.second.reserve(blockSizeInBytes_);
+    // TODO: How about better identifier for the key block and for the data block?
     block.second.push_back('K');
     block.first += 1;
   }
@@ -238,166 +241,133 @@ void BlobHandler::insertKey(std::pair<uint32_t, std::string>& block, const std::
   block.first += value.size();
 }
 
-void BlobHandler::insertData(std::pair<uint32_t, std::string>& block, const std::string& blob,
-                             const uint32_t offset)
+void BlobHandler::insertData(Block& block, const std::string& blob, const uint32_t offset)
 {
   const uint32_t endOfBlob = std::min(offset + blockSizeInBytes_, (uint32_t)blob.size());
+  // Data block does not have any identifier, this code assumes we use `boost::uid` generator.
   auto& dataBlock = block.second;
   dataBlock.reserve(blockSizeInBytes_);
-  dataBlock.push_back('D');
-  dataBlock.insert(dataBlock.begin() + block.first + 1, blob.begin() + offset, blob.begin() + endOfBlob);
+  dataBlock.insert(dataBlock.begin() + block.first, blob.begin() + offset, blob.begin() + endOfBlob);
 }
 
-uint32_t BlobHandler::getNextLevelKeysNums(const uint32_t numKeysInBlock, const uint32_t nextLevel,
-                                           const uint32_t numBlocks, const uint32_t treeLen)
+uint32_t BlobHandler::getNextLevelKeysNums(const uint32_t nextLevel, const uint32_t numBlocks,
+                                           const uint32_t treeLen)
 {
   if (nextLevel + 1 == treeLen)
   {
-    auto keyNums = numBlocks / numKeysInBlock;
-    if (numBlocks % numKeysInBlock)
+    auto keyNums = numBlocks / numKeysInBlock_;
+    if (numBlocks % numKeysInBlock_)
       ++keyNums;
     return keyNums;
   }
 
-  return std::min((uint32_t)std::pow(numKeysInBlock, nextLevel), numBlocks);
+  return std::min((uint32_t)std::pow(numKeysInBlock_, nextLevel), numBlocks);
 }
 
 bool BlobHandler::writeBlob(std::shared_ptr<FDBCS::FDBDataBase> dataBase, const ByteArray& key,
                             const ByteArray& blob)
 {
-  const uint32_t blobSizeInBytes = blob.size();
-  // FIXME: Make the size `constexpr`.
-  const uint32_t keySizeInBytes =
-      (boost::lexical_cast<std::string>(boost::uuids::random_generator()())).size();
-  const uint32_t numKeysInBlock = blockSizeInBytes_ / keySizeInBytes;
+  const size_t blobSizeInBytes = blob.size();
   uint32_t numBlocks = blobSizeInBytes / blockSizeInBytes_;
   if (blobSizeInBytes % blockSizeInBytes_)
     ++numBlocks;
 
-  const uint32_t treeLen = std::ceil(log(numKeysInBlock, numBlocks));
-  std::cout << "Tree len " << treeLen << std::endl;
-  std::vector<std::string> currentKeys{key};
+  const uint32_t treeLen = std::ceil(log(numKeysInBlock_, numBlocks));
+  Keys currentKeys{key};
 
-  std::unordered_map<std::string, std::pair<uint32_t, std::string>> map;
-  // How about to use block class?
+  std::unordered_map<std::string, Block> map;
   map[key] = {0, std::string()};
 
   for (uint32_t currentLevel = 0; currentLevel < treeLen; ++currentLevel)
   {
-    std::cout << "current level " << currentLevel << std::endl;
     const auto nextLevel = currentLevel + 1;
-    const uint32_t nextLevelKeyNum = getNextLevelKeysNums(numKeysInBlock, nextLevel, numBlocks, treeLen);
-    std::cout << "next level key num " << nextLevelKeyNum << std::endl;
-    std::vector<std::string> nextLevelKeys = generateKeys(nextLevelKeyNum);
-    std::cout << "keys generated " << nextLevelKeys.size() << std::endl;
+    const uint32_t nextLevelKeyNum = getNextLevelKeysNums(nextLevel, numBlocks, treeLen);
+    auto nextLevelKeys = generateKeys(nextLevelKeyNum);
     uint32_t nextKeysIt = 0;
     for (uint32_t i = 0, size = currentKeys.size(); i < size && nextKeysIt < nextLevelKeyNum; ++i)
     {
       auto& block = map[currentKeys[i]];
-      for (uint32_t j = 0; j < numKeysInBlock && nextKeysIt < nextLevelKeyNum; ++j, ++nextKeysIt)
+      for (uint32_t j = 0; j < numKeysInBlock_ && nextKeysIt < nextLevelKeyNum; ++j, ++nextKeysIt)
       {
         const auto& nextKey = nextLevelKeys[nextKeysIt];
         insertKey(block, nextKey);
         map[nextKey] = {0, std::string()};
       }
-      std::cout << "set " << currentKeys[i] << std::endl;
       auto tnx = dataBase->createTransaction();
       tnx->set(currentKeys[i], block.second);
       tnx->commit();
-      // insert [currentKey, block] into kv storage
     }
-    std::cout << "next key it " << nextKeysIt << std::endl;
-    // Clear old keys from map.
     currentKeys = std::move(nextLevelKeys);
   }
 
-  std::cout << "num blocks " << numBlocks << std::endl;
-  std::cout << "key size " << currentKeys.size() << std::endl;
-
   uint32_t offset = 0;
-
-  for (uint32_t i = 0; i < numBlocks; ++i)  // numBlocks; ++i)
+  for (uint32_t i = 0; i < numBlocks; ++i)
   {
     auto tnx = dataBase->createTransaction();
     auto& block = map[currentKeys[i]];
     insertData(block, blob, offset);
-    std::cout << "set " << currentKeys[i] << std::endl;
     tnx->set(currentKeys[i], block.second);
     offset += blockSizeInBytes_;
     tnx->commit();
   }
-
-  std::cout << "offset " << offset << std::endl;
   return true;
 }
 
-std::pair<bool, std::vector<std::string>> BlobHandler::getKeysFromBlock(
-    const std::pair<uint32_t, std::string>& block, const uint32_t keySize)
+std::pair<bool, Keys> BlobHandler::getKeysFromBlock(const Block& block)
 {
-  std::cout << "key from block :" << block.second << std::endl;
-  std::vector<std::string> keys;
+  Keys keys;
   const auto& blockData = block.second;
-  const uint32_t numKeysInBlock = blockSizeInBytes_ / keySize;
   if (blockData.size() > blockSizeInBytes_)
     return {false, {""}};
 
   uint32_t offset = 1;
-  for (uint32_t i = 0; i < numKeysInBlock && offset + keySize <= blockData.size(); ++i)
+  for (uint32_t i = 0; i < numKeysInBlock_ && offset + keySizeInBytes_ <= blockData.size(); ++i)
   {
-    std::string key(blockData.begin() + offset, blockData.begin() + offset + keySize);
+    Key key(blockData.begin() + offset, blockData.begin() + offset + keySizeInBytes_);
     keys.push_back(std::move(key));
-    offset += keySize;
+    offset += keySizeInBytes_;
   }
 
   return {true, keys};
 }
 
+bool BlobHandler::isDataBlock(const Block& block)
+{
+  return block.second[0] != 'K';
+}
+
 std::pair<bool, std::string> BlobHandler::readBlob(std::shared_ptr<FDBCS::FDBDataBase> database,
                                                    ByteArray& key)
 {
-  const uint32_t keySizeInBytes =
-      (boost::lexical_cast<std::string>(boost::uuids::random_generator()())).size();
-
   uint32_t level = 0;
-  std::vector<std::string> currentKeys{key};
+  Keys currentKeys{key};
   while (currentKeys.size())
   {
-    std::cout << "level " << level << std::endl;
-    std::cout << "key size " << currentKeys.size() << std::endl;
-    std::vector<std::pair<uint32_t, std::string>> blocks;
+    std::vector<Block> blocks;
     for (const auto& key : currentKeys)
     {
       auto tnx = database->createTransaction();
       auto p = tnx->get(key);
       if (!p.first)
-      {
-        std::cout << "key not found " << key << std::endl;
-        // return {false, ""};
-      }
-      std::cout << "key found " << key << std::endl;
-      std::cout << "value :" << p.second << std::endl;
+        return {false, ""};
       blocks.push_back({0, p.second});
     }
-    // is block data?
-    if (blocks.front().second[0] == 'D')
+    if (isDataBlock(blocks.front()))
       break;
 
-    std::vector<std::string> nextKeys;
+    Keys nextKeys;
     for (const auto& block : blocks)
     {
-      auto p = getKeysFromBlock(block, keySizeInBytes);
+      auto p = getKeysFromBlock(block);
       if (!p.first)
-      {
         return {false, ""};
-      }
+
       auto& keys = p.second;
       nextKeys.insert(nextKeys.end(), keys.begin(), keys.end());
     }
     ++level;
     currentKeys = std::move(nextKeys);
   }
-
-  std::cout << "keys size " << currentKeys.size() << std::endl;
 
   std::string blob;
   for (const auto& key : currentKeys)
@@ -413,7 +383,7 @@ std::pair<bool, std::string> BlobHandler::readBlob(std::shared_ptr<FDBCS::FDBDat
       std::cout << "block is empty" << std::endl;
       break;
     }
-    blob.insert(blob.end(), dataBlock.begin() + 1, dataBlock.end());
+    blob.insert(blob.end(), dataBlock.begin(), dataBlock.end());
   }
 
   return {true, blob};
