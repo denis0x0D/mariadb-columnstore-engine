@@ -114,14 +114,30 @@ using Block = std::pair<uint32_t, std::string>;
 using Key = std::string;
 using Keys = std::vector<Key>;
 
+class KeyGenerator
+{
+ public:
+  virtual ~KeyGenerator()
+  {
+  }
+  virtual Key generateKey() = 0;
+  virtual uint32_t getKeySize() = 0;
+};
+
+class BoostUIDKeyGenerator : public KeyGenerator
+{
+ public:
+  Key generateKey() override;
+  uint32_t getKeySize() override;
+};
+
 class BlobHandler
 {
  public:
-  BlobHandler(uint32_t blockSizeInBytes = 10000) : blockSizeInBytes_(blockSizeInBytes)
+  BlobHandler(std::shared_ptr<KeyGenerator> keyGen, uint32_t blockSizeInBytes = 10000)
+   : keyGen_(keyGen), blockSizeInBytes_(blockSizeInBytes)
   {
-    // We can actually apply an abstract class which will represent a `keyGenerator` and a special instance of
-    // this class will be a `boost::uid` key generator.
-    keySizeInBytes_ = (boost::lexical_cast<std::string>(boost::uuids::random_generator()())).size();
+    keySizeInBytes_ = keyGen_->getKeySize();
     numKeysInBlock_ = blockSizeInBytes_ / keySizeInBytes_;
   }
 
@@ -135,11 +151,19 @@ class BlobHandler
   Keys generateKeys(const uint32_t num);
   uint32_t getNextLevelKeysNums(const uint32_t nextLevel, const uint32_t numBlocks, const uint32_t treeLen);
   bool isDataBlock(const Block& block);
+  bool commitKeys(std::shared_ptr<FDBCS::FDBDataBase> database, std::unordered_map<Key, Block>& map,
+                  const Keys& keys);
+  bool commitKey(std::shared_ptr<FDBCS::FDBDataBase> database, const Key& key, const ByteArray& value);
 
   inline float log(uint32_t base, uint32_t value);
+
+  std::shared_ptr<KeyGenerator> keyGen_;
   uint32_t blockSizeInBytes_;
   uint32_t keySizeInBytes_;
   uint32_t numKeysInBlock_;
+  // FIXME: Doc says that 10MB is limit, currently taking in account `key` size and `value` size, but 10MB
+  // limit returns error on transaction.
+  const uint32_t maxTnxSize_{9500000};
 };
 
 bool setAPIVersion();
