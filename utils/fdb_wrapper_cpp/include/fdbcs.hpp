@@ -134,15 +134,20 @@ class BoostUIDKeyGenerator : public KeyGenerator
 class BlobHandler
 {
  public:
-  BlobHandler(std::shared_ptr<KeyGenerator> keyGen, uint32_t blockSizeInBytes = 10000)
+  BlobHandler(std::shared_ptr<KeyGenerator> keyGen, uint32_t blockSizeInBytes = 100000)
    : keyGen_(keyGen), blockSizeInBytes_(blockSizeInBytes)
   {
+    // Block size in 100KB shows the best performance.
+    assert(keySizeInBytes_);
+    assert(blockSizeInBytes_);
     keySizeInBytes_ = keyGen_->getKeySize();
-    numKeysInBlock_ = blockSizeInBytes_ / keySizeInBytes_;
+    assert((keySizeInBytes_ + keyBlockIdentifier.size()) <= blockSizeInBytes_);
+    numKeysInBlock_ = (blockSizeInBytes_ - keyBlockIdentifier.size()) / keySizeInBytes_;
   }
 
   bool writeBlob(std::shared_ptr<FDBCS::FDBDataBase> database, const ByteArray& key, const ByteArray& blob);
   std::pair<bool, std::string> readBlob(std::shared_ptr<FDBCS::FDBDataBase> database, ByteArray& key);
+  bool removeBlob(std::shared_ptr<FDBCS::FDBDataBase> database, ByteArray& key);
 
  private:
   void insertData(Block& block, const std::string& blob, const uint32_t offset);
@@ -154,7 +159,8 @@ class BlobHandler
   bool commitKeys(std::shared_ptr<FDBCS::FDBDataBase> database, std::unordered_map<Key, Block>& map,
                   const Keys& keys);
   bool commitKey(std::shared_ptr<FDBCS::FDBDataBase> database, const Key& key, const ByteArray& value);
-
+  bool removeKeys(std::shared_ptr<FDBCS::FDBDataBase> database, Keys& keys);
+  std::unordered_map<uint32_t, uint32_t> computeNumKeysForEachTreeLevel(int32_t treeLen, uint32_t numBlocks);
   inline float log(uint32_t base, uint32_t value);
 
   std::shared_ptr<KeyGenerator> keyGen_;
@@ -163,7 +169,8 @@ class BlobHandler
   uint32_t numKeysInBlock_;
   // FIXME: Doc says that 10MB is limit, currently taking in account `key` size and `value` size, but 10MB
   // limit returns error on transaction.
-  const uint32_t maxTnxSize_{9500000};
+  const uint32_t maxTnxSize_{8192000};
+  const std::string keyBlockIdentifier{"K"};
 };
 
 bool setAPIVersion();
