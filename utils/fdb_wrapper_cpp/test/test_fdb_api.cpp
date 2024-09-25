@@ -25,6 +25,8 @@ using std::chrono::duration_cast;
 using std::chrono::high_resolution_clock;
 using std::chrono::milliseconds;
 
+// #define TEST_PERF
+
 template <typename T>
 static void assert_internal(const T& value, const std::string& errMessage)
 {
@@ -48,38 +50,51 @@ static std::string generateBlob(const uint32_t len)
 
 static void testBlobHandler(std::shared_ptr<FDBCS::FDBDataBase> db)
 {
-  // std::vector<uint32_t> blobSizes{0, 1, 11, 101, 1001, 10001, 100001, 1000001, 10000001, 100000001};
-  std::vector<uint32_t> blobSizes{1000001};
-  std::vector<uint32_t> blockSizes{100};  // , 10000, 100000};
+#ifdef TEST_PERF
+  std::vector<uint32_t> blobSizes{0, 1, 11, 101, 1001, 10001, 100001, 1000001, 10000001, 100000001};
+  std::vector<uint32_t> blockSizes{10000, 100000};
+#else
+  std::vector<uint32_t> blobSizes{0, 1, 10001, 100001, 10000001, 100000001};
+  std::vector<uint32_t> blockSizes{100000};
+#endif
 
   for (auto blobSize : blobSizes)
   {
     for (auto blockSize : blockSizes)
     {
-      cout << "Blob size: " << blobSize << endl;
       std::string rootKey = "root";
       auto blobA = generateBlob(blobSize);
       std::shared_ptr<BoostUIDKeyGenerator> gen = std::make_shared<BoostUIDKeyGenerator>();
       BlobHandler handler(gen, blockSize);
+#ifdef TEST_PERF
       auto t1 = high_resolution_clock::now();
+#endif
       handler.writeBlob(db, rootKey, blobA);
+#ifdef TEST_PERF
       auto t2 = high_resolution_clock::now();
       auto ms_int = duration_cast<milliseconds>(t2 - t1);
       std::cout << "Write blob time: " << ms_int.count() << std::endl;
       t1 = high_resolution_clock::now();
+#endif
       auto p = handler.readBlob(db, rootKey);
+#ifdef TEST_PERF
       t2 = high_resolution_clock::now();
       cout << "size readed " << p.second.size() << endl;
+#endif
       assert_internal(p.second == blobA, "Blobs not equal");
+#ifdef TEST_PERF
       ms_int = duration_cast<milliseconds>(t2 - t1);
       std::cout << "Read blob time: " << ms_int.count() << std::endl;
       t1 = high_resolution_clock::now();
+#endif
       assert_internal(handler.removeBlob(db, rootKey), "Remove blob error");
+#ifdef TEST_PERF
       t2 = high_resolution_clock::now();
       ms_int = duration_cast<milliseconds>(t2 - t1);
       std::cout << "Remove blob time: " << ms_int.count() << std::endl;
-      // p = handler.readBlob(db, rootKey);
-      // assert_internal(!p.first, "Blob present after remove");
+#endif
+      p = handler.readBlob(db, rootKey);
+      assert_internal(!p.first, "Blob present after remove");
     }
   }
 }

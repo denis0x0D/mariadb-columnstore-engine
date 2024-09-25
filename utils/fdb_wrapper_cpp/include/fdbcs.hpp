@@ -154,7 +154,6 @@ class BlobHandler
   void insertKey(Block& block, const std::string& value);
   std::pair<bool, Keys> getKeysFromBlock(const Block& block);
   Keys generateKeys(const uint32_t num);
-  uint32_t getNextLevelKeysNums(const uint32_t nextLevel, const uint32_t numBlocks, const uint32_t treeLen);
   bool isDataBlock(const Block& block);
   bool commitKeys(std::shared_ptr<FDBCS::FDBDataBase> database, std::unordered_map<Key, Block>& map,
                   const Keys& keys);

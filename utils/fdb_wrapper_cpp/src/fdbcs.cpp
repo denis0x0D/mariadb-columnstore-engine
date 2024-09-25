@@ -254,10 +254,8 @@ void BlobHandler::insertKey(Block& block, const std::string& value)
   {
     block.second.reserve(blockSizeInBytes_);
     // TODO: How about better identifier for the key block and for the data block?
-    block.second.push_back('K');
-    block.first += 1;
-    // block.second.insert(block.second.end(), keyBlockIdentifier.begin(), keyBlockIdentifier.end());
-    // block.first += keyBlockIdentifier.size();
+    block.second.insert(block.second.end(), keyBlockIdentifier.begin(), keyBlockIdentifier.end());
+    block.first += keyBlockIdentifier.size();
   }
 
   block.second.insert(block.second.begin() + block.first, value.begin(), value.end());
@@ -271,15 +269,6 @@ void BlobHandler::insertData(Block& block, const std::string& blob, const uint32
   auto& dataBlock = block.second;
   dataBlock.reserve(blockSizeInBytes_);
   dataBlock.insert(dataBlock.begin() + block.first, blob.begin() + offset, blob.begin() + endOfBlob);
-}
-
-uint32_t BlobHandler::getNextLevelKeysNums(const uint32_t nextLevel, const uint32_t numBlocks,
-                                           const uint32_t treeLen)
-{
-  if (nextLevel + 1 == treeLen)
-    return (numBlocks + (numKeysInBlock_ - 1)) / numKeysInBlock_;
-
-  return std::min((uint32_t)std::pow(numKeysInBlock_, nextLevel), numBlocks);
 }
 
 bool BlobHandler::commitKeys(std::shared_ptr<FDBCS::FDBDataBase> dataBase,
@@ -333,8 +322,6 @@ bool BlobHandler::writeBlob(std::shared_ptr<FDBCS::FDBDataBase> dataBase, const 
   Keys currentKeys{key};
   auto numKeyLevelMap = computeNumKeysForEachTreeLevel(treeLen, numBlocks);
 
-  std::cout << "tree len " << treeLen << std::endl;
-
   std::unordered_map<Key, Block> map;
   map[key] = {0, std::string()};
   Keys keysInTnx;
@@ -355,19 +342,17 @@ bool BlobHandler::writeBlob(std::shared_ptr<FDBCS::FDBDataBase> dataBase, const 
         insertKey(block, nextKey);
         map[nextKey] = {0, std::string()};
       }
-      if (currentTnxSize + (currentKey.size() + block.second.size()) >= maxTnxSize_)
+      if (currentTnxSize + (keySizeInBytes_ + block.second.size()) >= maxTnxSize_)
       {
         RETURN_ON_ERROR(commitKeys(dataBase, map, keysInTnx));
         currentTnxSize = 0;
         keysInTnx.clear();
       }
-      currentTnxSize += block.second.size() + currentKey.size();
+      currentTnxSize += block.second.size() + keySizeInBytes_;
       keysInTnx.push_back(currentKey);
     }
     currentKeys = std::move(nextLevelKeys);
   }
-
-  std::cout << "num blocks " << numBlocks << std::endl;
 
   uint32_t offset = 0;
   for (uint32_t i = 0; i < numBlocks; ++i)
@@ -377,14 +362,14 @@ bool BlobHandler::writeBlob(std::shared_ptr<FDBCS::FDBDataBase> dataBase, const 
     insertData(block, blob, offset);
     offset += blockSizeInBytes_;
     commitKey(dataBase, currentKey, block.second);
-    if (currentTnxSize + (currentKey.size() + block.second.size()) >= maxTnxSize_)
+    if (currentTnxSize + (keySizeInBytes_ + block.second.size()) >= maxTnxSize_)
     {
       RETURN_ON_ERROR(commitKeys(dataBase, map, keysInTnx));
       currentTnxSize = 0;
       keysInTnx.clear();
     }
     keysInTnx.push_back(currentKey);
-    currentTnxSize += block.second.size() + currentKey.size();
+    currentTnxSize += block.second.size() + keySizeInBytes_;
   }
 
   if (currentTnxSize)
@@ -413,8 +398,7 @@ std::pair<bool, Keys> BlobHandler::getKeysFromBlock(const Block& block)
 
 bool BlobHandler::isDataBlock(const Block& block)
 {
-  return block.second[0] != 'K';
-  // return block.second.compare(0, keyBlockIdentifier.size(), keyBlockIdentifier) == 0;
+  return block.second.compare(0, keyBlockIdentifier.size(), keyBlockIdentifier) != 0;
 }
 
 std::pair<bool, std::string> BlobHandler::readBlob(std::shared_ptr<FDBCS::FDBDataBase> database,
@@ -435,12 +419,7 @@ std::pair<bool, std::string> BlobHandler::readBlob(std::shared_ptr<FDBCS::FDBDat
     {
       auto p = tnx->get(key);
       if (!p.first)
-      {
-        std::cout << "level: " << level << std::endl;
-        std::cout << "1 key not found " << key << std::endl;
-        continue;
-        // return {false, ""};
-      }
+        return {false, ""};
 
       Block block{0, p.second};
       if (isDataBlock(block))
@@ -459,10 +438,7 @@ std::pair<bool, std::string> BlobHandler::readBlob(std::shared_ptr<FDBCS::FDBDat
     {
       auto keysPair = getKeysFromBlock(block);
       if (!keysPair.first)
-      {
-        std::cout << "2 key not found " << key << std::endl;
         return {false, ""};
-      }
 
       auto& keys = keysPair.second;
       nextKeys.insert(nextKeys.end(), keys.begin(), keys.end());
@@ -480,10 +456,7 @@ std::pair<bool, std::string> BlobHandler::readBlob(std::shared_ptr<FDBCS::FDBDat
 
     auto resultPair = tnx->get(key);
     if (!resultPair.first)
-    {
-      std::cout << "2 key not found " << key << std::endl;
       return {false, ""};
-    }
 
     auto& dataBlock = resultPair.second;
     if (!dataBlock.size())
@@ -527,10 +500,7 @@ bool BlobHandler::removeBlob(std::shared_ptr<FDBCS::FDBDataBase> database, Key& 
     {
       auto p = tnx->get(key);
       if (!p.first)
-      {
-        std::cerr << "key not found " << key << std::endl;
         return false;
-      }
       blocks.push_back({0, p.second});
     }
 
@@ -542,10 +512,7 @@ bool BlobHandler::removeBlob(std::shared_ptr<FDBCS::FDBDataBase> database, Key& 
     {
       auto keysPair = getKeysFromBlock(block);
       if (!keysPair.first)
-      {
-        std::cerr << "key not found " << key << std::endl;
         return false;
-      }
 
       auto& keys = keysPair.second;
       nextKeys.insert(nextKeys.end(), keys.begin(), keys.end());
@@ -556,11 +523,7 @@ bool BlobHandler::removeBlob(std::shared_ptr<FDBCS::FDBDataBase> database, Key& 
   }
 
   for (uint32_t level = 0; level <= currentLevel; ++level)
-  {
-    auto err = (removeKeys(database, treeLevel[level]));
-    if (!err)
-      std::cout << "remove keys error " << std::endl;
-  }
+    RETURN_ON_ERROR(removeKeys(database, treeLevel[level]));
 
   return true;
 }
