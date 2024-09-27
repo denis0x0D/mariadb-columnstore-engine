@@ -44,7 +44,7 @@
 #include <boost/uuid/uuid_io.hpp>
 #include <boost/uuid/random_generator.hpp>
 #include <unistd.h>
-#include "../fdb_wrapper_cpp/include/fdbcs.hpp"
+#include "fdbcs.hpp"
 
 #define max(x, y) (x > y ? x : y)
 #define min(x, y) (x < y ? x : y)
@@ -137,13 +137,15 @@ MetadataFile::MetadataFile(const boost::filesystem::path& filename)
   if (!jsontree)
   {
     auto kvStorage = KVStorageInitializer::getStorageInstance();
-    auto tnx = kvStorage->createTransaction();
-    auto rPair = tnx->get(mFilename.string());
+    auto keyGen = std::make_shared<FDBCS::BoostUIDKeyGenerator>();
+    FDBCS::BlobHandler blobReader(keyGen);
+    auto rPair = blobReader.readBlob(kvStorage, mFilename.string());
     if (rPair.first)
     {
       jsontree.reset(new bpt::ptree());
       stringstream stream(rPair.second);
       boost::property_tree::read_json(stream, *jsontree);
+      std::cout << stream.str() << std::endl;
       jsonCache.put(mFilename, jsontree);
       s.unlock();
       mVersion = 1;
@@ -182,14 +184,16 @@ MetadataFile::MetadataFile(const boost::filesystem::path& filename, no_create_t,
   if (!jsontree)
   {
     auto kvStorage = KVStorageInitializer::getStorageInstance();
-    auto tnx = kvStorage->createTransaction();
-    auto rPair = tnx->get(mFilename.string());
+    auto keyGen = std::make_shared<FDBCS::BoostUIDKeyGenerator>();
+    FDBCS::BlobHandler blobReader(keyGen);
+    auto rPair = blobReader.readBlob(kvStorage, mFilename.string());
     if (rPair.first)
     {
       _exists = true;
       jsontree.reset(new bpt::ptree());
       stringstream stream(rPair.second);
       boost::property_tree::read_json(stream, *jsontree);
+      std::cout << stream.str() << std::endl;
       jsonCache.put(mFilename, jsontree);
       s.unlock();
       mVersion = 1;
@@ -378,11 +382,12 @@ int MetadataFile::writeMetadata()
   }
   {
     auto kvStorage = KVStorageInitializer::getStorageInstance();
-    auto tnx = kvStorage->createTransaction();
+    auto keyGen = std::make_shared<FDBCS::BoostUIDKeyGenerator>();
+    FDBCS::BlobHandler blobWriter(keyGen);
     stringstream stream;
     write_json(stream, *jsontree);
-    tnx->set(mFilename.string(), stream.str());
-    if (!tnx->commit())
+    std::cout << stream.str() << std::endl;
+    if (!blobWriter.writeBlob(kvStorage, mFilename.string(), stream.str()))
     {
       SMLogging::get()->log(LOG_CRIT, "Metadatafile: cannot commit tnx set().");
       throw runtime_error("Metadatafile: cannot commit tnx set().");

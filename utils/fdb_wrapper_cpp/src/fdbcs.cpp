@@ -402,7 +402,7 @@ bool BlobHandler::isDataBlock(const Block& block)
 }
 
 std::pair<bool, std::string> BlobHandler::readBlob(std::shared_ptr<FDBCS::FDBDataBase> database,
-                                                   ByteArray& key)
+                                                   const ByteArray& key)
 {
   Keys currentKeys{key};
   bool dataBlockReached = false;
@@ -468,7 +468,7 @@ std::pair<bool, std::string> BlobHandler::readBlob(std::shared_ptr<FDBCS::FDBDat
   return {true, blob};
 }
 
-bool BlobHandler::removeKeys(std::shared_ptr<FDBCS::FDBDataBase> database, Keys& keys)
+bool BlobHandler::removeKeys(std::shared_ptr<FDBCS::FDBDataBase> database, const Keys& keys)
 {
   for (const auto& key : keys)
   {
@@ -482,7 +482,7 @@ bool BlobHandler::removeKeys(std::shared_ptr<FDBCS::FDBDataBase> database, Keys&
   return true;
 }
 
-bool BlobHandler::removeBlob(std::shared_ptr<FDBCS::FDBDataBase> database, Key& key)
+bool BlobHandler::removeBlob(std::shared_ptr<FDBCS::FDBDataBase> database, const Key& key)
 {
   std::unordered_map<uint32_t, Keys> treeLevel;
   auto tnx = database->createTransaction();
