@@ -322,6 +322,8 @@ bool BlobHandler::writeBlob(std::shared_ptr<FDBCS::FDBDataBase> dataBase, const 
   Keys currentKeys{key};
   auto numKeyLevelMap = computeNumKeysForEachTreeLevel(treeLen, numBlocks);
 
+  std::cout << "TREE LEN " << treeLen << std::endl;
+
   std::unordered_map<Key, Block> map;
   map[key] = {0, std::string()};
   Keys keysInTnx;
