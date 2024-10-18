@@ -43,7 +43,8 @@ class Replicator
     LOCAL_ONLY = 0x1,
     NO_LOCAL = 0x2
   };
-
+  int addJournalEntry_(const boost::filesystem::path& filename, const uint8_t* data, off_t offset,
+                       size_t length);
   int addJournalEntry(const boost::filesystem::path& filename, const uint8_t* data, off_t offset,
                       size_t length);
   int newObject(const boost::filesystem::path& filename, const uint8_t* data, off_t offset, size_t length);

@@ -20,6 +20,8 @@
 #include "SMLogging.h"
 #include "Utilities.h"
 #include "Cache.h"
+#include "KVStorageInitializer.h"
+#include "fdbcs.hpp"
 #include <sys/types.h>
 #include <sys/stat.h>
 #include <fcntl.h>
@@ -121,9 +123,17 @@ void Replicator::printKPIs() const
 int Replicator::newObject(const boost::filesystem::path& filename, const uint8_t* data, off_t offset,
                           size_t length)
 {
-  int fd, err;
-  string objectFilename = msCachePath + "/" + filename.string();
+  const string objectFilename = msCachePath + "/" + filename.string();
+  auto kvStorage = KVStorageInitializer::getStorageInstance();
+  auto keyGen = std::make_shared<FDBCS::BoostUIDKeyGenerator>();
+  FDBCS::BlobHandler blobWriter(keyGen);
+  const std::string dataValue((char*)data);
+  if (!blobWriter.writeBlob(kvStorage, objectFilename, dataValue))
+  {
+    return -1;
+  }
 
+  int fd, err;
   OPEN(objectFilename.c_str(), O_WRONLY | O_CREAT);
   size_t count = 0;
   while (count < length)
@@ -147,6 +157,14 @@ int Replicator::newNullObject(const boost::filesystem::path& filename, size_t le
 {
   int fd, err;
   string objectFilename = msCachePath + "/" + filename.string();
+  auto kvStorage = KVStorageInitializer::getStorageInstance();
+  auto keyGen = std::make_shared<FDBCS::BoostUIDKeyGenerator>();
+  FDBCS::BlobHandler blobWriter(keyGen);
+  const std::string emptyString(length, 0);
+  if (!blobWriter.writeBlob(kvStorage, objectFilename, emptyString))
+  {
+    return -1;
+  }
 
   OPEN(objectFilename.c_str(), O_WRONLY | O_CREAT);
   err = ftruncate(fd, length);
@@ -198,6 +216,101 @@ ssize_t Replicator::_write(int fd, const void* data, size_t length)
   return count;
 }
 
+int Replicator::addJournalEntry_(const boost::filesystem::path& filename, const uint8_t* data, off_t offset,
+                                 size_t length)
+{
+  uint64_t offlen[] = {(uint64_t)offset, length};
+  const int version = 1;
+  // TODO: Add prefix for the key.
+  const string journalFilename = msJournalPath + "/" + filename.string() + ".journal";
+  boost::filesystem::path firstDir = *((filename).begin());
+  const uint64_t thisEntryMaxOffset = (offset + length - 1);
+  string dataStr(thisEntryMaxOffset, 0);
+  size_t dataStrOffset = 0;
+
+  auto kvStorage = KVStorageInitializer::getStorageInstance();
+  auto keyGen = std::make_shared<FDBCS::BoostUIDKeyGenerator>();
+  FDBCS::BlobHandler blobReader(keyGen);
+  auto resultPair = blobReader.readBlob(kvStorage, journalFilename);
+  const std::string& journalData = resultPair.second;
+  if (!resultPair.first)
+  {
+    // create new journal file with header
+    string header = (boost::format("{ \"version\" : \"%03i\", \"max_offset\" : \"%011u\" }") % version %
+                     thisEntryMaxOffset)
+                        .str();
+    std::memcpy(&dataStr[dataStrOffset], header.c_str(), header.length());
+    dataStrOffset += header.length();
+    // Specifies the end of the header.
+    dataStr[dataStrOffset] = 0;
+    ++dataStrOffset;
+    repHeaderDataWritten += (header.length() + 1);
+    Cache::get()->newJournalEntry(firstDir, header.length() + 1);
+    ++replicatorJournalsCreated;
+  }
+  else
+  {
+    std::memcpy(&dataStr[dataStrOffset], &journalData[0], journalData.size());
+    dataStrOffset = journalData.size();
+    size_t tmp;
+    std::shared_ptr<char[]> headertxt;
+    try
+    {
+      headertxt = seekToEndOfHeader1_(dataStr, &tmp);
+    }
+    catch (std::runtime_error& e)
+    {
+      mpLogger->log(LOG_CRIT, "%s", e.what());
+      errno = EIO;
+      return -1;
+    }
+    catch (...)
+    {
+      mpLogger->log(LOG_CRIT, "Unknown exception caught during seekToEndOfHeader1.");
+      errno = EIO;
+      return -1;
+    }
+    stringstream ss;
+    ss << headertxt.get();
+    boost::property_tree::ptree header;
+    try
+    {
+      boost::property_tree::json_parser::read_json(ss, header);
+    }
+    catch (const boost::property_tree::json_parser::json_parser_error& e)
+    {
+      mpLogger->log(LOG_CRIT, "%s", e.what());
+      errno = EIO;
+      return -1;
+    }
+    catch (...)
+    {
+      mpLogger->log(LOG_CRIT, "Unknown exception caught during read_json.");
+      errno = EIO;
+      return -1;
+    }
+    assert(header.get<int>("version") == 1);
+    const uint64_t currentMaxOffset = header.get<uint64_t>("max_offset");
+    if (thisEntryMaxOffset > currentMaxOffset)
+    {
+      string header = (boost::format("{ \"version\" : \"%03i\", \"max_offset\" : \"%011u\" }") % version %
+                       thisEntryMaxOffset)
+                          .str();
+      std::memcpy(&dataStr[dataStrOffset], header.c_str(), header.length());
+      const uint32_t headerOffset = header.length();
+      dataStr[headerOffset] = 0;
+      repHeaderDataWritten += (header.length() + 1);
+    }
+  }
+
+  std::memcpy(&dataStr[dataStrOffset], offlen, JOURNAL_ENTRY_HEADER_SIZE);
+  dataStrOffset += JOURNAL_ENTRY_HEADER_SIZE;
+  repHeaderDataWritten += JOURNAL_ENTRY_HEADER_SIZE;
+  std::memcpy(&dataStr[dataStrOffset], data, length);
+  repUserDataWritten += length;
+  return length;
+}
+
 /* XXXPAT: I think we'll have to rewrite this function some; we'll have to at least clearly define
    what happens in the various error scenarios.
 
@@ -218,6 +331,7 @@ ssize_t Replicator::_write(int fd, const void* data, size_t length)
 int Replicator::addJournalEntry(const boost::filesystem::path& filename, const uint8_t* data, off_t offset,
                                 size_t length)
 {
+  std::cout << "add journal entry offset: " << offset << " len: " << length << std::endl;
   int fd, err;
   uint64_t offlen[] = {(uint64_t)offset, length};
   size_t count = 0;
@@ -236,6 +350,7 @@ int Replicator::addJournalEntry(const boost::filesystem::path& filename, const u
 
   if (!exists)
   {
+    cout << "new journal " << endl;
     bHeaderChanged = true;
     // create new journal file with header
     string header = (boost::format("{ \"version\" : \"%03i\", \"max_offset\" : \"%011u\" }") % version %
@@ -257,6 +372,7 @@ int Replicator::addJournalEntry(const boost::filesystem::path& filename, const u
   }
   else
   {
+    cout << "exists journal " << endl;
     // read the existing header and check if max_offset needs to be updated
     size_t tmp;
     std::shared_ptr<char[]> headertxt;
@@ -328,6 +444,7 @@ int Replicator::addJournalEntry(const boost::filesystem::path& filename, const u
   }
 
   off_t entryHeaderOffset = ::lseek(fd, 0, SEEK_END);
+  cout << "journal new write offset " << entryHeaderOffset << endl;
 
   err = _write(fd, offlen, JOURNAL_ENTRY_HEADER_SIZE);
   l_errno = errno;
