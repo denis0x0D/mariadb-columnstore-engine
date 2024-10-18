@@ -20,6 +20,7 @@
 #include "IOCoordinator.h"
 #include "MetadataFile.h"
 #include "Utilities.h"
+#include "KVStorageInitializer.h"
 #include <boost/thread/mutex.hpp>
 
 #include <sys/stat.h>
@@ -292,8 +293,8 @@ void Synchronizer::periodicSync()
       else
         ++flushesTriggeredByTimer;
     }
-    // cout << "Sync'ing " << pendingOps.size() << " objects" << " queue size is " <<
-    //    threadPool.currentQueueSize() << endl;
+    cout << "Sync'ing " << pendingOps.size() << " objects"
+         << " queue size is " << threadPool->currentQueueSize() << endl;
     for (auto& job : pendingOps)
       makeJob(job.first);
     for (auto it = uncommittedJournalSize.begin(); it != uncommittedJournalSize.end(); ++it)
@@ -575,6 +576,8 @@ void Synchronizer::synchronizeWithJournal(const string& sourceFile, list<string>
         cache->deletedObject(prefix, cloudKey, objSize);
         cs->deleteObject(cloudKey);
       }
+      // FIX THIS
+      cout << "META NOT FOUND " << endl;
       bf::path jPath = journalPath / (key + ".journal");
       if (bf::exists(jPath))
       {
@@ -605,43 +608,47 @@ void Synchronizer::synchronizeWithJournal(const string& sourceFile, list<string>
   // sync queue
 
   bf::path oldCachePath = cachePath / key;
-  string journalName = (journalPath / (key + ".journal")).string();
-
-  if (!bf::exists(journalName))
+  const string journalName = (journalPath / (key + ".journal")).string();
   {
-    logger->log(LOG_DEBUG, "synchronizeWithJournal(): no journal file found for %s", key.c_str());
-
-    // sanity check + add'l info.  Test whether the object exists in cloud storage.  If so, complain,
-    // and run synchronize() instead.
-    bool existsOnCloud;
-    int err = cs->exists(cloudKey, &existsOnCloud);
-    if (err)
-      throw runtime_error(string("Synchronizer: cs->exists() failed: ") + strerror_r(errno, buf, 80));
-    if (!existsOnCloud)
+    auto kvStorage = KVStorageInitializer::getStorageInstance();
+    auto tnx = kvStorage->createTransaction();
+    auto resultPair = tnx->get(journalName);
+    if (!resultPair.first)
     {
-      if (cache->exists(prefix, cloudKey))
+      logger->log(LOG_DEBUG, "synchronizeWithJournal(): no journal file found for %s", key.c_str());
+
+      // sanity check + add'l info.  Test whether the object exists in cloud storage.  If so, complain,
+      // and run synchronize() instead.
+      bool existsOnCloud;
+      int err = cs->exists(cloudKey, &existsOnCloud);
+      if (err)
+        throw runtime_error(string("Synchronizer: cs->exists() failed: ") + strerror_r(errno, buf, 80));
+      if (!existsOnCloud)
       {
-        logger->log(LOG_DEBUG,
-                    "synchronizeWithJournal(): %s has no journal and does not exist in the cloud, calling "
-                    "synchronize() instead.  Need to explain how this happens.",
-                    key.c_str());
-        s.unlock();
-        synchronize(sourceFile, lit);
+        if (cache->exists(prefix, cloudKey))
+        {
+          logger->log(LOG_DEBUG,
+                      "synchronizeWithJournal(): %s has no journal and does not exist in the cloud, calling "
+                      "synchronize() instead.  Need to explain how this happens.",
+                      key.c_str());
+          s.unlock();
+          synchronize(sourceFile, lit);
+        }
+        else
+          logger->log(LOG_DEBUG,
+                      "synchronizeWithJournal(): %s has no journal, and does not exist in the cloud or in "
+                      " the local cache.  Need to explain how this happens.",
+                      key.c_str());
+        return;
       }
       else
         logger->log(LOG_DEBUG,
-                    "synchronizeWithJournal(): %s has no journal, and does not exist in the cloud or in "
-                    " the local cache.  Need to explain how this happens.",
+                    "synchronizeWithJournal(): %s has no journal, but it does exist in the cloud. "
+                    " This indicates that an overlapping syncWithJournal() call handled it properly.",
                     key.c_str());
+
       return;
     }
-    else
-      logger->log(LOG_DEBUG,
-                  "synchronizeWithJournal(): %s has no journal, but it does exist in the cloud. "
-                  " This indicates that an overlapping syncWithJournal() call handled it properly.",
-                  key.c_str());
-
-    return;
   }
 
   int err;
@@ -649,7 +656,6 @@ void Synchronizer::synchronizeWithJournal(const string& sourceFile, list<string>
   size_t count = 0, size = mdEntry.length, originalSize = 0;
 
   bool oldObjIsCached = cache->exists(prefix, cloudKey);
-
   // get the base object if it is not already cached
   // merge it with its journal file
   if (!oldObjIsCached)
@@ -790,7 +796,7 @@ void Synchronizer::synchronizeWithJournal(const string& sourceFile, list<string>
   rename(key, newKey);
 
   // delete the old object & journal file
-  cache->deletedJournal(prefix, bf::file_size(journalName));
+  // cache->deletedJournal(prefix, bf::file_size(journalName));
   replicator->remove(journalName);
   cs->deleteObject(cloudKey);
 }
@@ -887,7 +893,7 @@ void Synchronizer::configListener()
   {
     maxUploads = 20;
     threadPool->setMaxThreads(maxUploads);
-    logger->log(LOG_INFO, "max_concurrent_uploads = %u",maxUploads);
+    logger->log(LOG_INFO, "max_concurrent_uploads = %u", maxUploads);
   }
   if (stmp.empty())
   {

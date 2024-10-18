@@ -16,6 +16,7 @@
    MA 02110-1301, USA. */
 
 #include "IOCoordinator.h"
+#include "KVStorageInitializer.h"
 #include "MetadataFile.h"
 #include "Synchronizer.h"
 #include <sys/types.h>
@@ -24,6 +25,7 @@
 #include <unistd.h>
 #include <stdlib.h>
 #include <errno.h>
+#include "cstring"
 #include <boost/filesystem.hpp>
 #define BOOST_SPIRIT_THREADSAFE
 #include <boost/property_tree/json_parser.hpp>
@@ -189,7 +191,8 @@ ssize_t IOCoordinator::read(const char* _filename, uint8_t* data, off_t offset, 
   }
 
   vector<metadataObject> relevants = meta.metadataRead(offset, length);
-  map<string, int> journalFDs, objectFDs;
+  map<string, int> objectFDs;
+  unordered_set<string> journalFDs;
   map<string, string> keyToJournalName, keyToObjectName;
   utils::VLArray<ScopedCloser> fdMinders(relevants.size() * 2);
   int mindersIndex = 0;
@@ -211,29 +214,23 @@ ssize_t IOCoordinator::read(const char* _filename, uint8_t* data, off_t offset, 
     // later.  not thinking about it for now.
 
     // open all of the journal files that exist
-    string jFilename = (journalPath / firstDir / (key + ".journal")).string();
-    int fd = ::open(jFilename.c_str(), O_RDONLY);
-    if (fd >= 0)
+    const string journal = (journalPath / firstDir / (key + ".journal")).string();
+    auto kvStorage = KVStorageInitializer::getStorageInstance();
+    auto tnx = kvStorage->createTransaction();
+    auto resultPairJournal = tnx->get(journal);
+    if (resultPairJournal.first)
     {
-      keyToJournalName[key] = jFilename;
-      journalFDs[key] = fd;
-      fdMinders[mindersIndex++].fd = fd;
+      keyToJournalName[key] = journal;
+      journalFDs.insert(key);
+      // fdMinders[mindersIndex++].fd = fd;
       // fdMinders.push_back(SharedCloser(fd));
     }
-    else if (errno != ENOENT)
-    {
-      int l_errno = errno;
-      fileLock.unlock();
-      cache->doneReading(firstDir, keys);
-      logger->log(LOG_CRIT, "IOCoordinator::read(): Got an unexpected error opening %s, error was '%s'",
-                  jFilename.c_str(), strerror_r(l_errno, buf, 80));
-      errno = l_errno;
-      return -1;
-    }
+    // else
+    // Journal already merged with object file.
 
     // open all of the objects
     string oFilename = (cachePath / firstDir / key).string();
-    fd = ::open(oFilename.c_str(), O_RDONLY);
+    auto fd = ::open(oFilename.c_str(), O_RDONLY);
     if (fd < 0)
     {
       int l_errno = errno;
@@ -1163,28 +1160,21 @@ const bf::path& IOCoordinator::getMetadataPath() const
 // first byte after the header.
 // update: had to make it also return the header; the boost json parser does not stop at either
 // a null char or the end of an object.
-std::shared_ptr<char[]> seekToEndOfHeader1(int fd, size_t* _bytesRead)
+std::shared_ptr<char[]> seekToEndOfHeader1_(const std::string& dataStr, size_t* _bytesRead)
 {
-  //::lseek(fd, 0, SEEK_SET);
-  std::shared_ptr<char[]> ret(new char[100]);
-  int err;
+  const size_t numBytesToRead = dataStr.size();
+  std::shared_ptr<char[]> ret(new char[numBytesToRead]);
+  std::memcpy(ret.get(), &dataStr[0], numBytesToRead);
 
-  err = ::read(fd, ret.get(), 100);
-  if (err < 0)
-  {
-    char buf[80];
-    throw runtime_error("seekToEndOfHeader1 got: " + string(strerror_r(errno, buf, 80)));
-  }
-  for (int i = 0; i < err; i++)
+  for (uint32_t i = 0; i < numBytesToRead; i++)
   {
     if (ret[i] == 0)
     {
-      ::lseek(fd, i + 1, SEEK_SET);
       *_bytesRead = i + 1;
       return ret;
     }
   }
-  throw runtime_error("seekToEndOfHeader1: did not find the end of the header");
+  throw runtime_error("seekToEndOfHeader1_: did not find the end of the header");
 }
 
 int IOCoordinator::mergeJournal(int objFD, int journalFD, uint8_t* buf, off_t offset, size_t* len) const
@@ -1195,7 +1185,7 @@ int IOCoordinator::mergeJournal(int objFD, int journalFD, uint8_t* buf, off_t of
 std::shared_ptr<uint8_t[]> IOCoordinator::mergeJournal(const char* object, const char* journal, off_t offset,
                                                        size_t len, size_t* _bytesReadOut) const
 {
-  int objFD, journalFD;
+  int objFD;
   std::shared_ptr<uint8_t[]> ret;
   size_t l_bytesRead = 0;
 
@@ -1208,7 +1198,6 @@ std::shared_ptr<uint8_t[]> IOCoordinator::mergeJournal(const char* object, const
   ScopedCloser s1(objFD);
 
   ret.reset(new uint8_t[len]);
-
   // read the object into memory
   size_t count = 0;
   if (offset != 0)
@@ -1249,29 +1238,34 @@ std::shared_ptr<uint8_t[]> IOCoordinator::mergeJournal(const char* object, const
     return ret;
   }
 
-  journalFD = ::open(journal, O_RDONLY);
-  if (journalFD < 0)
+  // Read journal.
+  auto keyGen = std::make_shared<FDBCS::BoostUIDKeyGenerator>();
+  FDBCS::BlobHandler journalReader(keyGen);
+  auto kvStorage = KVStorageInitializer::getStorageInstance();
+  auto resultPairJournal = journalReader.readBlob(kvStorage, journal);
+  if (!resultPairJournal.first)
   {
     *_bytesReadOut = l_bytesRead;
     return ret;
   }
-  ScopedCloser s2(journalFD);
 
-  std::shared_ptr<char[]> headertxt = seekToEndOfHeader1(journalFD, &l_bytesRead);
+  const std::string& journalData = resultPairJournal.second;
+  size_t journalOffset = 0;
+  std::shared_ptr<char[]> headertxt = seekToEndOfHeader1_(journalData, &journalOffset);
   stringstream ss;
   ss << headertxt.get();
   boost::property_tree::ptree header;
   boost::property_tree::json_parser::read_json(ss, header);
   assert(header.get<int>("version") == 1);
+  l_bytesRead += journalOffset;
+  const size_t journalSize = journalData.size();
 
   // start processing the entries
-  while (1)
+  while (journalOffset < journalSize)
   {
     uint64_t offlen[2];
-    int err = ::read(journalFD, &offlen, 16);
-    if (err == 0)  // got EOF
-      break;
-    assert(err == 16);
+    std::memcpy(&offlen, &journalData[journalOffset], 16);
+    journalOffset += 16;
     l_bytesRead += 16;
 
     // if this entry overlaps, read the overlapping section
@@ -1284,45 +1278,15 @@ std::shared_ptr<uint8_t[]> IOCoordinator::mergeJournal(const char* object, const
 
       // seek to the portion of the entry to start reading at
       if (startReadingAt != offlen[0])
-        ::lseek(journalFD, startReadingAt - offlen[0], SEEK_CUR);
-
-      uint count = 0;
-      while (count < lengthOfRead)
-      {
-        err = ::read(journalFD, &ret[startReadingAt - offset + count], lengthOfRead - count);
-        if (err < 0)
-        {
-          int l_errno = errno;
-          char buf[80];
-          logger->log(LOG_ERR, "mergeJournal: got %s", strerror_r(l_errno, buf, 80));
-          ret.reset();
-          errno = l_errno;
-          l_bytesRead += count;
-          goto out;
-        }
-        else if (err == 0)
-        {
-          logger->log(LOG_ERR,
-                      "mergeJournal: got early EOF. offset=%ld, len=%ld, jOffset=%ld, jLen=%ld,"
-                      " startReadingAt=%ld, lengthOfRead=%ld",
-                      offset, len, offlen[0], offlen[1], startReadingAt, lengthOfRead);
-          ret.reset();
-          l_bytesRead += count;
-          goto out;
-        }
-        count += err;
-      }
-      l_bytesRead += lengthOfRead;
-
-      // advance the file pos if we didn't read to the end of the entry
-      if (startReadingAt - offlen[0] + lengthOfRead != offlen[1])
-        ::lseek(journalFD, offlen[1] - (lengthOfRead + startReadingAt - offlen[0]), SEEK_CUR);
+        journalOffset += startReadingAt - offlen[0];
+      //::lseek(journalFD, startReadingAt - offlen[0], SEEK_CUR);
+      std::memcpy(&ret[startReadingAt - offset], &journalData[journalOffset], lengthOfRead);
+      journalOffset += lengthOfRead;
     }
     else
       // skip over this journal entry
-      ::lseek(journalFD, offlen[1], SEEK_CUR);
+      journalOffset += offlen[1];
   }
-out:
   *_bytesReadOut = l_bytesRead;
   return ret;
 }
@@ -1332,19 +1296,18 @@ out:
 int IOCoordinator::mergeJournalInMem(std::shared_ptr<uint8_t[]>& objData, size_t len, const char* journalPath,
                                      size_t* _bytesReadOut) const
 {
-  // if the journal is over some size threshold (100MB for now why not),
-  // use the original low-mem-usage version
-  if (len > (100 << 20))
-    return mergeJournalInMem_bigJ(objData, len, journalPath, _bytesReadOut);
-
   size_t l_bytesRead = 0;
-  int journalFD = ::open(journalPath, O_RDONLY);
-  if (journalFD < 0)
+  auto kvStorage = KVStorageInitializer::getStorageInstance();
+  auto keyGen = std::make_shared<FDBCS::BoostUIDKeyGenerator>();
+  FDBCS::BlobHandler blobReader(keyGen);
+  auto resultPair = blobReader.readBlob(kvStorage, journalPath);
+  if (!resultPair.first)
     return -1;
-  ScopedCloser s(journalFD);
 
+  const std::string& journalData = resultPair.second;
+  size_t journalOffset = 0;
   // grab the journal header and make sure the version is 1
-  std::shared_ptr<char[]> headertxt = seekToEndOfHeader1(journalFD, &l_bytesRead);
+  std::shared_ptr<char[]> headertxt = seekToEndOfHeader1_(journalData, &l_bytesRead);
   stringstream ss;
   ss << headertxt.get();
   boost::property_tree::ptree header;
@@ -1352,136 +1315,46 @@ int IOCoordinator::mergeJournalInMem(std::shared_ptr<uint8_t[]>& objData, size_t
   assert(header.get<int>("version") == 1);
 
   // read the journal file into memory
-  size_t journalBytes = ::lseek(journalFD, 0, SEEK_END) - l_bytesRead;
-  ::lseek(journalFD, l_bytesRead, SEEK_SET);
-  boost::scoped_array<uint8_t> journalData(new uint8_t[journalBytes]);
+  size_t journalBytes = journalData.size() - l_bytesRead;
+  journalOffset += l_bytesRead;
   size_t readCount = 0;
-  while (readCount < journalBytes)
-  {
-    ssize_t err = ::read(journalFD, &journalData[readCount], journalBytes - readCount);
-    if (err < 0)
-    {
-      char buf[80];
-      int l_errno = errno;
-      logger->log(LOG_ERR, "mergeJournalInMem: got %s", strerror_r(errno, buf, 80));
-      errno = l_errno;
-      return -1;
-    }
-    else if (err == 0)
-    {
-      logger->log(LOG_ERR, "mergeJournalInMem: got early EOF");
-      errno = ENODATA;  // is there a better errno for early EOF?
-      return -1;
-    }
-    readCount += err;
-    l_bytesRead += err;
-  }
+  readCount += journalBytes;
+  l_bytesRead += journalBytes;
+  const size_t journalSize = journalData.size();
 
   // start processing the entries
-  size_t offset = 0;
-  while (offset < journalBytes)
+  while (journalOffset < journalSize)
   {
-    if (offset + 16 >= journalBytes)
+    if (journalOffset + 16 >= journalSize)
     {
       logger->log(LOG_ERR, "mergeJournalInMem: got early EOF");
       errno = ENODATA;  // is there a better errno for early EOF?
       return -1;
     }
-    uint64_t* offlen = (uint64_t*)&journalData[offset];
-    offset += 16;
+    uint64_t* offlen = (uint64_t*)&journalData[journalOffset];
+    journalOffset += 16;
 
     uint64_t startReadingAt = offlen[0];
     uint64_t lengthOfRead = offlen[1];
-
-    if (startReadingAt > len)
-    {
-      offset += offlen[1];
-      continue;
-    }
-
-    if (startReadingAt + lengthOfRead > len)
-      lengthOfRead = len - startReadingAt;
-    if (offset + lengthOfRead > journalBytes)
-    {
-      logger->log(LOG_ERR, "mergeJournalInMem: got early EOF");
-      errno = ENODATA;  // is there a better errno for early EOF?
-      return -1;
-    }
-    memcpy(&objData[startReadingAt], &journalData[offset], lengthOfRead);
-    offset += offlen[1];
-  }
-  *_bytesReadOut = l_bytesRead;
-  return 0;
-}
-
-int IOCoordinator::mergeJournalInMem_bigJ(std::shared_ptr<uint8_t[]>& objData, size_t len,
-                                          const char* journalPath, size_t* _bytesReadOut) const
-{
-  size_t l_bytesRead = 0;
-  int journalFD = ::open(journalPath, O_RDONLY);
-  if (journalFD < 0)
-    return -1;
-  ScopedCloser s(journalFD);
-
-  // grab the journal header and make sure the version is 1
-  std::shared_ptr<char[]> headertxt = seekToEndOfHeader1(journalFD, &l_bytesRead);
-  stringstream ss;
-  ss << headertxt.get();
-  boost::property_tree::ptree header;
-  boost::property_tree::json_parser::read_json(ss, header);
-  assert(header.get<int>("version") == 1);
-
-  // start processing the entries
-  while (1)
-  {
-    uint64_t offlen[2];
-    int err = ::read(journalFD, &offlen, 16);
-    if (err == 0)  // got EOF
+    if (lengthOfRead == 0)
       break;
-    else if (err < 16)
-    {
-      // punting on this
-      cout << "mergeJournalInMem: failed to read a journal entry header in one attempt.  fixme..." << endl;
-      errno = ENODATA;
-      return -1;
-    }
-    l_bytesRead += 16;
-
-    uint64_t startReadingAt = offlen[0];
-    uint64_t lengthOfRead = offlen[1];
 
     if (startReadingAt > len)
     {
-      ::lseek(journalFD, offlen[1], SEEK_CUR);
+      journalOffset += offlen[1];
       continue;
     }
 
     if (startReadingAt + lengthOfRead > len)
       lengthOfRead = len - startReadingAt;
-
-    uint count = 0;
-    while (count < lengthOfRead)
+    if (journalOffset + lengthOfRead > journalSize)
     {
-      err = ::read(journalFD, &objData[startReadingAt + count], lengthOfRead - count);
-      if (err < 0)
-      {
-        char buf[80];
-        int l_errno = errno;
-        logger->log(LOG_ERR, "mergeJournalInMem: got %s", strerror_r(errno, buf, 80));
-        errno = l_errno;
-        return -1;
-      }
-      else if (err == 0)
-      {
-        logger->log(LOG_ERR, "mergeJournalInMem: got early EOF");
-        errno = ENODATA;  // is there a better errno for early EOF?
-        return -1;
-      }
-      count += err;
+      logger->log(LOG_ERR, "mergeJournalInMem: got early EOF");
+      errno = ENODATA;  // is there a better errno for early EOF?
+      return -1;
     }
-    l_bytesRead += lengthOfRead;
-    if (lengthOfRead < offlen[1])
-      ::lseek(journalFD, offlen[1] - lengthOfRead, SEEK_CUR);
+    std::memcpy(&objData[startReadingAt], &journalData[journalOffset], lengthOfRead);
+    journalOffset += offlen[1];
   }
   *_bytesReadOut = l_bytesRead;
   return 0;
