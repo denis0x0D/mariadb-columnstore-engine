@@ -38,6 +38,7 @@
 namespace storagemanager
 {
 std::shared_ptr<char[]> seekToEndOfHeader1(int fd, size_t* bytesRead);
+std::shared_ptr<char[]> seekToEndOfHeader1_(const std::string &dataStr, size_t* bytesRead);
 
 class IOCoordinator : public boost::noncopyable
 {

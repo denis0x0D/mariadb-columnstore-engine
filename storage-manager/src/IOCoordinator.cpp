@@ -24,6 +24,7 @@
 #include <unistd.h>
 #include <stdlib.h>
 #include <errno.h>
+#include "cstring"
 #include <boost/filesystem.hpp>
 #define BOOST_SPIRIT_THREADSAFE
 #include <boost/property_tree/json_parser.hpp>
@@ -1180,6 +1181,28 @@ std::shared_ptr<char[]> seekToEndOfHeader1(int fd, size_t* _bytesRead)
     if (ret[i] == 0)
     {
       ::lseek(fd, i + 1, SEEK_SET);
+      *_bytesRead = i + 1;
+      return ret;
+    }
+  }
+  throw runtime_error("seekToEndOfHeader1: did not find the end of the header");
+}
+
+std::shared_ptr<char[]> seekToEndOfHeader1_(const std::string& dataStr, size_t* _bytesRead)
+{
+  const uint32_t numBytesToRead = 100;
+  if (dataStr.size() < 100)
+  {
+    char buf[80];
+    throw runtime_error("seekToEndOfHeader1 got: " + string(strerror_r(errno, buf, 80)));
+  }
+  std::shared_ptr<char[]> ret(new char[numBytesToRead]);
+  std::memcpy(ret.get(), &dataStr[0], numBytesToRead);
+
+  for (uint32_t i = 0; i < numBytesToRead; i++)
+  {
+    if (ret[i] == 0)
+    {
       *_bytesRead = i + 1;
       return ret;
     }
