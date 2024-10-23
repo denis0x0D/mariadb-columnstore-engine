@@ -153,7 +153,7 @@ int IOCoordinator::loadObjectAndJournal(const char* objFilename, const char* jou
   std::shared_ptr<uint8_t[]> argh;
 
   size_t tmp = 0;
-  argh = mergeJournal(objFilename, journalFilename, offset, length, &tmp);
+  argh = mergeJournal_(objFilename, journalFilename, offset, length, &tmp);
   if (!argh)
     return -1;
   else
@@ -361,7 +361,7 @@ ssize_t IOCoordinator::_write(const boost::filesystem::path& filename, const uin
       }
       // cache->makeSpace(writeLength+JOURNAL_ENTRY_HEADER_SIZE);
 
-      err = replicator->addJournalEntry((firstDir / i->key), &data[count], objectOffset, writeLength);
+      err = replicator->addJournalEntry_((firstDir / i->key), &data[count], objectOffset, writeLength);
       // assert((uint) err == writeLength);
 
       if (err < 0)
@@ -424,8 +424,8 @@ ssize_t IOCoordinator::_write(const boost::filesystem::path& filename, const uin
         uint64_t nullJournalSize = (objectSize - lastObject.length);
         utils::VLArray<uint8_t, 4096> nullData(nullJournalSize);
         memset(nullData, 0, nullJournalSize);
-        err = replicator->addJournalEntry((firstDir / lastObject.key), nullData.data(), lastObject.length,
-                                          nullJournalSize);
+        err = replicator->addJournalEntry_((firstDir / lastObject.key), nullData.data(), lastObject.length,
+                                           nullJournalSize);
         if (err < 0)
         {
           l_errno = errno;
@@ -602,7 +602,7 @@ ssize_t IOCoordinator::append(const char* _filename, const uint8_t* data, size_t
 
       // cache->makeSpace(writeLength+JOURNAL_ENTRY_HEADER_SIZE);
 
-      err = replicator->addJournalEntry((firstDir / i->key), &data[count], i->length, writeLength);
+      err = replicator->addJournalEntry_((firstDir / i->key), &data[count], i->length, writeLength);
       // assert((uint) err == writeLength);
       if (err < 0)
       {
@@ -1219,6 +1219,7 @@ int IOCoordinator::mergeJournal(int objFD, int journalFD, uint8_t* buf, off_t of
 std::shared_ptr<uint8_t[]> IOCoordinator::mergeJournal_(const char* object, const char* journal, off_t offset,
                                                         size_t len, size_t* _bytesReadOut) const
 {
+  std::cout << "merge journal offset " << offset << " len " << len  << endl;
   int objFD;
   std::shared_ptr<uint8_t[]> ret;
   size_t l_bytesRead = 0;
@@ -1389,7 +1390,7 @@ std::shared_ptr<uint8_t[]> IOCoordinator::mergeJournal(const char* object, const
     return ret;
   }
   ScopedCloser s2(journalFD);
-  //std::cout << "mergeJournal in file " << std::endl;
+  // std::cout << "mergeJournal in file " << std::endl;
 
   std::shared_ptr<char[]> headertxt = seekToEndOfHeader1(journalFD, &l_bytesRead);
   stringstream ss;
@@ -1416,8 +1417,8 @@ std::shared_ptr<uint8_t[]> IOCoordinator::mergeJournal(const char* object, const
     {
       cout << "found merge iteration " << it++ << endl;
 
-      //cout << "journal offset " << offlen[0] << endl;
-      //cout << "journal len " << offlen[0] << endl;
+      // cout << "journal offset " << offlen[0] << endl;
+      // cout << "journal len " << offlen[0] << endl;
       cout << "original offset " << offset << endl;
       cout << "original len " << len << endl;
       uint64_t startReadingAt = max(offlen[0], (uint64_t)offset);
@@ -1430,7 +1431,7 @@ std::shared_ptr<uint8_t[]> IOCoordinator::mergeJournal(const char* object, const
       uint count = 0;
       while (count < lengthOfRead)
       {
-        //std::cout << "start reading at " << startReadingAt << " offset " << offset << endl;
+        // std::cout << "start reading at " << startReadingAt << " offset " << offset << endl;
         err = ::read(journalFD, &ret[startReadingAt - offset + count], lengthOfRead - count);
         if (err < 0)
         {
@@ -1477,6 +1478,7 @@ out:
 int IOCoordinator::mergeJournalInMem_(std::shared_ptr<uint8_t[]>& objData, size_t len,
                                       const char* journalPath, size_t* _bytesReadOut) const
 {
+  std::cout << "merge journal in mem len " << len << endl;
   size_t l_bytesRead = 0;
   auto kvStorage = KVStorageInitializer::getStorageInstance();
   auto keyGen = std::make_shared<FDBCS::BoostUIDKeyGenerator>();
@@ -1484,6 +1486,9 @@ int IOCoordinator::mergeJournalInMem_(std::shared_ptr<uint8_t[]>& objData, size_
   auto resultPair = blobReader.readBlob(kvStorage, journalPath);
   if (!resultPair.first)
     return -1;
+
+
+  cout << "read journal " << journalPath << endl;
 
   const std::string& journalData = resultPair.second;
   size_t journalOffset = 0;
@@ -1502,6 +1507,9 @@ int IOCoordinator::mergeJournalInMem_(std::shared_ptr<uint8_t[]>& objData, size_
   readCount += journalBytes;
   l_bytesRead += journalBytes;
 
+  cout << "start to copy journal " << endl;
+  cout << "journal size " << journalData.size() << endl;
+  cout << "journal bytes " << journalBytes << endl;
   // start processing the entries
   while (journalOffset < journalBytes)
   {
@@ -1522,6 +1530,9 @@ int IOCoordinator::mergeJournalInMem_(std::shared_ptr<uint8_t[]>& objData, size_
       journalOffset += offlen[1];
       continue;
     }
+    if (lengthOfRead == 0)
+      break;
+    cout << "lenght of read " << lengthOfRead << endl;
 
     if (startReadingAt + lengthOfRead > len)
       lengthOfRead = len - startReadingAt;
@@ -1534,6 +1545,7 @@ int IOCoordinator::mergeJournalInMem_(std::shared_ptr<uint8_t[]>& objData, size_
     std::memcpy(&objData[startReadingAt], &journalData[journalOffset], lengthOfRead);
     journalOffset += offlen[1];
   }
+  cout << "end of copy journal " << endl;
   *_bytesReadOut = l_bytesRead;
   return 0;
 }

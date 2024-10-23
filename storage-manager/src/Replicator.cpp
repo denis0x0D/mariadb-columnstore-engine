@@ -219,28 +219,33 @@ ssize_t Replicator::_write(int fd, const void* data, size_t length)
 int Replicator::addJournalEntry_(const boost::filesystem::path& filename, const uint8_t* data, off_t offset,
                                  size_t length)
 {
+  std::cout << "addJournalEntry " << offset << " " << length << endl;
   uint64_t offlen[] = {(uint64_t)offset, length};
   const int version = 1;
   // TODO: Add prefix for the key.
   const string journalFilename = msJournalPath + "/" + filename.string() + ".journal";
   boost::filesystem::path firstDir = *((filename).begin());
   const uint64_t thisEntryMaxOffset = (offset + length - 1);
-  string dataStr(thisEntryMaxOffset, 0);
+  string dataStr(length + 200, 0);
   size_t dataStrOffset = 0;
 
   auto kvStorage = KVStorageInitializer::getStorageInstance();
   auto keyGen = std::make_shared<FDBCS::BoostUIDKeyGenerator>();
-  FDBCS::BlobHandler blobReader(keyGen);
-  auto resultPair = blobReader.readBlob(kvStorage, journalFilename);
+  FDBCS::BlobHandler journalHandler(keyGen);
+  auto resultPair = journalHandler.readBlob(kvStorage, journalFilename);
   const std::string& journalData = resultPair.second;
-  if (!resultPair.first)
+  const bool journalExists = resultPair.first;
+
+  if (!journalExists)
   {
     // create new journal file with header
     string header = (boost::format("{ \"version\" : \"%03i\", \"max_offset\" : \"%011u\" }") % version %
                      thisEntryMaxOffset)
                         .str();
+    cout << "header sizie " << header.size() << endl;
     std::memcpy(&dataStr[dataStrOffset], header.c_str(), header.length());
     dataStrOffset += header.length();
+    cout << "data str offset " << dataStrOffset << endl;
     // Specifies the end of the header.
     dataStr[dataStrOffset] = 0;
     ++dataStrOffset;
@@ -307,6 +312,24 @@ int Replicator::addJournalEntry_(const boost::filesystem::path& filename, const 
   dataStrOffset += JOURNAL_ENTRY_HEADER_SIZE;
   repHeaderDataWritten += JOURNAL_ENTRY_HEADER_SIZE;
   std::memcpy(&dataStr[dataStrOffset], data, length);
+  dataStrOffset += length;
+  dataStr.resize(dataStrOffset);
+
+  if (journalExists && !journalHandler.removeBlob(kvStorage, journalFilename))
+  {
+    mpLogger->log(LOG_CRIT, "Cannot remove journal blob.");
+    errno = EIO;
+    return -1;
+  }
+
+  if (!journalHandler.writeBlob(kvStorage, journalFilename, dataStr))
+  {
+    mpLogger->log(LOG_CRIT, "Cannot write journal blob.");
+    errno = EIO;
+    return -1;
+  }
+  cout << "write journal " << journalFilename << " with size " << dataStr.size() << endl;
+
   repUserDataWritten += length;
   return length;
 }
