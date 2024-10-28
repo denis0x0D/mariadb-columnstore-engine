@@ -219,14 +219,14 @@ ssize_t Replicator::_write(int fd, const void* data, size_t length)
 int Replicator::addJournalEntry_(const boost::filesystem::path& filename, const uint8_t* data, off_t offset,
                                  size_t length)
 {
-  std::cout << "addJournalEntry " << offset << " " << length << endl;
+  std::cout << "start add journal " << filename.string() << std::endl;
   uint64_t offlen[] = {(uint64_t)offset, length};
   const int version = 1;
   // TODO: Add prefix for the key.
   const string journalFilename = msJournalPath + "/" + filename.string() + ".journal";
   boost::filesystem::path firstDir = *((filename).begin());
   const uint64_t thisEntryMaxOffset = (offset + length - 1);
-  string dataStr(length + 200, 0);
+  string dataStr(length + 5000000, 0);
   size_t dataStrOffset = 0;
 
   auto kvStorage = KVStorageInitializer::getStorageInstance();
@@ -242,10 +242,8 @@ int Replicator::addJournalEntry_(const boost::filesystem::path& filename, const 
     string header = (boost::format("{ \"version\" : \"%03i\", \"max_offset\" : \"%011u\" }") % version %
                      thisEntryMaxOffset)
                         .str();
-    cout << "header sizie " << header.size() << endl;
     std::memcpy(&dataStr[dataStrOffset], header.c_str(), header.length());
     dataStrOffset += header.length();
-    cout << "data str offset " << dataStrOffset << endl;
     // Specifies the end of the header.
     dataStr[dataStrOffset] = 0;
     ++dataStrOffset;
@@ -296,6 +294,7 @@ int Replicator::addJournalEntry_(const boost::filesystem::path& filename, const 
     }
     assert(header.get<int>("version") == 1);
     const uint64_t currentMaxOffset = header.get<uint64_t>("max_offset");
+
     if (thisEntryMaxOffset > currentMaxOffset)
     {
       string header = (boost::format("{ \"version\" : \"%03i\", \"max_offset\" : \"%011u\" }") % version %
@@ -328,7 +327,7 @@ int Replicator::addJournalEntry_(const boost::filesystem::path& filename, const 
     errno = EIO;
     return -1;
   }
-  cout << "write journal " << journalFilename << " with size " << dataStr.size() << endl;
+  std::cout << "end add journal " << filename.string() << std::endl;
 
   repUserDataWritten += length;
   return length;
@@ -354,7 +353,6 @@ int Replicator::addJournalEntry_(const boost::filesystem::path& filename, const 
 int Replicator::addJournalEntry(const boost::filesystem::path& filename, const uint8_t* data, off_t offset,
                                 size_t length)
 {
-  std::cout << "add journal entry offset: " << offset << " len: " << length << std::endl;
   int fd, err;
   uint64_t offlen[] = {(uint64_t)offset, length};
   size_t count = 0;

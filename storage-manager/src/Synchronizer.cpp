@@ -577,6 +577,8 @@ void Synchronizer::synchronizeWithJournal(const string& sourceFile, list<string>
         cache->deletedObject(prefix, cloudKey, objSize);
         cs->deleteObject(cloudKey);
       }
+      // FIX THIS
+      cout << "META NOT FOUND " << endl;
       bf::path jPath = journalPath / (key + ".journal");
       if (bf::exists(jPath))
       {
@@ -796,7 +798,7 @@ void Synchronizer::synchronizeWithJournal(const string& sourceFile, list<string>
   rename(key, newKey);
 
   // delete the old object & journal file
-  cache->deletedJournal(prefix, bf::file_size(journalName));
+  //cache->deletedJournal(prefix, bf::file_size(journalName));
   replicator->remove(journalName);
   cs->deleteObject(cloudKey);
 }
