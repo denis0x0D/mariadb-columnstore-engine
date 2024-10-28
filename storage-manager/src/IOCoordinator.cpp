@@ -191,7 +191,8 @@ ssize_t IOCoordinator::read(const char* _filename, uint8_t* data, off_t offset, 
   }
 
   vector<metadataObject> relevants = meta.metadataRead(offset, length);
-  map<string, int> journalFDs, objectFDs;
+  map<string, int> objectFDs;
+  unordered_set<string> journalFDs;
   map<string, string> keyToJournalName, keyToObjectName;
   utils::VLArray<ScopedCloser> fdMinders(relevants.size() * 2);
   int mindersIndex = 0;
@@ -213,13 +214,15 @@ ssize_t IOCoordinator::read(const char* _filename, uint8_t* data, off_t offset, 
     // later.  not thinking about it for now.
 
     // open all of the journal files that exist
-    string jFilename = (journalPath / firstDir / (key + ".journal")).string();
-    int fd = ::open(jFilename.c_str(), O_RDONLY);
-    if (fd >= 0)
+    const string journal = (journalPath / firstDir / (key + ".journal")).string();
+    auto kvStorage = KVStorageInitializer::getStorageInstance();
+    auto tnx = kvStorage->createTransaction();
+    auto resultPairJournal = tnx->get(journal);
+    if (resultPairJournal.first)
     {
-      keyToJournalName[key] = jFilename;
-      journalFDs[key] = fd;
-      fdMinders[mindersIndex++].fd = fd;
+      keyToJournalName[key] = journal;
+      journalFDs.insert(key);
+      // fdMinders[mindersIndex++].fd = fd;
       // fdMinders.push_back(SharedCloser(fd));
     }
     else if (errno != ENOENT)
@@ -228,14 +231,14 @@ ssize_t IOCoordinator::read(const char* _filename, uint8_t* data, off_t offset, 
       fileLock.unlock();
       cache->doneReading(firstDir, keys);
       logger->log(LOG_CRIT, "IOCoordinator::read(): Got an unexpected error opening %s, error was '%s'",
-                  jFilename.c_str(), strerror_r(l_errno, buf, 80));
+                  journal.c_str(), strerror_r(l_errno, buf, 80));
       errno = l_errno;
       return -1;
     }
 
     // open all of the objects
     string oFilename = (cachePath / firstDir / key).string();
-    fd = ::open(oFilename.c_str(), O_RDONLY);
+    auto fd = ::open(oFilename.c_str(), O_RDONLY);
     if (fd < 0)
     {
       int l_errno = errno;
@@ -1215,7 +1218,7 @@ int IOCoordinator::mergeJournal(int objFD, int journalFD, uint8_t* buf, off_t of
 std::shared_ptr<uint8_t[]> IOCoordinator::mergeJournal_(const char* object, const char* journal, off_t offset,
                                                         size_t len, size_t* _bytesReadOut) const
 {
-  std::cout << "merge journal offset " << offset << " len " << len  << endl;
+  std::cout << "merge journal offset " << offset << " len " << len << endl;
   int objFD;
   std::shared_ptr<uint8_t[]> ret;
   size_t l_bytesRead = 0;
