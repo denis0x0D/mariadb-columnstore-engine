@@ -226,7 +226,7 @@ int Replicator::addJournalEntry_(const boost::filesystem::path& filename, const 
   const string journalFilename = msJournalPath + "/" + filename.string() + ".journal";
   boost::filesystem::path firstDir = *((filename).begin());
   const uint64_t thisEntryMaxOffset = (offset + length - 1);
-  string dataStr(length + 5000000, 0);
+  string dataStr;
   size_t dataStrOffset = 0;
 
   auto kvStorage = KVStorageInitializer::getStorageInstance();
@@ -235,31 +235,29 @@ int Replicator::addJournalEntry_(const boost::filesystem::path& filename, const 
   auto resultPair = journalHandler.readBlob(kvStorage, journalFilename);
   const std::string& journalData = resultPair.second;
   const bool journalExists = resultPair.first;
-
   if (!journalExists)
   {
     // create new journal file with header
     string header = (boost::format("{ \"version\" : \"%03i\", \"max_offset\" : \"%011u\" }") % version %
                      thisEntryMaxOffset)
                         .str();
-    std::memcpy(&dataStr[dataStrOffset], header.c_str(), header.length());
-    dataStrOffset += header.length();
+    const size_t headerLength = header.length();
+    dataStr.resize(headerLength + 1 + JOURNAL_ENTRY_HEADER_SIZE + length);
+    std::memcpy(&dataStr[dataStrOffset], header.c_str(), headerLength);
     // Specifies the end of the header.
-    dataStr[dataStrOffset] = 0;
-    ++dataStrOffset;
-    repHeaderDataWritten += (header.length() + 1);
-    Cache::get()->newJournalEntry(firstDir, header.length() + 1);
+    dataStr[headerLength] = 0;
+    dataStrOffset = headerLength + 1;
+    repHeaderDataWritten += headerLength + 1;
+    Cache::get()->newJournalEntry(firstDir, headerLength + 1);
     ++replicatorJournalsCreated;
   }
   else
   {
-    std::memcpy(&dataStr[dataStrOffset], &journalData[0], journalData.size());
-    dataStrOffset = journalData.size();
     size_t tmp;
     std::shared_ptr<char[]> headertxt;
     try
     {
-      headertxt = seekToEndOfHeader1_(dataStr, &tmp);
+      headertxt = seekToEndOfHeader1_(journalData, &tmp);
     }
     catch (std::runtime_error& e)
     {
@@ -294,17 +292,24 @@ int Replicator::addJournalEntry_(const boost::filesystem::path& filename, const 
     }
     assert(header.get<int>("version") == 1);
     const uint64_t currentMaxOffset = header.get<uint64_t>("max_offset");
+    dataStr.resize(journalData.size() + JOURNAL_ENTRY_HEADER_SIZE + length);
+    size_t journalOffset = 0;
 
     if (thisEntryMaxOffset > currentMaxOffset)
     {
       string header = (boost::format("{ \"version\" : \"%03i\", \"max_offset\" : \"%011u\" }") % version %
                        thisEntryMaxOffset)
                           .str();
-      std::memcpy(&dataStr[dataStrOffset], header.c_str(), header.length());
-      const uint32_t headerOffset = header.length();
-      dataStr[headerOffset] = 0;
-      repHeaderDataWritten += (header.length() + 1);
+      const size_t headerLenght = header.length();
+      std::memcpy(&dataStr[0], header.c_str(), headerLenght);
+      dataStr[headerLenght] = 0;
+      dataStrOffset = headerLenght + 1;
+      journalOffset = headerLenght + 1;
+      repHeaderDataWritten += headerLenght + 1;
     }
+
+    std::memcpy(&dataStr[dataStrOffset], &journalData[journalOffset], journalData.size() - journalOffset);
+    dataStrOffset = journalData.size();
   }
 
   std::memcpy(&dataStr[dataStrOffset], offlen, JOURNAL_ENTRY_HEADER_SIZE);
@@ -312,7 +317,8 @@ int Replicator::addJournalEntry_(const boost::filesystem::path& filename, const 
   repHeaderDataWritten += JOURNAL_ENTRY_HEADER_SIZE;
   std::memcpy(&dataStr[dataStrOffset], data, length);
   dataStrOffset += length;
-  dataStr.resize(dataStrOffset);
+  assert(dataStr.size() == dataStrOffset);
+  //dataStr.resize(dataStrOffset);
 
   if (journalExists && !journalHandler.removeBlob(kvStorage, journalFilename))
   {

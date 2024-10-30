@@ -225,16 +225,8 @@ ssize_t IOCoordinator::read(const char* _filename, uint8_t* data, off_t offset, 
       // fdMinders[mindersIndex++].fd = fd;
       // fdMinders.push_back(SharedCloser(fd));
     }
-    else if (errno != ENOENT)
-    {
-      int l_errno = errno;
-      fileLock.unlock();
-      cache->doneReading(firstDir, keys);
-      logger->log(LOG_CRIT, "IOCoordinator::read(): Got an unexpected error opening %s, error was '%s'",
-                  journal.c_str(), strerror_r(l_errno, buf, 80));
-      errno = l_errno;
-      return -1;
-    }
+    // else
+    // Journal already merged with object file.
 
     // open all of the objects
     string oFilename = (cachePath / firstDir / key).string();
