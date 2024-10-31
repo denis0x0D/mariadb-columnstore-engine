@@ -318,7 +318,7 @@ int Replicator::addJournalEntry_(const boost::filesystem::path& filename, const 
   std::memcpy(&dataStr[dataStrOffset], data, length);
   dataStrOffset += length;
   assert(dataStr.size() == dataStrOffset);
-  //dataStr.resize(dataStrOffset);
+  // dataStr.resize(dataStrOffset);
 
   if (journalExists && !journalHandler.removeBlob(kvStorage, journalFilename))
   {
@@ -603,29 +603,13 @@ int Replicator::addJournalEntry(const boost::filesystem::path& filename, const u
 
 int Replicator::remove(const boost::filesystem::path& filename, Flags flags)
 {
-  int ret = 0;
-
-  if (flags & NO_LOCAL)
-    return 0;  // not implemented yet
-
-  try
-  {
-    //#ifndef NDEBUG
-    //    assert(boost::filesystem::remove_all(filename) > 0);
-    //#else
-    boost::filesystem::remove_all(filename);
-    //#endif
+  auto kvStorage = KVStorageInitializer::getStorageInstance();
+  auto keyGen = std::make_shared<FDBCS::BoostUIDKeyGenerator>();
+  FDBCS::BlobHandler journalHandler(keyGen);
+  if (!journalHandler.removeBlob(kvStorage, filename.string())) {
+    return -1;
   }
-  catch (boost::filesystem::filesystem_error& e)
-  {
-#ifndef NDEBUG
-    cout << "Replicator::remove(): caught an execption: " << e.what() << endl;
-    assert(0);
-#endif
-    errno = e.code().value();
-    ret = -1;
-  }
-  return ret;
+  return 0;
 }
 
 int Replicator::updateMetadata(MetadataFile& meta)
