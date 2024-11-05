@@ -219,7 +219,6 @@ ssize_t Replicator::_write(int fd, const void* data, size_t length)
 int Replicator::addJournalEntry_(const boost::filesystem::path& filename, const uint8_t* data, off_t offset,
                                  size_t length)
 {
-  std::cout << "start add journal " << filename.string() << std::endl;
   uint64_t offlen[] = {(uint64_t)offset, length};
   const int version = 1;
   // TODO: Add prefix for the key.
@@ -333,7 +332,6 @@ int Replicator::addJournalEntry_(const boost::filesystem::path& filename, const 
     errno = EIO;
     return -1;
   }
-  std::cout << "end add journal " << filename.string() << std::endl;
 
   repUserDataWritten += length;
   return length;

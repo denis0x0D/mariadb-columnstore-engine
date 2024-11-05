@@ -115,7 +115,6 @@ void Synchronizer::dropPrefix(const bf::path& p)
 void Synchronizer::_newJournalEntry(const bf::path& prefix, const string& _key, size_t size)
 {
   string key = (prefix / _key).string();
-  std::cout << "new journal entry " << key << std::endl;
   uncommittedJournalSize[prefix] += size;
   auto it = pendingOps.find(key);
   if (it != pendingOps.end())

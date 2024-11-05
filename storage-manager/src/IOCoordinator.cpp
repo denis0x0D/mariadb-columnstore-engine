@@ -1210,7 +1210,6 @@ int IOCoordinator::mergeJournal(int objFD, int journalFD, uint8_t* buf, off_t of
 std::shared_ptr<uint8_t[]> IOCoordinator::mergeJournal_(const char* object, const char* journal, off_t offset,
                                                         size_t len, size_t* _bytesReadOut) const
 {
-  std::cout << "merge journal offset " << offset << " len " << len << endl;
   int objFD;
   std::shared_ptr<uint8_t[]> ret;
   size_t l_bytesRead = 0;
@@ -1278,8 +1277,6 @@ std::shared_ptr<uint8_t[]> IOCoordinator::mergeJournal_(const char* object, cons
   const std::string& journalData = resultPairJournal.second;
   size_t journalOffset = 0;
   std::shared_ptr<char[]> headertxt = seekToEndOfHeader1_(journalData, &journalOffset);
-  std::cout << "HEADER TXT " << endl;
-  cout << headertxt.get() << endl;
   stringstream ss;
   ss << headertxt.get();
   boost::property_tree::ptree header;
@@ -1367,7 +1364,6 @@ std::shared_ptr<uint8_t[]> IOCoordinator::mergeJournal(const char* object, const
   // that if the caller requested the whole object to be merged
   if (offset == 0 && (ssize_t)len >= ::lseek(objFD, 0, SEEK_END))
   {
-    std::cout << "mergeJournal in mem " << std::endl;
     size_t mjimBytesRead = 0;
     int mjimerr = mergeJournalInMem(ret, len, journal, &mjimBytesRead);
     if (mjimerr)
@@ -1489,8 +1485,6 @@ int IOCoordinator::mergeJournalInMem_(std::shared_ptr<uint8_t[]>& objData, size_
   boost::property_tree::ptree header;
   boost::property_tree::json_parser::read_json(ss, header);
   assert(header.get<int>("version") == 1);
-  cout << "HEADER " << endl;
-  cout << ss.str() << endl;
 
   // read the journal file into memory
   size_t journalBytes = journalData.size() - l_bytesRead;
