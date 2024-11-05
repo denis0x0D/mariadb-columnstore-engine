@@ -576,14 +576,15 @@ void Synchronizer::synchronizeWithJournal(const string& sourceFile, list<string>
         cache->deletedObject(prefix, cloudKey, objSize);
         cs->deleteObject(cloudKey);
       }
-      // FIX THIS
-      cout << "META NOT FOUND " << endl;
       bf::path jPath = journalPath / (key + ".journal");
-      if (bf::exists(jPath))
+      auto kvStorage = KVStorageInitializer::getStorageInstance();
+      auto tnx = kvStorage->createTransaction();
+      auto resultPair = tnx->get(jPath.string());
+      if (resultPair.first)
       {
-        size_t jSize = bf::file_size(jPath);
+        // size_t jSize = bf::file_size(jPath);
         replicator->remove(jPath);
-        cache->deletedJournal(prefix, jSize);
+        cache->deletedJournal(prefix, 0);
       }
     }
     catch (exception& e)
@@ -691,7 +692,10 @@ void Synchronizer::synchronizeWithJournal(const string& sourceFile, list<string>
     err = ioc->mergeJournalInMem(data, size, journalName.c_str(), &_bytesRead);
     if (err)
     {
-      if (!bf::exists(journalName))
+      auto kvStorage = KVStorageInitializer::getStorageInstance();
+      auto tnx = kvStorage->createTransaction();
+      auto resultPair = tnx->get(journalName);
+      if (!resultPair.first)
         logger->log(LOG_DEBUG,
                     "synchronizeWithJournal(): journal %s was deleted mid-operation, check locking",
                     journalName.c_str());
@@ -710,7 +714,10 @@ void Synchronizer::synchronizeWithJournal(const string& sourceFile, list<string>
     data = ioc->mergeJournal(oldCachePath.string().c_str(), journalName.c_str(), 0, size, &_bytesRead);
     if (!data)
     {
-      if (!bf::exists(journalName))
+      auto kvStorage = KVStorageInitializer::getStorageInstance();
+      auto tnx = kvStorage->createTransaction();
+      auto resultPair = tnx->get(journalName);
+      if (!resultPair.first)
         logger->log(LOG_DEBUG,
                     "synchronizeWithJournal(): journal %s was deleted mid-operation, check locking",
                     journalName.c_str());

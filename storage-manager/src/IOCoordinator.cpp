@@ -1018,20 +1018,6 @@ int IOCoordinator::copyFile(const char* _filename1, const char* _filename2)
   int err;
   char errbuf[80];
 
-  // since we don't implement mkdir(), assume the caller did that and
-  // create any necessary parent dirs for filename2
-  try
-  {
-    bf::create_directories(metaFile2.parent_path());
-  }
-  catch (bf::filesystem_error& e)
-  {
-    logger->log(LOG_CRIT, "IOCoordinator::copyFile(): failed to create directory %s.  Got %s",
-                metaFile2.parent_path().string().c_str(), strerror_r(e.code().value(), errbuf, 80));
-    errno = e.code().value();
-    return -1;
-  }
-
   vector<pair<string, size_t>> newJournalEntries;
   ScopedReadLock lock(this, filename1);
   ScopedWriteLock lock2(this, filename2);
@@ -1057,8 +1043,6 @@ int IOCoordinator::copyFile(const char* _filename1, const char* _filename2)
   {
     for (const auto& object : objects)
     {
-      bf::path journalFile = journalPath / firstDir1 / (object.key + ".journal");
-
       // originalLength = the length of the object before journal entries.
       // the length in the metadata is the length after journal entries
       size_t originalLength = MetadataFile::getLengthFromKey(object.key);
@@ -1092,14 +1076,22 @@ int IOCoordinator::copyFile(const char* _filename1, const char* _filename2)
                                        object.key + ": " + strerror_r(errno, errbuf, 80));
       }
 
+      bf::path journalFile = journalPath / firstDir1 / (object.key + ".journal");
+      auto kvStorage = KVStorageInitializer::getStorageInstance();
+      auto tnx = kvStorage->createTransaction();
+      auto resultPair = tnx->get(journalFile.string());
       // if there's a journal file for this object, make a copy
-      if (bf::exists(journalFile))
+      if (false && resultPair.first)
       {
+        const std::string oldJournalDataHeader = resultPair.second;
         bf::path newJournalFile = journalPath / firstDir2 / (newObj.key + ".journal");
         try
         {
-          bf::copy_file(journalFile, newJournalFile);
-          size_t tmp = bf::file_size(newJournalFile);
+          auto tnx = kvStorage->createTransaction();
+          tnx->set(newJournalFile.string(), oldJournalDataHeader);
+          tnx->remove(journalFile.string());
+          tnx->commit();
+          size_t tmp = 100;  // bf::file_size(newJournalFile);
           ++iocJournalsCreated;
           iocBytesRead += tmp;
           iocBytesWritten += tmp;
@@ -1124,8 +1116,10 @@ int IOCoordinator::copyFile(const char* _filename1, const char* _filename2)
     for (auto& jEntry : newJournalEntries)
     {
       bf::path fullJournalPath = journalPath / firstDir2 / (jEntry.first + ".journal");
+      auto kvStorage = KVStorageInitializer::getStorageInstance();
+      auto tnx = kvStorage->createTransaction();
+      tnx->remove(fullJournalPath.string());
       cache->deletedJournal(firstDir2, bf::file_size(fullJournalPath));
-      bf::remove(fullJournalPath);
     }
     errno = e.l_errno;
     return -1;
