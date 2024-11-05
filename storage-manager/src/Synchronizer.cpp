@@ -21,6 +21,7 @@
 #include "MetadataFile.h"
 #include "Utilities.h"
 #include "KVStorageInitializer.h"
+#include "KVPrefixes.h"
 #include <boost/thread/mutex.hpp>
 
 #include <sys/stat.h>
@@ -239,8 +240,12 @@ void Synchronizer::flushObject(const bf::path& prefix, const string& _key)
       sleep(5);
     }
   } while (err);
-  journalExists = bf::exists(journalPath / (key + ".journal"));
 
+  const auto jounralName = getJournalName((journalPath / (key + ".journal")).string());
+  auto kvStorage = KVStorageInitializer::getStorageInstance();
+  auto tnx = kvStorage->createTransaction();
+  auto resultPair = tnx->get(jounralName);
+  journalExists = resultPair.first;
   if (journalExists)
   {
     logger->log(LOG_DEBUG,
@@ -576,14 +581,15 @@ void Synchronizer::synchronizeWithJournal(const string& sourceFile, list<string>
         cache->deletedObject(prefix, cloudKey, objSize);
         cs->deleteObject(cloudKey);
       }
-      bf::path jPath = journalPath / (key + ".journal");
+
+      const auto journalName = getJournalName((journalPath / (key + ".journal")).string());
       auto kvStorage = KVStorageInitializer::getStorageInstance();
       auto tnx = kvStorage->createTransaction();
-      auto resultPair = tnx->get(jPath.string());
+      auto resultPair = tnx->get(journalName);
       if (resultPair.first)
       {
         // size_t jSize = bf::file_size(jPath);
-        replicator->remove(jPath);
+        replicator->remove(journalName);
         cache->deletedJournal(prefix, 0);
       }
     }
@@ -609,7 +615,7 @@ void Synchronizer::synchronizeWithJournal(const string& sourceFile, list<string>
   // sync queue
 
   bf::path oldCachePath = cachePath / key;
-  const string journalName = (journalPath / (key + ".journal")).string();
+  const string journalName = getJournalName((journalPath / (key + ".journal")).string());
   {
     auto kvStorage = KVStorageInitializer::getStorageInstance();
     auto tnx = kvStorage->createTransaction();

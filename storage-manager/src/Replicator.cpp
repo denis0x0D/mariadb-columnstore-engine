@@ -21,6 +21,7 @@
 #include "Utilities.h"
 #include "Cache.h"
 #include "KVStorageInitializer.h"
+#include "KVPrefixes.h"
 #include "fdbcs.hpp"
 #include <sys/types.h>
 #include <sys/stat.h>
@@ -217,12 +218,11 @@ ssize_t Replicator::_write(int fd, const void* data, size_t length)
 }
 
 int Replicator::addJournalEntry(const boost::filesystem::path& filename, const uint8_t* data, off_t offset,
-                                 size_t length)
+                                size_t length)
 {
   uint64_t offlen[] = {(uint64_t)offset, length};
   const int version = 1;
-  // TODO: Add prefix for the key.
-  const string journalFilename = msJournalPath + "/" + filename.string() + ".journal";
+  const auto journalName = getJournalName(msJournalPath + "/" + filename.string() + ".journal");
   boost::filesystem::path firstDir = *((filename).begin());
   const uint64_t thisEntryMaxOffset = (offset + length - 1);
   string dataStr;
@@ -231,7 +231,7 @@ int Replicator::addJournalEntry(const boost::filesystem::path& filename, const u
   auto kvStorage = KVStorageInitializer::getStorageInstance();
   auto keyGen = std::make_shared<FDBCS::BoostUIDKeyGenerator>();
   FDBCS::BlobHandler journalHandler(keyGen);
-  auto resultPair = journalHandler.readBlob(kvStorage, journalFilename);
+  auto resultPair = journalHandler.readBlob(kvStorage, journalName);
   const std::string& journalData = resultPair.second;
   const bool journalExists = resultPair.first;
   if (!journalExists)
@@ -319,14 +319,14 @@ int Replicator::addJournalEntry(const boost::filesystem::path& filename, const u
   assert(dataStr.size() == dataStrOffset);
   // dataStr.resize(dataStrOffset);
 
-  if (journalExists && !journalHandler.removeBlob(kvStorage, journalFilename))
+  if (journalExists && !journalHandler.removeBlob(kvStorage, journalName))
   {
     mpLogger->log(LOG_CRIT, "Cannot remove journal blob.");
     errno = EIO;
     return -1;
   }
 
-  if (!journalHandler.writeBlob(kvStorage, journalFilename, dataStr))
+  if (!journalHandler.writeBlob(kvStorage, journalName, dataStr))
   {
     mpLogger->log(LOG_CRIT, "Cannot write journal blob.");
     errno = EIO;
@@ -360,7 +360,8 @@ int Replicator::remove(const boost::filesystem::path& filename, Flags flags)
   auto kvStorage = KVStorageInitializer::getStorageInstance();
   auto keyGen = std::make_shared<FDBCS::BoostUIDKeyGenerator>();
   FDBCS::BlobHandler journalHandler(keyGen);
-  if (!journalHandler.removeBlob(kvStorage, filename.string())) {
+  if (!journalHandler.removeBlob(kvStorage, filename.string()))
+  {
     return -1;
   }
   return 0;

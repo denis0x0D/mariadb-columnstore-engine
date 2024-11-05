@@ -17,6 +17,7 @@
 
 #include "IOCoordinator.h"
 #include "KVStorageInitializer.h"
+#include "KVPrefixes.h"
 #include "MetadataFile.h"
 #include "Synchronizer.h"
 #include <sys/types.h>
@@ -214,7 +215,7 @@ ssize_t IOCoordinator::read(const char* _filename, uint8_t* data, off_t offset, 
     // later.  not thinking about it for now.
 
     // open all of the journal files that exist
-    const string journal = (journalPath / firstDir / (key + ".journal")).string();
+    const string journal = getJournalName((journalPath / firstDir / (key + ".journal")).string());
     auto kvStorage = KVStorageInitializer::getStorageInstance();
     auto tnx = kvStorage->createTransaction();
     auto resultPairJournal = tnx->get(journal);
@@ -854,7 +855,7 @@ int IOCoordinator::_truncate(const bf::path& bfpath, size_t newSize, ScopedFileL
     if (result & 0x1)
       replicator->remove(cachePath / firstDir / objects[i].key);
     if (result & 0x2)
-      replicator->remove(journalPath / firstDir / (objects[i].key + ".journal"));
+      replicator->remove(getJournalName((journalPath / firstDir / (objects[i].key + ".journal")).string()));
     deletedObjects.push_back(objects[i].key);
   }
   if (!deletedObjects.empty())
@@ -902,7 +903,7 @@ void IOCoordinator::deleteMetaFile(const bf::path& file)
     if (result & 0x2)
     {
       ++iocFilesDeleted;
-      replicator->remove(journalPath / firstDir / (object.key + ".journal"));
+      replicator->remove(getJournalName((journalPath / firstDir / (object.key + ".journal")).string()));
     }
     deletedObjects.push_back(object.key);
   }
@@ -1076,35 +1077,26 @@ int IOCoordinator::copyFile(const char* _filename1, const char* _filename2)
                                        object.key + ": " + strerror_r(errno, errbuf, 80));
       }
 
-      bf::path journalFile = journalPath / firstDir1 / (object.key + ".journal");
+      const auto journalName = getJournalName((journalPath / firstDir1 / (object.key + ".journal")).string());
       auto kvStorage = KVStorageInitializer::getStorageInstance();
       auto tnx = kvStorage->createTransaction();
-      auto resultPair = tnx->get(journalFile.string());
+      auto resultPair = tnx->get(journalName);
       // if there's a journal file for this object, make a copy
       if (false && resultPair.first)
       {
         const std::string oldJournalDataHeader = resultPair.second;
-        bf::path newJournalFile = journalPath / firstDir2 / (newObj.key + ".journal");
-        try
-        {
-          auto tnx = kvStorage->createTransaction();
-          tnx->set(newJournalFile.string(), oldJournalDataHeader);
-          tnx->remove(journalFile.string());
-          tnx->commit();
-          size_t tmp = 100;  // bf::file_size(newJournalFile);
-          ++iocJournalsCreated;
-          iocBytesRead += tmp;
-          iocBytesWritten += tmp;
-          cache->newJournalEntry(firstDir2, tmp);
-          newJournalEntries.push_back(pair<string, size_t>(newObj.key, tmp));
-        }
-        catch (bf::filesystem_error& e)
-        {
-          throw CFException(e.code().value(), string("IOCoordinator::copyFile(): source = ") + filename1 +
-                                                  ", dest = " + filename2 + ".  Got an error copying " +
-                                                  journalFile.string() + ": " +
-                                                  strerror_r(e.code().value(), errbuf, 80));
-        }
+        const auto newJournalName =
+            getJournalName((journalPath / firstDir2 / (newObj.key + ".journal")).string());
+        auto tnx = kvStorage->createTransaction();
+        tnx->set(newJournalName, oldJournalDataHeader);
+        tnx->remove(journalName);
+        tnx->commit();
+        size_t tmp = 100;  // bf::file_size(newJournalFile);
+        ++iocJournalsCreated;
+        iocBytesRead += tmp;
+        iocBytesWritten += tmp;
+        cache->newJournalEntry(firstDir2, tmp);
+        newJournalEntries.push_back(pair<string, size_t>(newObj.key, tmp));
       }
     }
   }
@@ -1115,10 +1107,10 @@ int IOCoordinator::copyFile(const char* _filename1, const char* _filename2)
       cs->deleteObject(newObject.key);
     for (auto& jEntry : newJournalEntries)
     {
-      bf::path fullJournalPath = journalPath / firstDir2 / (jEntry.first + ".journal");
+      const auto fullJournalPath = getJournalName((journalPath / firstDir2 / (jEntry.first + ".journal")).string());
       auto kvStorage = KVStorageInitializer::getStorageInstance();
       auto tnx = kvStorage->createTransaction();
-      tnx->remove(fullJournalPath.string());
+      tnx->remove(fullJournalPath);
       cache->deletedJournal(firstDir2, bf::file_size(fullJournalPath));
     }
     errno = e.l_errno;
