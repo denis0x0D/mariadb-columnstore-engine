@@ -690,7 +690,7 @@ void Synchronizer::synchronizeWithJournal(const string& sourceFile, list<string>
                             // file length.
 
     size_t _bytesRead = 0;
-    err = ioc->mergeJournalInMem_(data, size, journalName.c_str(), &_bytesRead);
+    err = ioc->mergeJournalInMem(data, size, journalName.c_str(), &_bytesRead);
     if (err)
     {
       if (!bf::exists(journalName))
@@ -709,7 +709,7 @@ void Synchronizer::synchronizeWithJournal(const string& sourceFile, list<string>
   else
   {
     size_t _bytesRead = 0;
-    data = ioc->mergeJournal_(oldCachePath.string().c_str(), journalName.c_str(), 0, size, &_bytesRead);
+    data = ioc->mergeJournal(oldCachePath.string().c_str(), journalName.c_str(), 0, size, &_bytesRead);
     if (!data)
     {
       if (!bf::exists(journalName))

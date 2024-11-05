@@ -60,19 +60,10 @@ class IOCoordinator : public boost::noncopyable
   // len should be set to the length of the data requested
   std::shared_ptr<uint8_t[]> mergeJournal(const char* objectPath, const char* journalPath, off_t offset,
                                           size_t len, size_t* sizeRead) const;
-  std::shared_ptr<uint8_t[]> mergeJournal_(const char* objectPath, const char* journalPath, off_t offset,
-                                           size_t len, size_t* sizeRead) const;
-
   // this version modifies object data in memory, given the journal filename.  Processes the whole object
   // and whole journal file.
   int mergeJournalInMem(std::shared_ptr<uint8_t[]>& objData, size_t len, const char* journalPath,
                         size_t* sizeRead) const;
-  int mergeJournalInMem_(std::shared_ptr<uint8_t[]>& objData, size_t len, const char* journalPath,
-                         size_t* sizeRead) const;
-
-  // this version of MJIM has a higher IOPS requirement and lower mem usage.
-  int mergeJournalInMem_bigJ(std::shared_ptr<uint8_t[]>& objData, size_t len, const char* journalPath,
-                             size_t* sizeRead) const;
   // this version takes already-open file descriptors, and an already-allocated buffer as input.
   // file descriptor are positioned, eh, best not to assume anything about their positions
   // on return.
