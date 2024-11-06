@@ -217,12 +217,31 @@ ssize_t Replicator::_write(int fd, const void* data, size_t length)
   return count;
 }
 
+/* XXXPAT: I think we'll have to rewrite this function some; we'll have to at least clearly define
+   what happens in the various error scenarios.
+
+   To be more resilent in the face of hard errors, we may also want to redefine what a journal file is.
+   If/when we cannot fix the journal file in the face of an error, there are scenarios that the read code
+   will not be able to cope with.  Ex, a journal entry that says it's 200 bytes long, but there are only
+   really 100 bytes.  The read code has no way to tell the difference if there is an entry that follows
+   the bad entry, and that will cause an unrecoverable error.
+
+   Initial thought on a sol'n.  Make each journal entry its own file in a tmp dir, ordered by a sequence
+   number in the filename.  Then, one entry cannot affect the others, and the end of the file is unambiguously
+   the end of the data.  On successful write, move the file to where it should be.  This would also prevent
+   the readers from ever seeing bad data, and possibly reduce the size of some critical sections.
+
+   Benefits would be data integrity, and possibly add'l parallelism.  The downside is of course, a higher
+   number of IO ops for the same operation.
+*/
+
 int Replicator::addJournalEntry(const boost::filesystem::path& filename, const uint8_t* data, off_t offset,
                                 size_t length)
 {
   uint64_t offlen[] = {(uint64_t)offset, length};
   const int version = 1;
   const auto journalName = getJournalName(msJournalPath + "/" + filename.string() + ".journal");
+  const auto journalSizeName = getJournalName(msJournalPath + "/" + filename.string() + "_size" + ".journal");
   boost::filesystem::path firstDir = *((filename).begin());
   const uint64_t thisEntryMaxOffset = (offset + length - 1);
   string dataStr;
@@ -317,7 +336,6 @@ int Replicator::addJournalEntry(const boost::filesystem::path& filename, const u
   std::memcpy(&dataStr[dataStrOffset], data, length);
   dataStrOffset += length;
   assert(dataStr.size() == dataStrOffset);
-  // dataStr.resize(dataStrOffset);
 
   if (journalExists && !journalHandler.removeBlob(kvStorage, journalName))
   {
@@ -333,29 +351,49 @@ int Replicator::addJournalEntry(const boost::filesystem::path& filename, const u
     return -1;
   }
 
+  {
+    auto tnx = kvStorage->createTransaction();
+    tnx->set(journalSizeName, std::to_string(dataStr.size()));
+    if (!tnx->commit())
+    {
+      mpLogger->log(LOG_CRIT, "Cannot write journal size.");
+      errno = EIO;
+      return -1;
+    }
+  }
+
   repUserDataWritten += length;
   return length;
 }
 
-/* XXXPAT: I think we'll have to rewrite this function some; we'll have to at least clearly define
-   what happens in the various error scenarios.
-
-   To be more resilent in the face of hard errors, we may also want to redefine what a journal file is.
-   If/when we cannot fix the journal file in the face of an error, there are scenarios that the read code
-   will not be able to cope with.  Ex, a journal entry that says it's 200 bytes long, but there are only
-   really 100 bytes.  The read code has no way to tell the difference if there is an entry that follows
-   the bad entry, and that will cause an unrecoverable error.
-
-   Initial thought on a sol'n.  Make each journal entry its own file in a tmp dir, ordered by a sequence
-   number in the filename.  Then, one entry cannot affect the others, and the end of the file is unambiguously
-   the end of the data.  On successful write, move the file to where it should be.  This would also prevent
-   the readers from ever seeing bad data, and possibly reduce the size of some critical sections.
-
-   Benefits would be data integrity, and possibly add'l parallelism.  The downside is of course, a higher
-   number of IO ops for the same operation.
-*/
-
 int Replicator::remove(const boost::filesystem::path& filename, Flags flags)
+{
+  int ret = 0;
+
+  if (flags & NO_LOCAL)
+    return 0;  // not implemented yet
+
+  try
+  {
+    //#ifndef NDEBUG
+    //    assert(boost::filesystem::remove_all(filename) > 0);
+    //#else
+    boost::filesystem::remove_all(filename);
+    //#endif
+  }
+  catch (boost::filesystem::filesystem_error& e)
+  {
+#ifndef NDEBUG
+    cout << "Replicator::remove(): caught an execption: " << e.what() << endl;
+    assert(0);
+#endif
+    errno = e.code().value();
+    ret = -1;
+  }
+  return ret;
+}
+
+int Replicator::removeJournal(const boost::filesystem::path& filename)
 {
   auto kvStorage = KVStorageInitializer::getStorageInstance();
   auto keyGen = std::make_shared<FDBCS::BoostUIDKeyGenerator>();

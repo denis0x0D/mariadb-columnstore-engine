@@ -49,6 +49,7 @@ class Replicator
   int newNullObject(const boost::filesystem::path& filename, size_t length);
 
   int remove(const boost::filesystem::path& file, Flags flags = NONE);
+  int removeJournal(const boost::filesystem::path &file);
 
   int updateMetadata(MetadataFile& meta);
 

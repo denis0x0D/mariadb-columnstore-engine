@@ -583,14 +583,16 @@ void Synchronizer::synchronizeWithJournal(const string& sourceFile, list<string>
       }
 
       const auto journalName = getJournalName((journalPath / (key + ".journal")).string());
+      const auto journalSizeName = getJournalName((journalPath / (key + "size.journal")).string());
       auto kvStorage = KVStorageInitializer::getStorageInstance();
       auto tnx = kvStorage->createTransaction();
-      auto resultPair = tnx->get(journalName);
-      if (resultPair.first)
+      auto resultPairJournal = tnx->get(journalName);
+      auto resultPairJournalSize = tnx->get(journalName);
+      if (resultPairJournal.first && resultPairJournalSize.first)
       {
-        // size_t jSize = bf::file_size(jPath);
-        replicator->remove(journalName);
-        cache->deletedJournal(prefix, 0);
+        size_t jSize = std::atoi(resultPairJournalSize.second.c_str());
+        replicator->removeJournal(journalName);
+        cache->deletedJournal(prefix, jSize);
       }
     }
     catch (exception& e)
@@ -616,6 +618,7 @@ void Synchronizer::synchronizeWithJournal(const string& sourceFile, list<string>
 
   bf::path oldCachePath = cachePath / key;
   const string journalName = getJournalName((journalPath / (key + ".journal")).string());
+  const auto journalSizeName = getJournalName((journalPath / (key + "size.journal")).string());
   {
     auto kvStorage = KVStorageInitializer::getStorageInstance();
     auto tnx = kvStorage->createTransaction();
@@ -809,8 +812,27 @@ void Synchronizer::synchronizeWithJournal(const string& sourceFile, list<string>
   rename(key, newKey);
 
   // delete the old object & journal file
-  // cache->deletedJournal(prefix, bf::file_size(journalName));
-  replicator->remove(journalName);
+  auto kvStorage = KVStorageInitializer::getStorageInstance();
+  {
+    auto tnx = kvStorage->createTransaction();
+    auto result = tnx->get(journalSizeName);
+    if (result.first)
+      cache->deletedJournal(prefix, std::atoi(result.second.c_str()));
+  }
+
+  // Remove journal size name from kv storage.
+  {
+    auto tnx = kvStorage->createTransaction();
+    tnx->remove(journalSizeName);
+    if (!tnx->commit())
+    {
+      ostringstream oss;
+      oss << "Synchronizer::synchronizeWithJournal(): cannot remove size for journal";
+      logger->log(LOG_WARNING, oss.str().c_str());
+    }
+  }
+
+  replicator->removeJournal(journalName);
   cs->deleteObject(cloudKey);
 }
 

@@ -855,7 +855,7 @@ int IOCoordinator::_truncate(const bf::path& bfpath, size_t newSize, ScopedFileL
     if (result & 0x1)
       replicator->remove(cachePath / firstDir / objects[i].key);
     if (result & 0x2)
-      replicator->remove(getJournalName((journalPath / firstDir / (objects[i].key + ".journal")).string()));
+      replicator->removeJournal(getJournalName((journalPath / firstDir / (objects[i].key + ".journal")).string()));
     deletedObjects.push_back(objects[i].key);
   }
   if (!deletedObjects.empty())
@@ -903,7 +903,7 @@ void IOCoordinator::deleteMetaFile(const bf::path& file)
     if (result & 0x2)
     {
       ++iocFilesDeleted;
-      replicator->remove(getJournalName((journalPath / firstDir / (object.key + ".journal")).string()));
+      replicator->removeJournal(getJournalName((journalPath / firstDir / (object.key + ".journal")).string()));
     }
     deletedObjects.push_back(object.key);
   }
