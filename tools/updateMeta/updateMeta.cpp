@@ -19,16 +19,12 @@
 #include <string>
 #include <filesystem>
 #include <vector>
-#include "configcpp.h"
 #include "fdbcs.hpp"
 #include <fstream>
 #include <sstream>
 
 using namespace std;
-
-static std::shared_ptr<FDBCS::FDBDataBase> fdbDataBaseInstance;
-static std::unique_ptr<FDBCS::FDBNetwork> fdbNetworkInstance;
-static std::mutex kvStorageLock;
+std::unique_ptr<FDBCS::FDBNetwork> fdbNetworkInstance;
 
 static std::shared_ptr<FDBCS::FDBDataBase> getStorageInstance()
 {
@@ -46,9 +42,10 @@ static std::shared_ptr<FDBCS::FDBDataBase> getStorageInstance()
   }
 
   std::string clusterFilePath = "/etc/foundationdb/fdb.cluster";
-  fdbDataBaseInstance = FDBCS::DataBaseCreator::createDataBase(clusterFilePath);
-  if (!fdbDataBaseInstance) {
-    cerr <<  "Update meta: FDB createDataBase failed." << endl;
+  auto fdbDataBaseInstance = FDBCS::DataBaseCreator::createDataBase(clusterFilePath);
+  if (!fdbDataBaseInstance)
+  {
+    cerr << "Update meta: FDB createDataBase failed." << endl;
     return nullptr;
   }
 
@@ -62,34 +59,51 @@ class MetaCollector
   {
   }
 
-  void collect(const std::string& dbRoot)
+  bool collect(const std::string& dbRoot)
   {
-    auto path = metaPath + dbRoot;
-    for (auto const& file : std::filesystem::recursive_directory_iterator{path})
+    try
     {
-      if (std::filesystem::is_regular_file(file))
+      auto path = metaPath + dbRoot;
+      for (auto const& file : std::filesystem::recursive_directory_iterator{path})
       {
-        files.push_back(file.path());
+        if (std::filesystem::is_regular_file(file))
+        {
+          files.push_back(file.path());
+        }
       }
     }
+    catch (std::exception& e)
+    {
+      std::cerr << e.what() << std::endl;
+      return false;
+    }
+    return true;
   }
 
   bool commit()
   {
+    auto kvStorage = getStorageInstance();
+    if (!kvStorage)
+    {
+      cerr << "Cannot get a storage instance" << endl;
+      return false;
+    }
+    auto keyGen = std::make_shared<FDBCS::BoostUIDKeyGenerator>();
+
     for (const auto& file : files)
     {
       auto fileName = file.string();
+      cout << fileName << endl;
       ifstream iFile(fileName);
       if (!iFile.is_open())
         return false;
 
-      std::stringstream stream;
-      stream << iFile.rdbuf();
-      auto kvStorage = getStorageInstance();
-      auto keyGen = std::make_shared<FDBCS::BoostUIDKeyGenerator>();
+      std::stringstream metaDataStream;
+      metaDataStream << iFile.rdbuf();
       FDBCS::BlobHandler blobWriter(keyGen);
-      fileName = "SM_M" + fileName;
-      if (!blobWriter.writeBlob(kvStorage, fileName, stream.str())) {
+      auto metaKey = metaPrefix + fileName;
+      if (!blobWriter.writeBlob(kvStorage, metaKey, metaDataStream.str()))
+      {
         return false;
       }
     }
@@ -98,25 +112,30 @@ class MetaCollector
 
  private:
   std::vector<filesystem::path> files;
+  string metaPrefix = "SM_M_";
   string metaPath;
   string dbRoot;
 };
 
 int main(int argc, char** argv)
 {
-  auto* config = config::Config::makeConfig();
-  std::string count = config->getConfig("SystemConfig", "DBRootCount");
-  // Read the number of DBRoots.
-  uint32_t dbRootCount = config->uFromText(count);
-  std::string metaPath = "/var/lib/columnstore/storagemanager/metadata";
-  MetaCollector collector(metaPath);
-
-  // Iterate over DBRoots starting from the first one.
-  for (uint32_t dbRootNumber = 1; dbRootNumber <= dbRootCount; ++dbRootNumber)
+  if (argc != 2)
   {
-    std::string dbRootName = "DBRoot" + std::to_string(dbRootNumber);
-    auto dbRootPath = config->getConfig("SystemConfig", dbRootName);
-    collector.collect(dbRootPath);
+    cout << "Have to provide dbroot name. For example: updateMeta data1 " << endl;
+    return 0;
+  }
+  std::string metaPath = "/var/lib/columnstore/storagemanager/metadata/";
+  MetaCollector collector(metaPath);
+  string dbRootName = argv[1];
+  if (!collector.collect(dbRootName))
+  {
+    cerr << "Cannot collect metadata files " << endl;
+    return 1;
+  }
+  if (!collector.commit())
+  {
+    cerr << "Cannot commit metadata to kv storage " << endl;
+    return 1;
   }
   return 0;
 }
