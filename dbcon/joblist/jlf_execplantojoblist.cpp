@@ -3273,6 +3273,7 @@ namespace joblist
   TreeNode* tn = n->data();
   JobStepVector jsv;
   TreeNodeType tnType = TreeNode2Type(tn);
+  //std::cout << tn->toString() << std::endl;
 
   switch (tnType)
   {

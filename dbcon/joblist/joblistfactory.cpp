@@ -384,7 +384,6 @@ void checkHavingClause(CalpontSelectExecutionPlan* csep, JobInfo& jobInfo)
       }
     }
   }
-
 }
 
 void preProcessFunctionOnAggregation(const vector<SimpleColumn*>& scs, const vector<AggregateColumn*>& aggs,
@@ -519,9 +518,9 @@ void checkGroupByCols(CalpontSelectExecutionPlan* csep, JobInfo& jobInfo)
         // Not an aggregate column and not an expression of aggregation.
         if (dynamic_cast<AggregateColumn*>(orderByCols[i].get()) == NULL &&
             orderByCols[i]->aggColumnList().empty())
-	{
+        {
           csep->groupByCols().push_back(orderByCols[i]);
-	}
+        }
       }
     }
   }
@@ -1536,9 +1535,71 @@ void exceptionHandler(JobList* joblist, const JobInfo& jobInfo, const string& lo
 
 void parseExecutionPlan(CalpontSelectExecutionPlan* csep, JobInfo& jobInfo, JobStepVector& querySteps,
                         JobStepVector& projectSteps, DeliveredTableMap& deliverySteps)
+
 {
   ParseTree* filters = csep->filters();
   jobInfo.deliveredCols = csep->returnedCols();
+  auto& cols = csep->returnedCols();
+  //  s/t/c/v/o/ct/TA/CA/RA/#/card/join/source/engine/colPos/cs/coll:
+  //  temp/t1/a//3004/int/t1//0/-1/0/0/0/ColumnStore/-1/latin1/latin1_swedish_ci inputindex/outputindex:
+  //  4294967295/4294967295 eid 4294967295 s/t/c/v/o/ct/TA/CA/RA/#/card/join/source/engine/colPos/cs/coll:
+  //  temp/t2/a//1/bigint/t2//0/-1/0/0/0/ForeignEngine/-1/latin1/latin1_swedish_ci inputindex/outputindex:
+  //  4294967295/4294967295 eid 4294967295
+  // cout << "BEFORE " << csep->toString() << endl;
+  if (cols.size())
+  {
+    SimpleColumn* toClone = nullptr;
+    decltype(cols.begin()) toUpdate = cols.end();
+    for (auto it = cols.begin(); it != cols.end(); ++it)
+    {
+      auto rc = *it;
+      auto sc = dynamic_cast<SimpleColumn*>(rc.get());
+      if (sc)
+      {
+        auto name = sc->tableName();
+        if (name == "t2")
+        {
+          toClone = sc->clone();
+        }
+        else if (name == "t1")
+        {
+          toUpdate = it;
+        }
+      }
+    }
+    if (toClone && toUpdate != cols.end())
+    {
+      cols.erase(toUpdate);
+
+      auto& tables = csep->tableList_();
+      int toErase = -1;
+      for (size_t i = 0; i < tables.size(); ++i)
+      {
+        if (tables[i].fisColumnStore)
+        {
+          toErase = i;
+        }
+      }
+      if (toErase != -1)
+      {
+        tables.erase(tables.begin() + toErase);
+        csep->filters(nullptr);
+        filters = 0;
+      }
+      auto columnMap = csep->columnMap();
+      decltype(columnMap) newMap;
+      for (auto& column : columnMap)
+      {
+        if (column.first == "a")
+        {
+          newMap.insert(column);
+          break;
+        }
+      }
+      csep->columnMap(newMap);
+      cout << csep->toString() << endl;
+    }
+  }
 
   if (filters != 0)
   {
@@ -1945,6 +2006,61 @@ namespace joblist
 void makeJobSteps(CalpontSelectExecutionPlan* csep, JobInfo& jobInfo, JobStepVector& querySteps,
                   JobStepVector& projectSteps, DeliveredTableMap& deliverySteps)
 {
+  auto& cols = csep->returnedCols();
+  if (cols.size())
+  {
+    SimpleColumn* toClone = nullptr;
+    decltype(cols.begin()) toUpdate = cols.end();
+    for (auto it = cols.begin(); it != cols.end(); ++it)
+    {
+      auto rc = *it;
+      auto sc = dynamic_cast<SimpleColumn*>(rc.get());
+      if (sc)
+      {
+        auto name = sc->tableName();
+        if (name == "t2")
+        {
+          toClone = sc->clone();
+        }
+        else if (name == "t1")
+        {
+          toUpdate = it;
+        }
+      }
+    }
+    if (toClone)
+    {
+      //cols.erase(toUpdate);
+
+      auto& tables = csep->tableList_();
+      int toErase = -1;
+      for (size_t i = 0; i < tables.size(); ++i)
+      {
+        if (tables[i].fisColumnStore)
+        {
+          toErase = i;
+        }
+      }
+      if (toErase != -1)
+      {
+        tables.erase(tables.begin() + toErase);
+        csep->filters(nullptr);
+      }
+      auto columnMap = csep->columnMap();
+      decltype(columnMap) newMap;
+      for (auto& column : columnMap)
+      {
+        if (column.first == "a")
+        {
+          newMap.insert(column);
+          break;
+        }
+      }
+      csep->columnMap(newMap);
+      cout << csep->toString() << endl;
+    }
+  }
+
   // v-table mode, switch to tuple methods and return the tuple joblist.
   //@Bug 1958 Build table list only for tryTuples.
   const CalpontSelectExecutionPlan::SelectList& fromSubquery = csep->derivedTableList();

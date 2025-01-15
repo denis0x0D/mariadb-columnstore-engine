@@ -478,6 +478,11 @@ class CalpontSelectExecutionPlan : public CalpontExecutionPlan
   {
     return fTableList;
   }
+  TableList& tableList_()
+  {
+    return fTableList;
+  }
+
   void tableList(const TableList& tableList)
   {
     fTableList = tableList;
